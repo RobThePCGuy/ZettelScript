@@ -1,0 +1,89 @@
+{
+  "name": "zettelscript",
+  "version": "0.1.0",
+  "description": "Graph-first knowledge management system combining Zettelkasten-style notes, GraphRAG retrieval, and manuscript continuity tracking",
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "bin": {
+    "zettel": "./dist/cli/index.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "lint": "eslint src/",
+    "typecheck": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "node -e \"require('fs').mkdirSync('.zettelscript', {recursive: true})\" && drizzle-kit migrate",
+    "prepare": "npm run build",
+    "release": "./scripts/publish.sh",
+    "release:patch": "./scripts/publish.sh patch",
+    "release:minor": "./scripts/publish.sh minor",
+    "release:major": "./scripts/publish.sh major"
+  },
+  "keywords": [
+    "zettelkasten",
+    "knowledge-management",
+    "graph",
+    "graphrag",
+    "manuscript",
+    "writing",
+    "cli"
+  ],
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RobThePCGuy/ZettelScript.git"
+  },
+  "bugs": {
+    "url": "https://github.com/RobThePCGuy/ZettelScript/issues"
+  },
+  "homepage": "https://github.com/RobThePCGuy/ZettelScript#readme",
+  "files": [
+    "dist",
+    "drizzle"
+  ],
+  "dependencies": {
+    "better-sqlite3": "^11.7.0",
+    "drizzle-orm": "^0.40.0",
+    "chokidar": "^4.0.3",
+    "commander": "^13.1.0",
+    "nanoid": "^5.0.9",
+    "yaml": "^2.7.0",
+    "openai": "^4.77.0",
+    "tiktoken": "^1.0.18",
+    "@sinclair/typebox": "^0.34.14",
+    "ajv": "^8.17.1",
+    "unified": "^11.0.5",
+    "remark-parse": "^11.0.0",
+    "remark-frontmatter": "^5.0.0",
+    "remark-stringify": "^11.0.0"
+  },
+  "optionalDependencies": {
+    "sqlite-vec": "^0.1.6",
+    "ollama": "^0.5.11"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.10.5",
+    "drizzle-kit": "^0.30.2",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2",
+    "vitest": "^3.0.4",
+    "eslint": "^9.18.0",
+    "@typescript-eslint/eslint-plugin": "^8.20.0",
+    "@typescript-eslint/parser": "^8.20.0"
+  }
+}
