@@ -219,7 +219,7 @@ export class EntityTracker {
 export async function writeNoteFile(
   filePath: string,
   content: string,
-  options: { force?: boolean; dryRun?: boolean } = {}
+  options: { force?: boolean | undefined; dryRun?: boolean | undefined } = {}
 ): Promise<boolean> {
   if (options.dryRun) {
     console.log(`[DRY RUN] Would create: ${filePath}`);

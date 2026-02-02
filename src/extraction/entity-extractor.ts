@@ -60,7 +60,8 @@ Rules:
 TEXT TO ANALYZE:
 `;
 
-const SCENE_EXTRACTION_PROMPT = `Analyze this text and identify distinct scenes or chapters. A scene is a continuous unit of action in one location/time.
+// Reserved for future LLM-based scene detection (see extractScenes TODO)
+export const SCENE_EXTRACTION_PROMPT = `Analyze this text and identify distinct scenes or chapters. A scene is a continuous unit of action in one location/time.
 
 Return ONLY valid JSON (no markdown):
 {
@@ -99,9 +100,11 @@ export class EntityExtractor {
 
     // Extract entities from each chunk
     for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      if (!chunk) continue;
       if (onProgress) onProgress(i + 1, chunks.length);
 
-      const chunkEntities = await this.extractEntitiesFromChunk(chunks[i].text);
+      const chunkEntities = await this.extractEntitiesFromChunk(chunk.text);
 
       // Merge entities
       for (const entity of chunkEntities) {

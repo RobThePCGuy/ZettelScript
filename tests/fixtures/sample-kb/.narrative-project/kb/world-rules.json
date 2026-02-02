@@ -1,0 +1,41 @@
+{
+  "schema_version": "1.0",
+  "rules": [
+    {
+      "id": "rule_001",
+      "name": "Portal Mechanics",
+      "category": "dimensional",
+      "description": "Portals to the Void Realm require specific artifacts to open and maintain",
+      "locked": true,
+      "examples": ["The Keystone can open portals when activated"],
+      "exceptions": ["Natural rifts can occur in areas of dimensional weakness"]
+    },
+    {
+      "id": "rule_002",
+      "name": "Artifact Activation",
+      "category": "magic_system",
+      "description": "Artifacts respond to the emotional state of the user",
+      "locked": false,
+      "examples": ["The Keystone activates when the holder shows trust"]
+    }
+  ],
+  "mechanics": [
+    {
+      "id": "mech_001",
+      "name": "Void Realm Time Dilation",
+      "category": "dimensional",
+      "description": "Time passes differently in the Void Realm compared to the real world",
+      "locked": true
+    }
+  ],
+  "constraints": [
+    {
+      "id": "const_001",
+      "name": "Solo Limitations",
+      "category": "thematic",
+      "description": "Characters working alone are less effective than those working together",
+      "locked": false,
+      "source": "Thematic rule"
+    }
+  ]
+}

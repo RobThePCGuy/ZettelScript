@@ -1,9 +1,6 @@
 # Dependencies
 node_modules/
 
-# Build output
-dist/
-
 # Database files
 .zettelscript/
 *.db
@@ -29,5 +26,3 @@ coverage/
 .env
 .env.local
 .env.*.local
-
-# Drizzle (keep drizzle/ - it contains migrations needed for the app)

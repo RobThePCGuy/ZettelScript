@@ -1,0 +1,187 @@
+{
+  "schema_version": "1.0",
+  "book_id": "sample-book-1",
+  "series_id": "test-series",
+  "kb_version": "1.0",
+  "created_at": "2026-01-01T00:00:00.000Z",
+  "last_updated": "2026-01-01T00:00:00.000Z",
+  "source": "test-fixture",
+  "characters": [
+    {
+      "id": "char_001",
+      "canonical_name": "Alpha One",
+      "aliases": ["Alpha", "The First"],
+      "role": "protagonist",
+      "chapters_present": [1, 2, 3, 4, 5],
+      "first_appearance": 1,
+      "last_appearance": 5,
+      "age": 25,
+      "physical": {
+        "hair": "dark",
+        "eyes": "green",
+        "distinguishing_features": ["scar on left hand"]
+      },
+      "personality": ["determined", "cautious", "loyal"],
+      "arc": {
+        "type": "growth",
+        "description": "Alpha learns to trust others",
+        "key_moments": [
+          {
+            "chapter": 1,
+            "beat": "introduction",
+            "description": "Alpha arrives at the facility"
+          },
+          {
+            "chapter": 3,
+            "beat": "crisis",
+            "description": "Alpha faces a difficult choice"
+          },
+          {
+            "chapter": 5,
+            "beat": "resolution",
+            "description": "Alpha accepts help from Beta"
+          }
+        ],
+        "resolution": {
+          "status": "RESOLVED",
+          "chapter": 5,
+          "key_line": "I don't have to do this alone.",
+          "mechanism": "Alpha learns to trust teammates"
+        }
+      }
+    },
+    {
+      "id": "char_002",
+      "canonical_name": "Beta Two",
+      "aliases": ["Beta"],
+      "role": "supporting",
+      "chapters_present": [2, 3, 4, 5],
+      "first_appearance": 2,
+      "last_appearance": 5,
+      "age": 28,
+      "personality": ["analytical", "supportive"]
+    },
+    {
+      "id": "char_003",
+      "canonical_name": "Gamma Antagonist",
+      "aliases": ["The Shadow"],
+      "role": "antagonist",
+      "chapters_present": [1, 3, 5],
+      "first_appearance": 1,
+      "last_appearance": 5
+    }
+  ],
+  "locations": [
+    {
+      "id": "loc_001",
+      "name": "Central Facility",
+      "type": "real_world_location",
+      "description": "A research facility in the mountains",
+      "features": ["underground labs", "security systems", "living quarters"],
+      "chapters_seen": [1, 2, 3, 4, 5],
+      "first_appearance": 1
+    },
+    {
+      "id": "loc_002",
+      "name": "The Void Realm",
+      "type": "dimensional_location",
+      "description": "An otherworldly dimension of darkness",
+      "features": ["floating platforms", "shifting geometry"],
+      "chapters_seen": [3, 5],
+      "first_appearance": 3
+    }
+  ],
+  "objects": [
+    {
+      "id": "obj_001",
+      "name": "The Keystone",
+      "type": "artifact",
+      "description": "An ancient artifact with mysterious powers",
+      "properties": ["glows in darkness", "warm to touch"],
+      "significance": "CRITICAL - required for plot resolution",
+      "locked": true,
+      "holder": "Alpha One"
+    },
+    {
+      "id": "obj_002",
+      "name": "Beta's Scanner",
+      "type": "equipment",
+      "description": "A modified scanning device",
+      "holder": "Beta Two"
+    }
+  ],
+  "timeline": [
+    {
+      "id": "event_001",
+      "description": "Alpha arrives at the facility",
+      "chapter": 1,
+      "locked": true,
+      "significance": ""
+    },
+    {
+      "id": "event_002",
+      "description": "Beta joins the team",
+      "chapter": 2,
+      "locked": false
+    },
+    {
+      "id": "event_003",
+      "description": "First encounter with Gamma",
+      "chapter": 3,
+      "locked": false
+    },
+    {
+      "id": "event_004",
+      "description": "The Keystone is discovered",
+      "chapter": 4,
+      "locked": true,
+      "significance": "CRITICAL"
+    },
+    {
+      "id": "event_005",
+      "description": "Final confrontation",
+      "chapter": 5,
+      "locked": true
+    }
+  ],
+  "plot_threads": [
+    {
+      "id": "thread_001",
+      "name": "Find the Keystone",
+      "type": "main_plot",
+      "status": "resolved",
+      "chapters_touched": [1, 2, 3, 4, 5]
+    },
+    {
+      "id": "thread_002",
+      "name": "Alpha's Trust Issues",
+      "type": "character_arc",
+      "status": "resolved",
+      "chapters_touched": [1, 3, 5]
+    }
+  ],
+  "facts": [
+    {
+      "id": "fact_001",
+      "fact": "The Keystone can only be activated by someone who trusts",
+      "source": "Ch 4",
+      "locked": true
+    },
+    {
+      "id": "fact_002",
+      "fact": "The Void Realm is accessible through portals",
+      "source": "Ch 3",
+      "locked": false
+    }
+  ],
+  "name_normalization": [
+    {
+      "canonical": "Alpha One",
+      "variants": ["Alpha", "The First"]
+    },
+    {
+      "canonical": "Gamma Antagonist",
+      "variants": ["Gamma", "The Shadow"]
+    }
+  ]
+}

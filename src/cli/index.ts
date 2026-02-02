@@ -10,6 +10,8 @@ import { discoverCommand } from './commands/discover.js';
 import { retrieveCommand } from './commands/retrieve.js';
 import { rewriteCommand } from './commands/rewrite.js';
 import { extractCommand } from './commands/extract.js';
+import { generateCommand } from './commands/generate.js';
+import { injectLinksCommand } from './commands/inject-links.js';
 
 const program = new Command();
 
@@ -28,6 +30,8 @@ program.addCommand(discoverCommand);
 program.addCommand(retrieveCommand);
 program.addCommand(rewriteCommand);
 program.addCommand(extractCommand);
+program.addCommand(generateCommand);
+program.addCommand(injectLinksCommand);
 
 // Parse arguments
 program.parse();

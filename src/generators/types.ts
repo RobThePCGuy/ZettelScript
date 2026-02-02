@@ -186,39 +186,39 @@ export interface GeneratorOptions {
   /** Path to the output vault directory */
   outputDir: string;
   /** Path to the KB JSON file */
-  kbPath?: string;
+  kbPath?: string | undefined;
   /** Path to the arc-ledger JSON file */
-  arcLedgerPath?: string;
+  arcLedgerPath?: string | undefined;
   /** Path to the world-rules JSON file */
-  worldRulesPath?: string;
+  worldRulesPath?: string | undefined;
   /** Whether to use database as source instead of JSON files */
-  fromDb?: boolean;
+  fromDb?: boolean | undefined;
   /** Dry run - don't write files, just show what would be created */
-  dryRun?: boolean;
+  dryRun?: boolean | undefined;
   /** Overwrite existing files */
-  force?: boolean;
+  force?: boolean | undefined;
   /** Verbose output */
-  verbose?: boolean;
+  verbose?: boolean | undefined;
 }
 
 export interface ChapterGeneratorOptions extends GeneratorOptions {
   /** Path to the manuscript file */
   manuscriptPath: string;
   /** Output subdirectory for chapters */
-  chaptersDir?: string;
+  chaptersDir?: string | undefined;
 }
 
 export interface InjectLinksOptions {
   /** Path to the vault directory */
   vaultPath: string;
   /** Dry run - show changes without modifying files */
-  dryRun?: boolean;
+  dryRun?: boolean | undefined;
   /** Entity names to create wikilinks for */
-  entities?: string[];
+  entities?: string[] | undefined;
   /** Pattern to match files (glob) */
-  pattern?: string;
+  pattern?: string | undefined;
   /** Verbose output */
-  verbose?: boolean;
+  verbose?: boolean | undefined;
 }
 
 // ============================================================================

@@ -1,0 +1,117 @@
+{
+  "schema_version": "1.0",
+  "book_id": "sample-book-1",
+  "series_id": "test-series",
+  "last_updated": "2026-01-01",
+
+  "characters": [
+    {
+      "character_id": "alpha_one",
+      "canonical_name": "Alpha One",
+      "entry_state": {
+        "status": "alive",
+        "location": "outside facility",
+        "emotional_state": "guarded, distrustful"
+      },
+      "arc": {
+        "type": "growth",
+        "description": "Alpha learns to trust others through shared challenges",
+        "key_moments": [
+          {
+            "chapter": 1,
+            "beat": "introduction",
+            "description": "Alpha arrives alone, refusing help"
+          },
+          {
+            "chapter": 3,
+            "beat": "crisis",
+            "description": "Alpha's solo approach fails"
+          },
+          {
+            "chapter": 5,
+            "beat": "resolution",
+            "description": "Alpha accepts partnership with Beta"
+          }
+        ],
+        "resolution": {
+          "status": "RESOLVED",
+          "chapter": 5,
+          "key_line": "I don't have to do this alone.",
+          "mechanism": "Shared victory proves value of trust"
+        }
+      },
+      "exit_state": {
+        "status": "alive",
+        "location": "facility",
+        "emotional_state": "open to partnership"
+      }
+    },
+    {
+      "character_id": "beta_two",
+      "canonical_name": "Beta Two",
+      "entry_state": {
+        "status": "alive",
+        "location": "facility"
+      },
+      "arc": {
+        "type": "supporting",
+        "description": "Beta provides analytical support and earns Alpha's trust",
+        "resolution": {
+          "status": "RESOLVED",
+          "chapter": 5
+        }
+      },
+      "exit_state": {
+        "status": "alive",
+        "location": "facility",
+        "role": "trusted partner"
+      }
+    }
+  ],
+
+  "threads": [
+    {
+      "thread_id": "find_keystone",
+      "name": "Find the Keystone",
+      "type": "main_plot",
+      "status": "resolved",
+      "chapters_touched": [1, 2, 3, 4, 5],
+      "resolution_chapter": 4,
+      "resolution_description": "The Keystone was discovered in the Void Realm"
+    },
+    {
+      "thread_id": "alpha_trust",
+      "name": "Alpha's Trust Issues",
+      "type": "character_arc",
+      "status": "resolved",
+      "chapters_touched": [1, 3, 5],
+      "resolution_chapter": 5,
+      "resolution_description": "Alpha learned to trust Beta"
+    },
+    {
+      "thread_id": "gamma_threat",
+      "name": "Gamma's Threat",
+      "type": "antagonist_resolution",
+      "status": "resolved",
+      "chapters_touched": [1, 3, 5],
+      "resolution_chapter": 5,
+      "resolution_description": "Gamma was defeated through teamwork"
+    },
+    {
+      "thread_id": "sequel_setup",
+      "name": "Unknown Powers",
+      "type": "foreshadowing",
+      "status": "setup",
+      "chapters_touched": [5],
+      "expected_resolution": "book_2",
+      "description": "The Keystone reveals there are more artifacts"
+    }
+  ],
+
+  "series_arc_tracking": {
+    "teamwork_theme": {
+      "status": "established",
+      "book_1_contribution": "Alpha learns trust through partnership"
+    }
+  }
+}
