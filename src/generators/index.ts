@@ -36,3 +36,7 @@ export { generateLore } from './lore.js';
 export { generateTimeline, generateTimelineIndex } from './timeline.js';
 export { generateArcs } from './arcs.js';
 export { injectLinks, previewLinkInjection } from './inject-links.js';
+
+// Relationship engine
+export { RelationshipEngine } from './relationships.js';
+export { buildRelatedEntitiesSection, shouldIncludeRelatedEntities } from './related-entities.js';

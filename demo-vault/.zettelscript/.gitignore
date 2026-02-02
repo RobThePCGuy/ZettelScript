@@ -1,0 +1,3 @@
+# Demo vault: db and graph.html are committed as examples
+# Normal vaults should ignore these (they're regenerated)
+zettelscript.db-*

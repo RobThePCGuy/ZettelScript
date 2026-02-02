@@ -22,6 +22,8 @@ import {
   kvPair,
 } from './utils.js';
 import { classifyRealm } from './types.js';
+import { RelationshipEngine } from './relationships.js';
+import { buildRelatedEntitiesSection, shouldIncludeRelatedEntities } from './related-entities.js';
 
 const LOCATIONS_SUBDIR = 'Locations';
 
@@ -74,7 +76,11 @@ function buildTags(loc: KBLocation, realm: RealmType): string[] {
 /**
  * Build the content body for a location note
  */
-function buildLocationContent(loc: KBLocation): string {
+function buildLocationContent(
+  loc: KBLocation,
+  relationshipEngine?: RelationshipEngine,
+  includeRelated?: boolean
+): string {
   const parts: string[] = [];
   const realm = classifyRealm(loc);
 
@@ -104,6 +110,15 @@ function buildLocationContent(loc: KBLocation): string {
   if (loc.features && loc.features.length > 0) {
     parts.push(section('Features'));
     parts.push(loc.features.map(f => `- ${f}`).join('\n') + '\n\n');
+  }
+
+  // Related Entities
+  if (shouldIncludeRelatedEntities(includeRelated) && relationshipEngine) {
+    const relationships = relationshipEngine.getRelationshipsFor(loc.id);
+    const relatedSection = buildRelatedEntitiesSection(relationships);
+    if (relatedSection) {
+      parts.push(relatedSection);
+    }
   }
 
   // Realm-specific sections
@@ -174,6 +189,10 @@ export async function generateLocations(
   // Track entities to avoid duplicates
   const tracker = new EntityTracker();
 
+  // Create relationship engine for cross-linking
+  const relationshipEngine = new RelationshipEngine(kb, options.coOccurrenceThreshold);
+  const includeRelated = shouldIncludeRelatedEntities(options.includeRelatedEntities);
+
   // Process each location
   for (const loc of kb.locations) {
     const name = loc.name;
@@ -189,7 +208,7 @@ export async function generateLocations(
     try {
       const filePath = generateNotePath(options.outputDir, LOCATIONS_SUBDIR, name);
       const frontmatter = buildLocationFrontmatter(loc);
-      const content = buildLocationContent(loc);
+      const content = buildLocationContent(loc, relationshipEngine, includeRelated);
       const note = buildNote(frontmatter, content);
 
       const written = await writeNoteFile(filePath, note, {

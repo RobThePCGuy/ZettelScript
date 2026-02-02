@@ -1,0 +1,770 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>ZettelScript Atlas</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel-bg: rgba(30, 41, 59, 0.7);
+      --border: rgba(148, 163, 184, 0.2);
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+      --accent: #38bdf8;
+    }
+    body { margin: 0; font-family: 'Inter', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text-main); overflow: hidden; }
+
+    #graph { width: 100vw; height: 100vh; cursor: crosshair; }
+
+    /* Glassmorphism Panels */
+    .panel {
+      background: var(--panel-bg);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
+      border-radius: 12px;
+      padding: 16px;
+      position: absolute;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    /* Breadcrumb Navigation */
+    #breadcrumbs {
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      opacity: 0;
+      pointer-events: none;
+    }
+    #breadcrumbs.active { opacity: 1; pointer-events: auto; }
+
+    .nav-btn {
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      width: 32px;
+      height: 32px;
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+      font-size: 1rem;
+    }
+    .nav-btn:hover:not(:disabled) { background: rgba(56, 189, 248, 0.2); color: var(--accent); border-color: var(--accent); }
+    .nav-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+    .breadcrumb-trail {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      max-width: 400px;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .breadcrumb-trail::-webkit-scrollbar { display: none; }
+
+    .breadcrumb-item {
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      white-space: nowrap;
+      color: var(--text-muted);
+      transition: all 0.2s;
+    }
+    .breadcrumb-item:hover { background: rgba(255,255,255,0.1); color: var(--text-main); }
+    .breadcrumb-item.current { color: var(--accent); font-weight: 600; }
+    .breadcrumb-sep { color: var(--text-muted); opacity: 0.5; }
+
+    /* Sidebar */
+    #sidebar {
+      top: 20px;
+      right: 20px;
+      width: 320px;
+      max-height: calc(100vh - 40px);
+      overflow-y: auto;
+      transform: translateX(400px);
+      opacity: 0;
+    }
+    #sidebar.active { transform: translateX(0); opacity: 1; }
+    #sidebar::-webkit-scrollbar { width: 6px; }
+    #sidebar::-webkit-scrollbar-track { background: transparent; }
+    #sidebar::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.3); border-radius: 3px; }
+
+    .node-header { padding-bottom: 12px; border-bottom: 1px solid var(--border); margin-bottom: 12px; }
+    .node-title { margin: 0; font-size: 1.25rem; font-weight: 600; line-height: 1.3; color: var(--text-main); }
+    .node-badge {
+      display: inline-block; margin-top: 8px; padding: 4px 8px;
+      border-radius: 99px; font-size: 0.75rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.05em;
+      color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+    }
+
+    .meta-grid { display: grid; gap: 12px; }
+    .meta-item { display: flex; flex-direction: column; gap: 4px; }
+    .meta-key { font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600; }
+    .meta-val { font-size: 0.9rem; color: var(--text-main); word-break: break-word; line-height: 1.5; }
+
+    code {
+      background: rgba(0, 0, 0, 0.3);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85em;
+    }
+
+    /* Connections Section */
+    .connections-section {
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+    }
+    .connections-title {
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      margin-bottom: 12px;
+      letter-spacing: 0.05em;
+    }
+    .connection-group {
+      margin-bottom: 12px;
+    }
+    .connection-group-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+    }
+    .connection-group-icon {
+      font-size: 0.9rem;
+    }
+    .connection-group-count {
+      background: rgba(255,255,255,0.1);
+      padding: 1px 6px;
+      border-radius: 10px;
+      font-size: 0.7rem;
+    }
+    .connected-node {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 8px;
+      margin: 2px 0;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .connected-node:hover {
+      background: rgba(56, 189, 248, 0.15);
+    }
+    .connected-node-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .connected-node-name {
+      font-size: 0.85rem;
+      color: var(--text-main);
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .connected-node-type {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      text-transform: lowercase;
+    }
+
+    /* Controls & Legend */
+    #controls {
+      top: 20px;
+      left: 20px;
+      max-width: 250px;
+      max-height: calc(100vh - 40px);
+      overflow-y: auto;
+    }
+    #controls::-webkit-scrollbar { width: 6px; }
+    #controls::-webkit-scrollbar-track { background: transparent; }
+    #controls::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.3); border-radius: 3px; }
+
+    .search-wrapper { position: relative; margin-bottom: 16px; }
+    input[type="text"] {
+      width: 100%;
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      padding: 10px 12px;
+      border-radius: 8px;
+      outline: none;
+      box-sizing: border-box;
+      transition: border-color 0.2s;
+    }
+    input[type="text"]:focus { border-color: var(--accent); }
+
+    .legend-title { font-size: 0.8rem; font-weight: 700; color: var(--text-muted); margin-bottom: 8px; text-transform: uppercase; }
+    .legend-grid { display: grid; grid-template-columns: 1fr; gap: 4px; }
+    .legend-item {
+      display: flex; align-items: center; gap: 10px;
+      font-size: 0.85rem; cursor: pointer; padding: 4px 8px;
+      border-radius: 6px; transition: background 0.2s;
+      user-select: none;
+    }
+    .legend-item:hover { background: rgba(255,255,255,0.05); }
+    .legend-item.hidden { opacity: 0.4; }
+    .legend-dot { width: 10px; height: 10px; border-radius: 50%; box-shadow: 0 0 8px currentColor; }
+
+    /* Edge Type Filter */
+    .filter-section {
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+    }
+    .edge-legend-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 6px;
+      transition: background 0.2s;
+      user-select: none;
+    }
+    .edge-legend-item:hover { background: rgba(255,255,255,0.05); }
+    .edge-legend-item.hidden { opacity: 0.4; }
+    .edge-line {
+      width: 20px;
+      height: 2px;
+      border-radius: 1px;
+    }
+
+    /* Keyboard shortcuts hint */
+    .shortcuts-hint {
+      margin-top: 16px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      text-align: center;
+      line-height: 1.6;
+    }
+    kbd {
+      background: rgba(0, 0, 0, 0.3);
+      padding: 2px 5px;
+      border-radius: 3px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.7rem;
+    }
+  </style>
+  <script src="https://unpkg.com/force-graph"></script>
+</head>
+<body>
+  <div id="breadcrumbs" class="panel">
+    <button class="nav-btn" id="btn-back" onclick="goBack()" disabled title="Go back (Alt+Left)">&#8592;</button>
+    <button class="nav-btn" id="btn-forward" onclick="goForward()" disabled title="Go forward (Alt+Right)">&#8594;</button>
+    <div class="breadcrumb-trail" id="breadcrumb-trail"></div>
+  </div>
+
+  <div id="controls" class="panel">
+    <div class="search-wrapper">
+      <input type="text" id="search" placeholder="Search nodes... (/)" oninput="searchNode(this.value)">
+    </div>
+    <div class="legend-title">Filter by Node Type</div>
+    <div class="legend-grid" id="legend"></div>
+
+    <div class="filter-section">
+      <div class="legend-title">Filter by Edge Type</div>
+      <div class="legend-grid" id="edge-legend"></div>
+    </div>
+
+    <div class="shortcuts-hint">
+      <kbd>/</kbd> Search &nbsp; <kbd>Esc</kbd> Close<br>
+      <kbd>Alt+&#8592;</kbd> Back &nbsp; <kbd>Alt+&#8594;</kbd> Forward
+    </div>
+  </div>
+
+  <div id="graph"></div>
+
+  <div id="sidebar" class="panel">
+    <div class="node-header">
+      <h2 class="node-title" id="sb-title"></h2>
+      <span class="node-badge" id="sb-type"></span>
+    </div>
+    <div id="sb-content" class="meta-grid"></div>
+    <div id="sb-connections" class="connections-section"></div>
+  </div>
+
+  <script>
+    const data = {"nodes":[{"id":"Gx1o_9wmZcLQtyvU7EGf4","name":"Elena Vance","type":"character","val":10,"color":"#34d399","path":"characters/elena-vance.md","metadata":{"id":"char-elena","title":"Elena Vance","type":"character","aliases":["The Architect","Dr. Vance"],"tags":["protagonist","scientist"]}},{"id":"wBF-iBjKucGxC6jObB_DZ","name":"Marcus Chen","type":"character","val":10,"color":"#34d399","path":"characters/marcus-chen.md","metadata":{"id":"char-marcus","title":"Marcus Chen","type":"character","aliases":["Director Chen","The Director"],"tags":["antagonist","administrator"]}},{"id":"7ps9OitauA8btbL4tGuN-","name":"Dr. Sarah Webb","type":"character","val":9.5,"color":"#34d399","path":"characters/sarah-webb.md","metadata":{"id":"char-sarah","title":"Dr. Sarah Webb","type":"character","aliases":["Webb"],"tags":["scientist","whistleblower"]}},{"id":"T2Of4XpSg1ZeZupoOL5dt","name":"Sofia Reyes","type":"character","val":10,"color":"#34d399","path":"characters/sofia-reyes.md","metadata":{"id":"char-sofia","title":"Sofia Reyes","type":"character","aliases":["Agent Reyes"],"tags":["investigator","ally"]}},{"id":"_hIhFaZWMC1LI99ljH5vu","name":"The Forgotten Archives","type":"location","val":7,"color":"#60a5fa","path":"concepts/forgotten-archives.md","metadata":{"id":"concept-archives","title":"The Forgotten Archives","type":"location","aliases":["The Archives","Hidden Library"],"tags":["secret","evidence"]}},{"id":"UAK9rMlLVp7aPd6HKOO8Q","name":"Quantum Resonance Theory","type":"concept","val":9.5,"color":"#f472b6","path":"concepts/quantum-resonance-theory.md","metadata":{"id":"concept-qrt","title":"Quantum Resonance Theory","type":"concept","aliases":["QRT","Resonance Theory"],"tags":["science","central"]}},{"id":"9I-G3eCmFjM20IvutP9k6","name":"Resonance Chamber","type":"object","val":7,"color":"#fbbf24","path":"concepts/resonance-chamber.md","metadata":{"id":"concept-chamber","title":"Resonance Chamber","type":"object","aliases":["The Chamber","RC-1"],"tags":["technology","dangerous"]}},{"id":"EgOG6MT8RB5sGAg-hM-FB","name":"The Syndicate","type":"concept","val":10,"color":"#f472b6","path":"concepts/the-syndicate.md","metadata":{"id":"concept-syndicate","title":"The Syndicate","type":"concept","aliases":["The Organization","Them"],"tags":["antagonist","shadow-org"]}},{"id":"tCFDWQuH82kWyuaIF5cRe","name":"Cascade Event","type":"event","val":10,"color":"#f87171","path":"events/cascade-event.md","metadata":{"id":"event-cascade","title":"Cascade Event","type":"event","aliases":["The Cascade","The Incident"],"tags":["catastrophe","central"]}},{"id":"n0eGE5gHGK7filfaoPO_o","name":"Founding of Helios","type":"event","val":4.5,"color":"#f87171","path":"events/founding-of-helios.md","metadata":{"id":"event-founding","title":"Founding of Helios","type":"event","tags":["origin","history"]}},{"id":"MNosOyCiGVzVwScBMCk7s","name":"Webb Disappearance","type":"event","val":5,"color":"#f87171","path":"events/webb-disappearance.md","metadata":{"id":"event-webb","title":"Webb Disappearance","type":"event","aliases":["Sarah's Disappearance"],"tags":["mystery","ongoing"]}},{"id":"LHImYLoVmCThypFA0xhWF","name":"Blackwood University","type":"location","val":5.5,"color":"#60a5fa","path":"locations/blackwood-university.md","metadata":{"id":"loc-blackwood","title":"Blackwood University","type":"location","aliases":["Blackwood","The University"],"tags":["academic","origin"]}},{"id":"LVHmA1kV_scGapF6NEozY","name":"Helios Institute","type":"location","val":10,"color":"#60a5fa","path":"locations/helios-institute.md","metadata":{"id":"loc-helios","title":"Helios Institute","type":"location","aliases":["The Institute","Helios"],"tags":["research-facility","central"]}},{"id":"gjQIVRbvvRR-TVN5a_3Q6","name":"New Meridian","type":"location","val":8.5,"color":"#60a5fa","path":"locations/new-meridian.md","metadata":{"id":"loc-meridian","title":"New Meridian","type":"location","aliases":["The City","Meridian"],"tags":["city","setting"]}},{"id":"rz0MmTmLZAS_X1dHwxDxQ","name":"Old Town","type":"location","val":6.5,"color":"#60a5fa","path":"locations/old-town.md","metadata":{"id":"loc-oldtown","title":"Old Town","type":"location","tags":["district","historic"]}},{"id":"2XCjlodxL-bOunwiOBVMG","name":"The Underground","type":"location","val":5.5,"color":"#60a5fa","path":"locations/underground.md","metadata":{"id":"loc-underground","title":"The Underground","type":"location","aliases":["Below","The Tunnels"],"tags":["hidden","dangerous"]}}],"links":[{"source":"Gx1o_9wmZcLQtyvU7EGf4","target":"LVHmA1kV_scGapF6NEozY","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"Gx1o_9wmZcLQtyvU7EGf4","target":"UAK9rMlLVp7aPd6HKOO8Q","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"Gx1o_9wmZcLQtyvU7EGf4","target":"tCFDWQuH82kWyuaIF5cRe","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"Gx1o_9wmZcLQtyvU7EGf4","target":"9I-G3eCmFjM20IvutP9k6","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"Gx1o_9wmZcLQtyvU7EGf4","target":"wBF-iBjKucGxC6jObB_DZ","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"Gx1o_9wmZcLQtyvU7EGf4","target":"T2Of4XpSg1ZeZupoOL5dt","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"Gx1o_9wmZcLQtyvU7EGf4","target":"gjQIVRbvvRR-TVN5a_3Q6","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"wBF-iBjKucGxC6jObB_DZ","target":"LVHmA1kV_scGapF6NEozY","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"wBF-iBjKucGxC6jObB_DZ","target":"Gx1o_9wmZcLQtyvU7EGf4","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"wBF-iBjKucGxC6jObB_DZ","target":"LHImYLoVmCThypFA0xhWF","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"wBF-iBjKucGxC6jObB_DZ","target":"9I-G3eCmFjM20IvutP9k6","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"wBF-iBjKucGxC6jObB_DZ","target":"7ps9OitauA8btbL4tGuN-","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"wBF-iBjKucGxC6jObB_DZ","target":"EgOG6MT8RB5sGAg-hM-FB","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"wBF-iBjKucGxC6jObB_DZ","target":"tCFDWQuH82kWyuaIF5cRe","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"wBF-iBjKucGxC6jObB_DZ","target":"T2Of4XpSg1ZeZupoOL5dt","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"7ps9OitauA8btbL4tGuN-","target":"UAK9rMlLVp7aPd6HKOO8Q","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"7ps9OitauA8btbL4tGuN-","target":"Gx1o_9wmZcLQtyvU7EGf4","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"7ps9OitauA8btbL4tGuN-","target":"tCFDWQuH82kWyuaIF5cRe","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"7ps9OitauA8btbL4tGuN-","target":"wBF-iBjKucGxC6jObB_DZ","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"7ps9OitauA8btbL4tGuN-","target":"LHImYLoVmCThypFA0xhWF","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"7ps9OitauA8btbL4tGuN-","target":"gjQIVRbvvRR-TVN5a_3Q6","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"7ps9OitauA8btbL4tGuN-","target":"T2Of4XpSg1ZeZupoOL5dt","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"7ps9OitauA8btbL4tGuN-","target":"2XCjlodxL-bOunwiOBVMG","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"T2Of4XpSg1ZeZupoOL5dt","target":"tCFDWQuH82kWyuaIF5cRe","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"T2Of4XpSg1ZeZupoOL5dt","target":"Gx1o_9wmZcLQtyvU7EGf4","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"T2Of4XpSg1ZeZupoOL5dt","target":"LHImYLoVmCThypFA0xhWF","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"T2Of4XpSg1ZeZupoOL5dt","target":"wBF-iBjKucGxC6jObB_DZ","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"T2Of4XpSg1ZeZupoOL5dt","target":"gjQIVRbvvRR-TVN5a_3Q6","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"T2Of4XpSg1ZeZupoOL5dt","target":"EgOG6MT8RB5sGAg-hM-FB","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"T2Of4XpSg1ZeZupoOL5dt","target":"LVHmA1kV_scGapF6NEozY","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"T2Of4XpSg1ZeZupoOL5dt","target":"_hIhFaZWMC1LI99ljH5vu","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"T2Of4XpSg1ZeZupoOL5dt","target":"rz0MmTmLZAS_X1dHwxDxQ","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"_hIhFaZWMC1LI99ljH5vu","target":"rz0MmTmLZAS_X1dHwxDxQ","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"_hIhFaZWMC1LI99ljH5vu","target":"gjQIVRbvvRR-TVN5a_3Q6","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"_hIhFaZWMC1LI99ljH5vu","target":"UAK9rMlLVp7aPd6HKOO8Q","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"_hIhFaZWMC1LI99ljH5vu","target":"EgOG6MT8RB5sGAg-hM-FB","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"_hIhFaZWMC1LI99ljH5vu","target":"LVHmA1kV_scGapF6NEozY","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"_hIhFaZWMC1LI99ljH5vu","target":"wBF-iBjKucGxC6jObB_DZ","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"_hIhFaZWMC1LI99ljH5vu","target":"T2Of4XpSg1ZeZupoOL5dt","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"_hIhFaZWMC1LI99ljH5vu","target":"Gx1o_9wmZcLQtyvU7EGf4","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"_hIhFaZWMC1LI99ljH5vu","target":"tCFDWQuH82kWyuaIF5cRe","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"_hIhFaZWMC1LI99ljH5vu","target":"7ps9OitauA8btbL4tGuN-","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"UAK9rMlLVp7aPd6HKOO8Q","target":"Gx1o_9wmZcLQtyvU7EGf4","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"UAK9rMlLVp7aPd6HKOO8Q","target":"9I-G3eCmFjM20IvutP9k6","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"UAK9rMlLVp7aPd6HKOO8Q","target":"LVHmA1kV_scGapF6NEozY","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"UAK9rMlLVp7aPd6HKOO8Q","target":"7ps9OitauA8btbL4tGuN-","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"UAK9rMlLVp7aPd6HKOO8Q","target":"tCFDWQuH82kWyuaIF5cRe","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"UAK9rMlLVp7aPd6HKOO8Q","target":"EgOG6MT8RB5sGAg-hM-FB","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"UAK9rMlLVp7aPd6HKOO8Q","target":"rz0MmTmLZAS_X1dHwxDxQ","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"UAK9rMlLVp7aPd6HKOO8Q","target":"wBF-iBjKucGxC6jObB_DZ","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"9I-G3eCmFjM20IvutP9k6","target":"LVHmA1kV_scGapF6NEozY","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"9I-G3eCmFjM20IvutP9k6","target":"Gx1o_9wmZcLQtyvU7EGf4","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"9I-G3eCmFjM20IvutP9k6","target":"UAK9rMlLVp7aPd6HKOO8Q","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"9I-G3eCmFjM20IvutP9k6","target":"tCFDWQuH82kWyuaIF5cRe","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"9I-G3eCmFjM20IvutP9k6","target":"wBF-iBjKucGxC6jObB_DZ","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"9I-G3eCmFjM20IvutP9k6","target":"7ps9OitauA8btbL4tGuN-","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"9I-G3eCmFjM20IvutP9k6","target":"T2Of4XpSg1ZeZupoOL5dt","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"9I-G3eCmFjM20IvutP9k6","target":"Gx1o_9wmZcLQtyvU7EGf4","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"9I-G3eCmFjM20IvutP9k6","target":"EgOG6MT8RB5sGAg-hM-FB","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"EgOG6MT8RB5sGAg-hM-FB","target":"LVHmA1kV_scGapF6NEozY","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"EgOG6MT8RB5sGAg-hM-FB","target":"UAK9rMlLVp7aPd6HKOO8Q","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"EgOG6MT8RB5sGAg-hM-FB","target":"2XCjlodxL-bOunwiOBVMG","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"EgOG6MT8RB5sGAg-hM-FB","target":"gjQIVRbvvRR-TVN5a_3Q6","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"EgOG6MT8RB5sGAg-hM-FB","target":"tCFDWQuH82kWyuaIF5cRe","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"EgOG6MT8RB5sGAg-hM-FB","target":"wBF-iBjKucGxC6jObB_DZ","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"EgOG6MT8RB5sGAg-hM-FB","target":"LHImYLoVmCThypFA0xhWF","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"EgOG6MT8RB5sGAg-hM-FB","target":"_hIhFaZWMC1LI99ljH5vu","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"EgOG6MT8RB5sGAg-hM-FB","target":"T2Of4XpSg1ZeZupoOL5dt","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"EgOG6MT8RB5sGAg-hM-FB","target":"7ps9OitauA8btbL4tGuN-","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"tCFDWQuH82kWyuaIF5cRe","target":"LVHmA1kV_scGapF6NEozY","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"tCFDWQuH82kWyuaIF5cRe","target":"Gx1o_9wmZcLQtyvU7EGf4","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"tCFDWQuH82kWyuaIF5cRe","target":"UAK9rMlLVp7aPd6HKOO8Q","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"tCFDWQuH82kWyuaIF5cRe","target":"gjQIVRbvvRR-TVN5a_3Q6","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"tCFDWQuH82kWyuaIF5cRe","target":"9I-G3eCmFjM20IvutP9k6","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"tCFDWQuH82kWyuaIF5cRe","target":"wBF-iBjKucGxC6jObB_DZ","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"tCFDWQuH82kWyuaIF5cRe","target":"T2Of4XpSg1ZeZupoOL5dt","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"tCFDWQuH82kWyuaIF5cRe","target":"EgOG6MT8RB5sGAg-hM-FB","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"tCFDWQuH82kWyuaIF5cRe","target":"7ps9OitauA8btbL4tGuN-","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"n0eGE5gHGK7filfaoPO_o","target":"LVHmA1kV_scGapF6NEozY","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"n0eGE5gHGK7filfaoPO_o","target":"gjQIVRbvvRR-TVN5a_3Q6","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"n0eGE5gHGK7filfaoPO_o","target":"EgOG6MT8RB5sGAg-hM-FB","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"n0eGE5gHGK7filfaoPO_o","target":"wBF-iBjKucGxC6jObB_DZ","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"n0eGE5gHGK7filfaoPO_o","target":"UAK9rMlLVp7aPd6HKOO8Q","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"n0eGE5gHGK7filfaoPO_o","target":"rz0MmTmLZAS_X1dHwxDxQ","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"n0eGE5gHGK7filfaoPO_o","target":"Gx1o_9wmZcLQtyvU7EGf4","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"n0eGE5gHGK7filfaoPO_o","target":"_hIhFaZWMC1LI99ljH5vu","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"n0eGE5gHGK7filfaoPO_o","target":"EgOG6MT8RB5sGAg-hM-FB","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"MNosOyCiGVzVwScBMCk7s","target":"7ps9OitauA8btbL4tGuN-","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"MNosOyCiGVzVwScBMCk7s","target":"gjQIVRbvvRR-TVN5a_3Q6","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"MNosOyCiGVzVwScBMCk7s","target":"tCFDWQuH82kWyuaIF5cRe","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"MNosOyCiGVzVwScBMCk7s","target":"rz0MmTmLZAS_X1dHwxDxQ","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"MNosOyCiGVzVwScBMCk7s","target":"T2Of4XpSg1ZeZupoOL5dt","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"MNosOyCiGVzVwScBMCk7s","target":"2XCjlodxL-bOunwiOBVMG","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"MNosOyCiGVzVwScBMCk7s","target":"EgOG6MT8RB5sGAg-hM-FB","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"MNosOyCiGVzVwScBMCk7s","target":"Gx1o_9wmZcLQtyvU7EGf4","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"MNosOyCiGVzVwScBMCk7s","target":"wBF-iBjKucGxC6jObB_DZ","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"MNosOyCiGVzVwScBMCk7s","target":"tCFDWQuH82kWyuaIF5cRe","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"LHImYLoVmCThypFA0xhWF","target":"Gx1o_9wmZcLQtyvU7EGf4","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"LHImYLoVmCThypFA0xhWF","target":"wBF-iBjKucGxC6jObB_DZ","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"LHImYLoVmCThypFA0xhWF","target":"T2Of4XpSg1ZeZupoOL5dt","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"LHImYLoVmCThypFA0xhWF","target":"7ps9OitauA8btbL4tGuN-","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"LHImYLoVmCThypFA0xhWF","target":"UAK9rMlLVp7aPd6HKOO8Q","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"LHImYLoVmCThypFA0xhWF","target":"EgOG6MT8RB5sGAg-hM-FB","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"LHImYLoVmCThypFA0xhWF","target":"T2Of4XpSg1ZeZupoOL5dt","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"LVHmA1kV_scGapF6NEozY","target":"gjQIVRbvvRR-TVN5a_3Q6","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"LVHmA1kV_scGapF6NEozY","target":"EgOG6MT8RB5sGAg-hM-FB","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"LVHmA1kV_scGapF6NEozY","target":"9I-G3eCmFjM20IvutP9k6","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"LVHmA1kV_scGapF6NEozY","target":"Gx1o_9wmZcLQtyvU7EGf4","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"LVHmA1kV_scGapF6NEozY","target":"UAK9rMlLVp7aPd6HKOO8Q","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"LVHmA1kV_scGapF6NEozY","target":"wBF-iBjKucGxC6jObB_DZ","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"LVHmA1kV_scGapF6NEozY","target":"Gx1o_9wmZcLQtyvU7EGf4","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"LVHmA1kV_scGapF6NEozY","target":"7ps9OitauA8btbL4tGuN-","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"LVHmA1kV_scGapF6NEozY","target":"tCFDWQuH82kWyuaIF5cRe","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"gjQIVRbvvRR-TVN5a_3Q6","target":"LVHmA1kV_scGapF6NEozY","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"gjQIVRbvvRR-TVN5a_3Q6","target":"EgOG6MT8RB5sGAg-hM-FB","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"gjQIVRbvvRR-TVN5a_3Q6","target":"rz0MmTmLZAS_X1dHwxDxQ","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"gjQIVRbvvRR-TVN5a_3Q6","target":"2XCjlodxL-bOunwiOBVMG","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"gjQIVRbvvRR-TVN5a_3Q6","target":"tCFDWQuH82kWyuaIF5cRe","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"gjQIVRbvvRR-TVN5a_3Q6","target":"T2Of4XpSg1ZeZupoOL5dt","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"rz0MmTmLZAS_X1dHwxDxQ","target":"gjQIVRbvvRR-TVN5a_3Q6","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"rz0MmTmLZAS_X1dHwxDxQ","target":"_hIhFaZWMC1LI99ljH5vu","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"rz0MmTmLZAS_X1dHwxDxQ","target":"7ps9OitauA8btbL4tGuN-","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"rz0MmTmLZAS_X1dHwxDxQ","target":"T2Of4XpSg1ZeZupoOL5dt","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"rz0MmTmLZAS_X1dHwxDxQ","target":"EgOG6MT8RB5sGAg-hM-FB","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"rz0MmTmLZAS_X1dHwxDxQ","target":"UAK9rMlLVp7aPd6HKOO8Q","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"rz0MmTmLZAS_X1dHwxDxQ","target":"LVHmA1kV_scGapF6NEozY","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"2XCjlodxL-bOunwiOBVMG","target":"gjQIVRbvvRR-TVN5a_3Q6","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"2XCjlodxL-bOunwiOBVMG","target":"tCFDWQuH82kWyuaIF5cRe","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"2XCjlodxL-bOunwiOBVMG","target":"EgOG6MT8RB5sGAg-hM-FB","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"2XCjlodxL-bOunwiOBVMG","target":"7ps9OitauA8btbL4tGuN-","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"2XCjlodxL-bOunwiOBVMG","target":"Gx1o_9wmZcLQtyvU7EGf4","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"2XCjlodxL-bOunwiOBVMG","target":"UAK9rMlLVp7aPd6HKOO8Q","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"2XCjlodxL-bOunwiOBVMG","target":"T2Of4XpSg1ZeZupoOL5dt","type":"explicit_link","strength":1,"provenance":"explicit"}]};
+    const typeColors = {"note":"#94a3b8","scene":"#a78bfa","character":"#34d399","location":"#60a5fa","object":"#fbbf24","event":"#f87171","concept":"#f472b6","moc":"#fb923c","timeline":"#818cf8","draft":"#52525b"};
+    const edgeStyles = {"explicit_link":{"color":"#22d3ee","dash":[],"label":"Links to"},"backlink":{"color":"#a78bfa","dash":[5,5],"label":"Backlinks"},"sequence":{"color":"#34d399","dash":[],"label":"Sequence"},"hierarchy":{"color":"#fbbf24","dash":[],"label":"Hierarchy"},"participation":{"color":"#f472b6","dash":[],"label":"Participation"},"pov_visible_to":{"color":"#60a5fa","dash":[3,3],"label":"POV Visible"},"causes":{"color":"#f87171","dash":[],"label":"Causes"},"setup_payoff":{"color":"#fb923c","dash":[],"label":"Setup/Payoff"},"semantic":{"color":"#94a3b8","dash":[2,2],"label":"Semantic"},"mention":{"color":"#2dd4bf","dash":[2,2],"label":"Mention"},"alias":{"color":"#818cf8","dash":[4,2],"label":"Alias"}};
+
+    // Pre-compute adjacency index for O(1) lookups
+    const adjacency = {};
+    const nodeMap = {};
+    data.nodes.forEach(n => {
+      nodeMap[n.id] = n;
+      adjacency[n.id] = { outgoing: [], incoming: [] };
+    });
+    data.links.forEach(link => {
+      const srcId = typeof link.source === 'object' ? link.source.id : link.source;
+      const tgtId = typeof link.target === 'object' ? link.target.id : link.target;
+      if (adjacency[srcId]) adjacency[srcId].outgoing.push({ nodeId: tgtId, type: link.type, link });
+      if (adjacency[tgtId]) adjacency[tgtId].incoming.push({ nodeId: srcId, type: link.type, link });
+    });
+
+    // State
+    const hiddenTypes = new Set();
+    const hiddenEdgeTypes = new Set();
+    const highlightNodes = new Set();
+    const highlightLinks = new Set();
+    let hoverNode = null;
+    let selectedNode = null;
+
+    // Navigation history
+    const navHistory = [];
+    let navIndex = -1;
+
+    // Navigation functions
+    function navigateToNode(nodeId, addToHistory = true) {
+      const node = nodeMap[nodeId];
+      if (!node) return;
+
+      // Unhide type if hidden
+      if (hiddenTypes.has(node.type)) {
+        hiddenTypes.delete(node.type);
+        updateLegendUI();
+      }
+
+      // Update history
+      if (addToHistory) {
+        // Remove any forward history
+        navHistory.splice(navIndex + 1);
+        navHistory.push(nodeId);
+        navIndex = navHistory.length - 1;
+      }
+
+      selectedNode = node;
+      showSidebar(node);
+      updateBreadcrumbs();
+
+      // Center and zoom
+      Graph.centerAt(node.x, node.y, 1000);
+      Graph.zoom(6, 2000);
+
+      // Highlight
+      highlightNodes.clear();
+      highlightLinks.clear();
+      highlightNodes.add(node);
+      data.links.forEach(link => {
+        const srcId = typeof link.source === 'object' ? link.source.id : link.source;
+        const tgtId = typeof link.target === 'object' ? link.target.id : link.target;
+        if (srcId === node.id || tgtId === node.id) {
+          highlightLinks.add(link);
+          highlightNodes.add(nodeMap[srcId]);
+          highlightNodes.add(nodeMap[tgtId]);
+        }
+      });
+      hoverNode = node;
+      updateGraphVisibility();
+    }
+
+    function goBack() {
+      if (navIndex > 0) {
+        navIndex--;
+        navigateToNode(navHistory[navIndex], false);
+      }
+    }
+
+    function goForward() {
+      if (navIndex < navHistory.length - 1) {
+        navIndex++;
+        navigateToNode(navHistory[navIndex], false);
+      }
+    }
+
+    function updateBreadcrumbs() {
+      const panel = document.getElementById('breadcrumbs');
+      const trail = document.getElementById('breadcrumb-trail');
+      const btnBack = document.getElementById('btn-back');
+      const btnForward = document.getElementById('btn-forward');
+
+      if (navHistory.length === 0) {
+        panel.classList.remove('active');
+        return;
+      }
+
+      panel.classList.add('active');
+      btnBack.disabled = navIndex <= 0;
+      btnForward.disabled = navIndex >= navHistory.length - 1;
+
+      // Show last 5 items max
+      const startIdx = Math.max(0, navHistory.length - 5);
+      const visibleHistory = navHistory.slice(startIdx);
+      const offset = startIdx;
+
+      trail.innerHTML = visibleHistory.map((nodeId, i) => {
+        const node = nodeMap[nodeId];
+        const actualIndex = i + offset;
+        const isCurrent = actualIndex === navIndex;
+        const name = node ? node.name : nodeId;
+        return `<span class="breadcrumb-item ${isCurrent ? 'current' : ''}" onclick="jumpToBreadcrumb(${actualIndex})">${name}</span>` +
+          (i < visibleHistory.length - 1 ? '<span class="breadcrumb-sep">/</span>' : '');
+      }).join('');
+    }
+
+    function jumpToBreadcrumb(index) {
+      if (index >= 0 && index < navHistory.length) {
+        navIndex = index;
+        navigateToNode(navHistory[index], false);
+      }
+    }
+
+    // Node type filter
+    function toggleType(type) {
+      if (hiddenTypes.has(type)) {
+        hiddenTypes.delete(type);
+      } else {
+        hiddenTypes.add(type);
+      }
+      updateGraphVisibility();
+      updateLegendUI();
+    }
+
+    // Edge type filter
+    function toggleEdgeType(type) {
+      if (hiddenEdgeTypes.has(type)) {
+        hiddenEdgeTypes.delete(type);
+      } else {
+        hiddenEdgeTypes.add(type);
+      }
+      updateGraphVisibility();
+      updateEdgeLegendUI();
+    }
+
+    function updateLegendUI() {
+      const legend = document.getElementById('legend');
+      legend.innerHTML = '';
+      Object.entries(typeColors).forEach(([type, color]) => {
+        const item = document.createElement('div');
+        item.className = `legend-item ${hiddenTypes.has(type) ? 'hidden' : ''}`;
+        item.onclick = () => toggleType(type);
+        item.innerHTML = `<div class="legend-dot" style="background: ${color}; color: ${color}"></div>${type.charAt(0).toUpperCase() + type.slice(1)}`;
+        legend.appendChild(item);
+      });
+    }
+
+    function updateEdgeLegendUI() {
+      const legend = document.getElementById('edge-legend');
+      legend.innerHTML = '';
+      Object.entries(edgeStyles).forEach(([type, style]) => {
+        const item = document.createElement('div');
+        item.className = `edge-legend-item ${hiddenEdgeTypes.has(type) ? 'hidden' : ''}`;
+        item.onclick = () => toggleEdgeType(type);
+        const dashStyle = style.dash.length > 0
+          ? `background: repeating-linear-gradient(90deg, ${style.color} 0px, ${style.color} ${style.dash[0]}px, transparent ${style.dash[0]}px, transparent ${style.dash[0] + style.dash[1]}px)`
+          : `background: ${style.color}`;
+        item.innerHTML = `<div class="edge-line" style="${dashStyle}"></div>${style.label}`;
+        legend.appendChild(item);
+      });
+    }
+
+    // Initial Legend
+    updateLegendUI();
+    updateEdgeLegendUI();
+
+    // Init Graph
+    const Graph = ForceGraph()
+      (document.getElementById('graph'))
+      .graphData(data)
+      .nodeId('id')
+      .nodeLabel('name')
+      .nodeColor(node => hiddenTypes.has(node.type) ? 'rgba(0,0,0,0)' : node.color)
+      .nodeVal('val')
+      .nodeRelSize(4)
+      .linkWidth(link => highlightLinks.has(link) ? 3 : 1.5)
+      .linkDirectionalParticles(link => highlightLinks.has(link) ? 4 : 0)
+      .linkDirectionalParticleWidth(3)
+      .linkLineDash(link => {
+        const style = edgeStyles[link.type];
+        return style ? style.dash : [];
+      })
+      .linkColor(link => {
+        if (hiddenEdgeTypes.has(link.type)) return 'rgba(0,0,0,0)';
+        if (highlightLinks.has(link)) return '#38bdf8';
+        const style = edgeStyles[link.type];
+        return style ? style.color : 'rgba(148, 163, 184, 0.3)';
+      })
+      .backgroundColor('#0f172a')
+      .onNodeHover(node => {
+        if ((!node && !highlightNodes.size) || (node && hoverNode === node)) return;
+
+        highlightNodes.clear();
+        highlightLinks.clear();
+        if (node) {
+          highlightNodes.add(node);
+          data.links.forEach(link => {
+            const srcId = typeof link.source === 'object' ? link.source.id : link.source;
+            const tgtId = typeof link.target === 'object' ? link.target.id : link.target;
+            if (srcId === node.id || tgtId === node.id) {
+              highlightLinks.add(link);
+              highlightNodes.add(nodeMap[srcId]);
+              highlightNodes.add(nodeMap[tgtId]);
+            }
+          });
+        }
+
+        hoverNode = node || null;
+        updateGraphVisibility();
+      })
+      .onNodeClick(node => {
+        navigateToNode(node.id);
+      })
+      .onBackgroundClick(() => {
+        document.getElementById('sidebar').classList.remove('active');
+        selectedNode = null;
+        highlightNodes.clear();
+        highlightLinks.clear();
+        hoverNode = null;
+        updateGraphVisibility();
+      });
+
+    // Physics
+    Graph.d3Force('charge').strength(-150);
+    Graph.d3Force('link').distance(70);
+
+    function updateGraphVisibility() {
+      Graph.nodeCanvasObject((node, ctx, globalScale) => {
+        if (hiddenTypes.has(node.type)) return;
+
+        const label = node.name;
+        const fontSize = 12/globalScale;
+        const isHighlighted = highlightNodes.size === 0 || highlightNodes.has(node);
+        const isSelected = selectedNode && selectedNode.id === node.id;
+
+        // Node circle
+        const radius = Math.sqrt(node.val) * 4;
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, radius, 0, 2 * Math.PI, false);
+        ctx.fillStyle = isHighlighted ? node.color : convertHexToRGBA(node.color, 0.2);
+        ctx.fill();
+
+        // Ring for selected/hovered
+        if (hoverNode === node || isSelected) {
+          ctx.strokeStyle = isSelected ? '#38bdf8' : '#fff';
+          ctx.lineWidth = (isSelected ? 3 : 2) / globalScale;
+          ctx.stroke();
+        }
+
+        // Text Label (only if highlighted or zoomed in)
+        if (globalScale > 2.5 || (isHighlighted && highlightNodes.size > 0)) {
+          ctx.font = `${fontSize}px Sans-Serif`;
+          const textWidth = ctx.measureText(label).width;
+          const bckgDimensions = [textWidth, fontSize].map(n => n + fontSize * 0.2);
+
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.8)';
+          ctx.fillRect(node.x - bckgDimensions[0] / 2, node.y - bckgDimensions[1] - radius - 2, bckgDimensions[0], bckgDimensions[1]);
+
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillStyle = isHighlighted ? '#fff' : 'rgba(255,255,255,0.4)';
+          ctx.fillText(label, node.x, node.y - bckgDimensions[1]/2 - radius - 2);
+        }
+      });
+
+      Graph.linkVisibility(link => {
+        const srcNode = typeof link.source === 'object' ? link.source : nodeMap[link.source];
+        const tgtNode = typeof link.target === 'object' ? link.target : nodeMap[link.target];
+        if (!srcNode || !tgtNode) return false;
+        if (hiddenTypes.has(srcNode.type) || hiddenTypes.has(tgtNode.type)) return false;
+        if (hiddenEdgeTypes.has(link.type)) return false;
+        return true;
+      });
+    }
+
+    function buildConnectionsUI(node) {
+      const adj = adjacency[node.id];
+      if (!adj) return '';
+
+      // Group connections by edge type
+      const outgoingByType = {};
+      const incomingByType = {};
+
+      adj.outgoing.forEach(conn => {
+        const targetNode = nodeMap[conn.nodeId];
+        if (!targetNode) return;
+        if (!outgoingByType[conn.type]) outgoingByType[conn.type] = [];
+        outgoingByType[conn.type].push(targetNode);
+      });
+
+      adj.incoming.forEach(conn => {
+        const sourceNode = nodeMap[conn.nodeId];
+        if (!sourceNode) return;
+        if (!incomingByType[conn.type]) incomingByType[conn.type] = [];
+        incomingByType[conn.type].push(sourceNode);
+      });
+
+      const totalConnections = adj.outgoing.length + adj.incoming.length;
+      if (totalConnections === 0) return '';
+
+      let html = '<div class="connections-title">Connections</div>';
+
+      // Helper to render a connection group
+      const renderGroup = (label, icon, nodes, edgeType) => {
+        if (!nodes || nodes.length === 0) return '';
+        const style = edgeStyles[edgeType] || { color: '#94a3b8', label: edgeType };
+        return `
+          <div class="connection-group">
+            <div class="connection-group-header">
+              <span class="connection-group-icon">${icon}</span>
+              <span>${label}</span>
+              <span class="connection-group-count">${nodes.length}</span>
+            </div>
+            ${nodes.map(n => `
+              <div class="connected-node" onclick="navigateToNode('${n.id}')">
+                <div class="connected-node-dot" style="background: ${n.color}"></div>
+                <span class="connected-node-name">${n.name}</span>
+                <span class="connected-node-type">${n.type}</span>
+              </div>
+            `).join('')}
+          </div>
+        `;
+      };
+
+      // Outgoing connections (Links to)
+      Object.entries(outgoingByType).forEach(([type, nodes]) => {
+        const style = edgeStyles[type] || { label: type };
+        html += renderGroup(style.label + ' (out)', '→', nodes, type);
+      });
+
+      // Incoming connections (Backlinks from)
+      Object.entries(incomingByType).forEach(([type, nodes]) => {
+        const style = edgeStyles[type] || { label: type };
+        html += renderGroup(style.label + ' (in)', '←', nodes, type);
+      });
+
+      return html;
+    }
+
+    function showSidebar(node) {
+      const sb = document.getElementById('sidebar');
+      document.getElementById('sb-title').innerText = node.name;
+
+      const typeEl = document.getElementById('sb-type');
+      typeEl.innerText = node.type;
+      typeEl.style.backgroundColor = node.color;
+
+      const content = document.getElementById('sb-content');
+      let html = `
+        <div class="meta-item">
+          <span class="meta-key">Location</span>
+          <span class="meta-val"><code>${node.path}</code></span>
+        </div>`;
+
+      if (node.metadata) {
+        const priority = ['id', 'tags', 'aliases', 'role'];
+        const sortedKeys = Object.keys(node.metadata).sort((a, b) => {
+          const ai = priority.indexOf(a);
+          const bi = priority.indexOf(b);
+          if (ai !== -1 && bi !== -1) return ai - bi;
+          if (ai !== -1) return -1;
+          if (bi !== -1) return 1;
+          return a.localeCompare(b);
+        });
+
+        sortedKeys.forEach(key => {
+          if (['title', 'type'].includes(key)) return;
+          const val = node.metadata[key];
+          if (!val && val !== 0) return;
+
+          let displayVal = val;
+          if (Array.isArray(val)) {
+            displayVal = val.map(v => `<code>${v}</code>`).join(' ');
+          } else if (typeof val === 'object') {
+            displayVal = JSON.stringify(val);
+          }
+
+          html += `
+            <div class="meta-item">
+              <span class="meta-key">${key.replace(/_/g, ' ')}</span>
+              <span class="meta-val">${displayVal}</span>
+            </div>`;
+        });
+      }
+
+      content.innerHTML = html;
+
+      // Build connections UI
+      const connectionsEl = document.getElementById('sb-connections');
+      connectionsEl.innerHTML = buildConnectionsUI(node);
+
+      sb.classList.add('active');
+    }
+
+    function searchNode(query) {
+      if (!query) return;
+      const node = data.nodes.find(n => n.name.toLowerCase().includes(query.toLowerCase()));
+      if (node) {
+        navigateToNode(node.id);
+      }
+    }
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+      // Alt+Left: Go back
+      if (e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault();
+        goBack();
+      }
+      // Alt+Right: Go forward
+      if (e.altKey && e.key === 'ArrowRight') {
+        e.preventDefault();
+        goForward();
+      }
+      // Escape: Close sidebar
+      if (e.key === 'Escape') {
+        document.getElementById('sidebar').classList.remove('active');
+        selectedNode = null;
+        highlightNodes.clear();
+        highlightLinks.clear();
+        hoverNode = null;
+        updateGraphVisibility();
+      }
+      // /: Focus search
+      if (e.key === '/' && document.activeElement.tagName !== 'INPUT') {
+        e.preventDefault();
+        document.getElementById('search').focus();
+      }
+    });
+
+    // Helper
+    function convertHexToRGBA(hex, opacity) {
+      let c;
+      if(/^#([A-Fa-f0-9]{3}){1,2}$/.test(hex)){
+          c= hex.substring(1).split('');
+          if(c.length== 3){
+              c= [c[0], c[0], c[1], c[1], c[2], c[2]];
+          }
+          c= '0x'+c.join('');
+          return 'rgba('+[(c>>16)&255, (c>>8)&255, c&255].join(',')+','+opacity+')';
+      }
+      return hex;
+    }
+  </script>
+</body>
+</html>
+  

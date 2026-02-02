@@ -1,10 +1,13 @@
 # Dependencies
 node_modules/
 
-# Database files
+# Database files (but allow demo-vault's for examples)
 .zettelscript/
+!demo-vault/.zettelscript/
+!demo-vault/.zettelscript/**
 *.db
 *.db-*
+!demo-vault/.zettelscript/*.db
 SPEC.md
 
 # IDE

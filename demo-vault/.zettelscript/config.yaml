@@ -1,0 +1,70 @@
+vault:
+  path: .
+  excludePatterns:
+    - node_modules/**
+    - .git/**
+    - .zettelscript/**
+database:
+  path: .zettelscript/zettelscript.db
+embeddings:
+  provider: openai
+  model: text-embedding-3-small
+  dimensions: 1536
+retrieval:
+  defaultMaxResults: 20
+  semanticWeight: 0.5
+  lexicalWeight: 0.3
+  graphWeight: 0.2
+  rrfK: 60
+  expansionMaxDepth: 3
+  expansionBudget: 50
+manuscript:
+  enabled: false
+  validatePov: true
+  validateTimeline: true
+  validateSetupPayoff: true
+graph:
+  defaultMaxDepth: 3
+  defaultBudget: 50
+  decayFactor: 0.7
+  scoreThreshold: 0.01
+chunking:
+  maxTokens: 512
+  overlap: 50
+  minChunkSize: 50
+discovery:
+  weights:
+    locality: 0.3
+    centrality: 0.2
+    frequency: 0.2
+    matchQuality: 0.3
+  confidenceThreshold: 0.3
+  ambiguityPenalty: 0.7
+  expansionMaxDepth: 4
+  expansionBudget: 100
+cache:
+  defaultTtlMs: 300000
+  defaultMaxSize: 1000
+  mentionTtlMs: 600000
+  mentionMaxSize: 500
+  mocTtlMs: 300000
+  mocMaxSize: 100
+impact:
+  timelineRange: 5
+  maxTransitiveDepth: 3
+  maxTransitiveBudget: 50
+moc:
+  scoreNormalizationBase: 100
+  hubScoreNormalization: 50
+  clusterScoreNormalization: 20
+  defaultHubThreshold: 5
+versioning:
+  driftVersionWindow: 5
+  butterflyLogDefaultEntries: 50
+search:
+  defaultLimit: 20
+  contextWindowChars: 50
+  diffContextLines: 3
+llm:
+  provider: none
+  model: gpt-4

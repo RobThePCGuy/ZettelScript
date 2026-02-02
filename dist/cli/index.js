@@ -6,7 +6,7 @@ var __export = (target, all) => {
 };
 
 // src/cli/index.ts
-import { Command as Command12 } from "commander";
+import { Command as Command14 } from "commander";
 
 // src/cli/commands/init.ts
 import { Command } from "commander";
@@ -759,8 +759,8 @@ var NodeRepository = class {
   /**
    * Find a node by path
    */
-  async findByPath(path14) {
-    const result = await this.db.select().from(nodes).where(eq(nodes.path, path14)).limit(1);
+  async findByPath(path16) {
+    const result = await this.db.select().from(nodes).where(eq(nodes.path, path16)).limit(1);
     return result[0] ? this.rowToNode(result[0]) : null;
   }
   /**
@@ -2298,8 +2298,8 @@ var IndexingPipeline = class {
   /**
    * Remove a node by path
    */
-  async removeByPath(path14) {
-    const node = await this.nodeRepo.findByPath(path14);
+  async removeByPath(path16) {
+    const node = await this.nodeRepo.findByPath(path16);
     if (node) {
       await this.removeNode(node.nodeId);
     }
@@ -2344,8 +2344,8 @@ var GraphEngine = class {
   async getNode(nodeId) {
     return this.nodeRepo.findById(nodeId);
   }
-  async getNodeByPath(path14) {
-    return this.nodeRepo.findByPath(path14);
+  async getNodeByPath(path16) {
+    return this.nodeRepo.findByPath(path16);
   }
   async getNodeByTitle(title) {
     return this.nodeRepo.findByTitle(title);
@@ -3095,10 +3095,10 @@ var indexCommand = new Command2("index").description("Index all markdown files i
     let lastProgress = 0;
     const result = await fullIndex(ctx.pipeline, ctx.vaultPath, {
       excludePatterns: ctx.config.vault.excludePatterns,
-      onProgress: (current, total, path14) => {
+      onProgress: (current, total, path16) => {
         if (current > lastProgress) {
           lastProgress = current;
-          spinner.update(`Indexing ${current}/${total}: ${path14}`);
+          spinner.update(`Indexing ${current}/${total}: ${path16}`);
         }
       }
     });
@@ -3563,22 +3563,22 @@ queryCommand.command("path <from> <to>").description("Find shortest path between
     }
     console.log(`Path from "${fromNode.title}" to "${toNode.title}":
 `);
-    const path14 = await ctx.graphEngine.findShortestPath(fromNode.nodeId, toNode.nodeId);
-    if (!path14) {
+    const path16 = await ctx.graphEngine.findShortestPath(fromNode.nodeId, toNode.nodeId);
+    if (!path16) {
       console.log("No path found.");
     } else {
-      const pathNodes = await ctx.nodeRepository.findByIds(path14);
+      const pathNodes = await ctx.nodeRepository.findByIds(path16);
       const nodeMap = new Map(pathNodes.map((n) => [n.nodeId, n]));
-      for (let i = 0; i < path14.length; i++) {
-        const nodeId = path14[i];
+      for (let i = 0; i < path16.length; i++) {
+        const nodeId = path16[i];
         if (nodeId) {
           const node = nodeMap.get(nodeId);
-          const prefix = i === 0 ? "\u2192" : i === path14.length - 1 ? "\u25C9" : "\u2193";
+          const prefix = i === 0 ? "\u2192" : i === path16.length - 1 ? "\u25C9" : "\u2193";
           console.log(`  ${prefix} ${node?.title || nodeId}`);
         }
       }
       console.log(`
-Path length: ${path14.length - 1} hops`);
+Path length: ${path16.length - 1} hops`);
     }
     ctx.connectionManager.close();
   } catch (error) {
@@ -4929,14 +4929,14 @@ var discoverCommand = new Command6("discover").description("Find unlinked mentio
       return;
     }
     let totalMentions = 0;
-    for (const { nodeId, path: path14, title } of nodesToCheck) {
+    for (const { nodeId, path: path16, title } of nodesToCheck) {
       const mentions = await detector.detectInNode(nodeId);
       if (mentions.length === 0) continue;
       const ranked = await ranker.rank(mentions);
       const filtered = ranked.filter((m) => m.confidence >= threshold);
       if (filtered.length === 0) continue;
       console.log(`
-${title} (${path14}):`);
+${title} (${path16}):`);
       const display = filtered.slice(0, limit);
       const rows = display.map((m) => [
         m.surfaceText,
@@ -6788,6 +6788,566 @@ function kvPair(key, value) {
   return `**${key}:** ${value}`;
 }
 
+// src/generators/relationships.ts
+var DEFAULT_CO_OCCURRENCE_THRESHOLD = 2;
+function normalizeName(s) {
+  return s.toLowerCase().replace(/\s+/g, " ").replace(/[_-]+/g, " ").trim();
+}
+function getEventFilename(event) {
+  const chapterStr = event.chapter.toString().padStart(2, "0");
+  const eventNum = event.id.replace(/[^0-9]/g, "").padStart(3, "0");
+  return `Event-${chapterStr}-${eventNum}`;
+}
+var RelationshipEngine = class {
+  kb;
+  entityIndex;
+  nameToId;
+  coOccurrenceThreshold;
+  constructor(kb, coOccurrenceThreshold) {
+    this.kb = kb;
+    this.coOccurrenceThreshold = coOccurrenceThreshold ?? DEFAULT_CO_OCCURRENCE_THRESHOLD;
+    this.entityIndex = /* @__PURE__ */ new Map();
+    this.nameToId = /* @__PURE__ */ new Map();
+    this.buildEntityIndex();
+  }
+  /**
+   * Build an index of all entities for quick lookup
+   */
+  buildEntityIndex() {
+    for (const char of this.kb.characters) {
+      const info = {
+        id: char.id,
+        name: char.canonical_name,
+        type: "character",
+        chapters: char.chapters_present || [],
+        linkTarget: char.canonical_name
+      };
+      this.entityIndex.set(char.id, info);
+      this.nameToId.set(normalizeName(char.canonical_name), char.id);
+      if (char.aliases) {
+        for (const alias of char.aliases) {
+          this.nameToId.set(normalizeName(alias), char.id);
+        }
+      }
+    }
+    if (this.kb.name_normalization) {
+      for (const nn of this.kb.name_normalization) {
+        const canonId = this.nameToId.get(normalizeName(nn.canonical));
+        if (!canonId) continue;
+        for (const variant of nn.variants || []) {
+          this.nameToId.set(normalizeName(variant), canonId);
+        }
+      }
+    }
+    for (const loc of this.kb.locations) {
+      const info = {
+        id: loc.id,
+        name: loc.name,
+        type: "location",
+        chapters: loc.chapters_seen || [],
+        linkTarget: loc.name
+      };
+      this.entityIndex.set(loc.id, info);
+      this.nameToId.set(normalizeName(loc.name), loc.id);
+    }
+    for (const obj of this.kb.objects) {
+      const info = {
+        id: obj.id,
+        name: obj.name,
+        type: "object",
+        chapters: [],
+        // Objects don't have chapter info directly - derived later
+        linkTarget: obj.name
+      };
+      this.entityIndex.set(obj.id, info);
+      this.nameToId.set(normalizeName(obj.name), obj.id);
+    }
+    for (const event of this.kb.timeline) {
+      const info = {
+        id: event.id,
+        name: event.description,
+        type: "event",
+        chapters: [event.chapter],
+        linkTarget: getEventFilename(event),
+        linkDisplay: event.description
+      };
+      this.entityIndex.set(event.id, info);
+    }
+  }
+  /**
+   * Resolve a name or ID to an entity info
+   */
+  resolveEntity(nameOrId) {
+    if (this.entityIndex.has(nameOrId)) {
+      return this.entityIndex.get(nameOrId);
+    }
+    const id = this.nameToId.get(normalizeName(nameOrId));
+    if (id) {
+      return this.entityIndex.get(id);
+    }
+    return void 0;
+  }
+  /**
+   * Get all relationships for a given entity
+   */
+  getRelationshipsFor(entityId) {
+    const relationships = [];
+    const seen = /* @__PURE__ */ new Set();
+    const explicit = this.getExplicitRelationships(entityId);
+    for (const rel of explicit) {
+      const key = `${rel.targetId}:${rel.relationshipType}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        relationships.push(rel);
+      }
+    }
+    const inferred = this.getInferredRelationships(entityId);
+    for (const rel of inferred) {
+      const key = `${rel.targetId}:${rel.relationshipType}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        relationships.push(rel);
+      }
+    }
+    const coOccurrence = this.getCoOccurrenceRelationships(entityId);
+    for (const rel of coOccurrence) {
+      const hasExisting = relationships.some((r) => r.targetId === rel.targetId);
+      if (!hasExisting) {
+        relationships.push(rel);
+      }
+    }
+    return relationships;
+  }
+  /**
+   * Extract explicit relationships from kb.relationships[]
+   */
+  getExplicitRelationships(entityId) {
+    const relationships = [];
+    if (!this.kb.relationships) {
+      return relationships;
+    }
+    for (const rel of this.kb.relationships) {
+      let targetId = null;
+      let type = rel.type;
+      if (rel.sourceId === entityId) {
+        targetId = rel.targetId;
+      } else if (rel.targetId === entityId) {
+        targetId = rel.sourceId;
+        type = this.reverseRelationshipType(rel.type);
+      }
+      if (targetId) {
+        const targetInfo = this.resolveEntity(targetId);
+        if (targetInfo) {
+          relationships.push({
+            targetId: targetInfo.id,
+            targetName: targetInfo.name,
+            targetType: targetInfo.type,
+            relationshipType: type,
+            description: rel.description,
+            chapters: rel.chapters,
+            source: "explicit",
+            linkTarget: targetInfo.linkTarget,
+            linkDisplay: targetInfo.linkDisplay
+          });
+        }
+      }
+    }
+    return relationships;
+  }
+  /**
+   * Reverse a relationship type for bidirectional lookup
+   */
+  reverseRelationshipType(type) {
+    switch (type) {
+      case "owns":
+      case "holds":
+        return "holds";
+      // object is held by
+      case "formerly_held":
+        return "formerly_held";
+      case "mentor":
+        return "mentor";
+      // mentee relationship
+      case "contains":
+        return "contains";
+      // contained by
+      case "occurred_at":
+        return "occurred_at";
+      default:
+        return type;
+    }
+  }
+  /**
+   * Infer relationships from entity fields
+   */
+  getInferredRelationships(entityId) {
+    const relationships = [];
+    const entity = this.entityIndex.get(entityId);
+    if (!entity) {
+      return relationships;
+    }
+    if (entity.type === "character") {
+      const char = this.kb.characters.find((c) => c.id === entityId);
+      if (char?.equipment) {
+        for (const equipName of char.equipment) {
+          const objInfo = this.resolveEntity(equipName);
+          if (objInfo) {
+            relationships.push({
+              targetId: objInfo.id,
+              targetName: objInfo.name,
+              targetType: "object",
+              relationshipType: "owns",
+              source: "inferred",
+              linkTarget: objInfo.linkTarget,
+              linkDisplay: objInfo.linkDisplay
+            });
+          }
+        }
+      }
+      for (const obj of this.kb.objects) {
+        if (obj.holder) {
+          const holderInfo = this.resolveEntity(obj.holder);
+          if (holderInfo?.id === entityId) {
+            const objEntityInfo = this.entityIndex.get(obj.id);
+            relationships.push({
+              targetId: obj.id,
+              targetName: obj.name,
+              targetType: "object",
+              relationshipType: "owns",
+              source: "inferred",
+              linkTarget: objEntityInfo?.linkTarget || obj.name,
+              linkDisplay: objEntityInfo?.linkDisplay
+            });
+          }
+        }
+      }
+      for (const event of this.kb.timeline) {
+        if (char?.chapters_present?.includes(event.chapter)) {
+          const eventInfo = this.entityIndex.get(event.id);
+          if (eventInfo) {
+            relationships.push({
+              targetId: event.id,
+              targetName: event.description,
+              targetType: "event",
+              relationshipType: "participated",
+              chapters: [event.chapter],
+              source: "inferred",
+              linkTarget: eventInfo.linkTarget,
+              linkDisplay: eventInfo.linkDisplay
+            });
+          }
+        }
+      }
+    }
+    if (entity.type === "object") {
+      const obj = this.kb.objects.find((o) => o.id === entityId);
+      if (obj?.holder) {
+        const charInfo = this.resolveEntity(obj.holder);
+        if (charInfo) {
+          relationships.push({
+            targetId: charInfo.id,
+            targetName: charInfo.name,
+            targetType: "character",
+            relationshipType: "holds",
+            source: "inferred",
+            linkTarget: charInfo.linkTarget,
+            linkDisplay: charInfo.linkDisplay
+          });
+        }
+      }
+      if (obj?.holders) {
+        for (const holderName of obj.holders) {
+          if (obj.holder && normalizeName(holderName) === normalizeName(obj.holder)) continue;
+          const charInfo = this.resolveEntity(holderName);
+          if (charInfo) {
+            relationships.push({
+              targetId: charInfo.id,
+              targetName: charInfo.name,
+              targetType: "character",
+              relationshipType: "formerly_held",
+              source: "inferred",
+              linkTarget: charInfo.linkTarget,
+              linkDisplay: charInfo.linkDisplay
+            });
+          }
+        }
+      }
+    }
+    if (entity.type === "event") {
+      const event = this.kb.timeline.find((e) => e.id === entityId);
+      if (event) {
+        for (const loc of this.kb.locations) {
+          if (loc.chapters_seen?.includes(event.chapter)) {
+            const locInfo = this.entityIndex.get(loc.id);
+            if (locInfo) {
+              relationships.push({
+                targetId: loc.id,
+                targetName: loc.name,
+                targetType: "location",
+                relationshipType: "occurred_at",
+                chapters: [event.chapter],
+                source: "inferred",
+                linkTarget: locInfo.linkTarget,
+                linkDisplay: locInfo.linkDisplay
+              });
+            }
+          }
+        }
+        for (const char of this.kb.characters) {
+          if (char.chapters_present?.includes(event.chapter)) {
+            const charInfo = this.entityIndex.get(char.id);
+            if (charInfo) {
+              relationships.push({
+                targetId: char.id,
+                targetName: char.canonical_name,
+                targetType: "character",
+                relationshipType: "participated",
+                chapters: [event.chapter],
+                source: "inferred",
+                linkTarget: charInfo.linkTarget,
+                linkDisplay: charInfo.linkDisplay
+              });
+            }
+          }
+        }
+      }
+    }
+    if (entity.type === "location") {
+      const loc = this.kb.locations.find((l) => l.id === entityId);
+      if (loc?.chapters_seen) {
+        for (const event of this.kb.timeline) {
+          if (loc.chapters_seen.includes(event.chapter)) {
+            const eventInfo = this.entityIndex.get(event.id);
+            if (eventInfo) {
+              relationships.push({
+                targetId: event.id,
+                targetName: event.description,
+                targetType: "event",
+                relationshipType: "occurred_at",
+                chapters: [event.chapter],
+                source: "inferred",
+                linkTarget: eventInfo.linkTarget,
+                linkDisplay: eventInfo.linkDisplay
+              });
+            }
+          }
+        }
+      }
+    }
+    return relationships;
+  }
+  /**
+   * Compute co-occurrence relationships based on shared chapters
+   */
+  getCoOccurrenceRelationships(entityId) {
+    const relationships = [];
+    const entity = this.entityIndex.get(entityId);
+    if (!entity || entity.chapters.length === 0) {
+      return relationships;
+    }
+    const entityChapters = new Set(entity.chapters);
+    for (const [otherId, otherInfo] of this.entityIndex) {
+      if (otherId === entityId) continue;
+      let otherChapters = otherInfo.chapters;
+      if (otherInfo.type === "object" && otherChapters.length === 0) {
+        otherChapters = this.deriveObjectChapters(otherId);
+      }
+      if (otherChapters.length === 0) continue;
+      const sharedChapters = otherChapters.filter((ch) => entityChapters.has(ch));
+      if (sharedChapters.length >= this.coOccurrenceThreshold) {
+        relationships.push({
+          targetId: otherInfo.id,
+          targetName: otherInfo.name,
+          targetType: otherInfo.type,
+          relationshipType: "co_occurrence",
+          chapters: sharedChapters.sort((a, b) => a - b),
+          source: "co_occurrence",
+          linkTarget: otherInfo.linkTarget,
+          linkDisplay: otherInfo.linkDisplay
+        });
+      }
+    }
+    return relationships;
+  }
+  /**
+   * Derive chapter presence for an object from holder relationships
+   */
+  deriveObjectChapters(objectId) {
+    const chapters = /* @__PURE__ */ new Set();
+    const obj = this.kb.objects.find((o) => o.id === objectId);
+    if (!obj) return [];
+    if (obj.holder) {
+      const holderInfo = this.resolveEntity(obj.holder);
+      if (holderInfo) {
+        for (const ch of holderInfo.chapters) {
+          chapters.add(ch);
+        }
+      }
+    }
+    if (obj.holders) {
+      for (const holderName of obj.holders) {
+        const holderInfo = this.resolveEntity(holderName);
+        if (holderInfo) {
+          for (const ch of holderInfo.chapters) {
+            chapters.add(ch);
+          }
+        }
+      }
+    }
+    return Array.from(chapters).sort((a, b) => a - b);
+  }
+  /**
+   * Group relationships by entity type
+   */
+  groupByEntityType(relationships) {
+    const grouped = /* @__PURE__ */ new Map();
+    for (const rel of relationships) {
+      const existing = grouped.get(rel.targetType) || [];
+      existing.push(rel);
+      grouped.set(rel.targetType, existing);
+    }
+    return grouped;
+  }
+  /**
+   * Group relationships by relationship kind
+   */
+  groupByType(relationships) {
+    const grouped = /* @__PURE__ */ new Map();
+    for (const rel of relationships) {
+      const existing = grouped.get(rel.relationshipType) || [];
+      existing.push(rel);
+      grouped.set(rel.relationshipType, existing);
+    }
+    return grouped;
+  }
+};
+
+// src/generators/related-entities.ts
+function formatChapterList(chapters) {
+  if (!chapters || chapters.length === 0) {
+    return "";
+  }
+  const ranges = [];
+  let rangeStart = chapters[0];
+  let rangeEnd = chapters[0];
+  for (let i = 1; i <= chapters.length; i++) {
+    if (i < chapters.length && chapters[i] === rangeEnd + 1) {
+      rangeEnd = chapters[i];
+    } else {
+      if (rangeStart === rangeEnd) {
+        ranges.push(String(rangeStart));
+      } else if (rangeEnd === rangeStart + 1) {
+        ranges.push(`${rangeStart}, ${rangeEnd}`);
+      } else {
+        ranges.push(`${rangeStart}-${rangeEnd}`);
+      }
+      if (i < chapters.length) {
+        rangeStart = chapters[i];
+        rangeEnd = chapters[i];
+      }
+    }
+  }
+  return `Ch. ${ranges.join(", ")}`;
+}
+function formatRelationshipType(type) {
+  switch (type) {
+    case "ally":
+      return "ally";
+    case "enemy":
+      return "enemy";
+    case "family":
+      return "family";
+    case "mentor":
+      return "mentor";
+    case "rival":
+      return "rival";
+    case "visits":
+      return "visits";
+    case "resides":
+      return "residence";
+    case "owns":
+      return "owns";
+    case "holds":
+      return "held by";
+    case "formerly_held":
+      return "formerly held by";
+    case "participated":
+      return "participated";
+    case "witnessed":
+      return "witnessed";
+    case "contains":
+      return "contains";
+    case "occurred_at":
+      return "occurred at";
+    case "co_occurrence":
+      return "appears with";
+    case "associated":
+      return "associated";
+    default:
+      return type;
+  }
+}
+function getEntityTypeSectionName(type) {
+  switch (type) {
+    case "character":
+      return "Characters";
+    case "location":
+      return "Locations";
+    case "object":
+      return "Objects";
+    case "event":
+      return "Events";
+    default:
+      return "Other";
+  }
+}
+function buildRelationshipLine(rel) {
+  const link = rel.linkDisplay ? wikilink(rel.linkTarget || rel.targetName, rel.linkDisplay) : wikilink(rel.linkTarget || rel.targetName);
+  const relType = formatRelationshipType(rel.relationshipType);
+  const chapters = formatChapterList(rel.chapters);
+  let line = `- ${link}`;
+  if (rel.relationshipType !== "co_occurrence") {
+    line += ` - ${relType}`;
+  }
+  if (chapters) {
+    line += ` (${chapters})`;
+  }
+  return line;
+}
+function buildRelatedEntitiesSection(relationships) {
+  if (relationships.length === 0) {
+    return "";
+  }
+  const parts = [];
+  parts.push(section("Related Entities"));
+  const grouped = /* @__PURE__ */ new Map();
+  for (const rel of relationships) {
+    const existing = grouped.get(rel.targetType) || [];
+    existing.push(rel);
+    grouped.set(rel.targetType, existing);
+  }
+  const typeOrder = ["character", "location", "object", "event"];
+  for (const entityType of typeOrder) {
+    const rels = grouped.get(entityType);
+    if (!rels || rels.length === 0) continue;
+    rels.sort((a, b) => {
+      const sourceOrder = { explicit: 0, inferred: 1, co_occurrence: 2 };
+      const sourceCompare = sourceOrder[a.source] - sourceOrder[b.source];
+      if (sourceCompare !== 0) return sourceCompare;
+      return a.targetName.localeCompare(b.targetName);
+    });
+    parts.push(section(getEntityTypeSectionName(entityType), 3));
+    for (const rel of rels) {
+      parts.push(buildRelationshipLine(rel) + "\n");
+    }
+    parts.push("\n");
+  }
+  return parts.join("");
+}
+function shouldIncludeRelatedEntities(includeRelatedEntities) {
+  return includeRelatedEntities !== false;
+}
+
 // src/generators/characters.ts
 var CHARACTERS_SUBDIR = "Characters";
 function buildCharacterFrontmatter(char) {
@@ -6832,7 +7392,7 @@ function buildTags(char) {
   }
   return tags;
 }
-function buildCharacterContent(char) {
+function buildCharacterContent(char, relationshipEngine, includeRelated) {
   const parts = [];
   parts.push(`# ${char.canonical_name}
 
@@ -6898,6 +7458,13 @@ function buildCharacterContent(char) {
   if (char.equipment && char.equipment.length > 0) {
     parts.push(section("Equipment"));
     parts.push(char.equipment.map((e) => `- ${wikilink(e)}`).join("\n") + "\n\n");
+  }
+  if (shouldIncludeRelatedEntities(includeRelated) && relationshipEngine) {
+    const relationships = relationshipEngine.getRelationshipsFor(char.id);
+    const relatedSection = buildRelatedEntitiesSection(relationships);
+    if (relatedSection) {
+      parts.push(relatedSection);
+    }
   }
   if (char.coping_mechanism) {
     parts.push(section("Coping Mechanism"));
@@ -7022,6 +7589,8 @@ async function generateCharacters(options) {
     return result;
   }
   const tracker = new EntityTracker();
+  const relationshipEngine = new RelationshipEngine(kb, options.coOccurrenceThreshold);
+  const includeRelated = shouldIncludeRelatedEntities(options.includeRelatedEntities);
   for (const char of kb.characters) {
     const name = char.canonical_name;
     if (!tracker.add(name)) {
@@ -7033,7 +7602,7 @@ async function generateCharacters(options) {
     try {
       const filePath = generateNotePath(options.outputDir, CHARACTERS_SUBDIR, name);
       const frontmatter = buildCharacterFrontmatter(char);
-      const content = buildCharacterContent(char);
+      const content = buildCharacterContent(char, relationshipEngine, includeRelated);
       const note = buildNote(frontmatter, content);
       const written = await writeNoteFile(filePath, note, {
         force: options.force,
@@ -7235,7 +7804,7 @@ function buildTags2(loc, realm) {
   }
   return tags;
 }
-function buildLocationContent(loc) {
+function buildLocationContent(loc, relationshipEngine, includeRelated) {
   const parts = [];
   const realm = classifyRealm(loc);
   parts.push(`# ${loc.name}
@@ -7259,6 +7828,13 @@ function buildLocationContent(loc) {
   if (loc.features && loc.features.length > 0) {
     parts.push(section("Features"));
     parts.push(loc.features.map((f) => `- ${f}`).join("\n") + "\n\n");
+  }
+  if (shouldIncludeRelatedEntities(includeRelated) && relationshipEngine) {
+    const relationships = relationshipEngine.getRelationshipsFor(loc.id);
+    const relatedSection = buildRelatedEntitiesSection(relationships);
+    if (relatedSection) {
+      parts.push(relatedSection);
+    }
   }
   if (realm === "dimensional") {
     parts.push(section("Dimensional Properties"));
@@ -7311,6 +7887,8 @@ async function generateLocations(options) {
     return result;
   }
   const tracker = new EntityTracker();
+  const relationshipEngine = new RelationshipEngine(kb, options.coOccurrenceThreshold);
+  const includeRelated = shouldIncludeRelatedEntities(options.includeRelatedEntities);
   for (const loc of kb.locations) {
     const name = loc.name;
     if (!tracker.add(name)) {
@@ -7322,7 +7900,7 @@ async function generateLocations(options) {
     try {
       const filePath = generateNotePath(options.outputDir, LOCATIONS_SUBDIR, name);
       const frontmatter = buildLocationFrontmatter(loc);
-      const content = buildLocationContent(loc);
+      const content = buildLocationContent(loc, relationshipEngine, includeRelated);
       const note = buildNote(frontmatter, content);
       const written = await writeNoteFile(filePath, note, {
         force: options.force,
@@ -7394,7 +7972,7 @@ function getLockIcon(lockLevel) {
       return "\u{1F4CE}";
   }
 }
-function buildObjectContent(obj) {
+function buildObjectContent(obj, relationshipEngine, includeRelated) {
   const parts = [];
   const lockLevel = getLockLevel(obj);
   const lockIcon = getLockIcon(lockLevel);
@@ -7427,6 +8005,13 @@ function buildObjectContent(obj) {
   if (obj.significance) {
     parts.push(section("Significance"));
     parts.push(obj.significance + "\n\n");
+  }
+  if (shouldIncludeRelatedEntities(includeRelated) && relationshipEngine) {
+    const relationships = relationshipEngine.getRelationshipsFor(obj.id);
+    const relatedSection = buildRelatedEntitiesSection(relationships);
+    if (relatedSection) {
+      parts.push(relatedSection);
+    }
   }
   if (lockLevel === "CRITICAL") {
     parts.push(section("Continuity Lock", 3));
@@ -7465,6 +8050,8 @@ async function generateObjects(options) {
     return result;
   }
   const tracker = new EntityTracker();
+  const relationshipEngine = new RelationshipEngine(kb, options.coOccurrenceThreshold);
+  const includeRelated = shouldIncludeRelatedEntities(options.includeRelatedEntities);
   for (const obj of kb.objects) {
     const name = obj.name;
     if (!tracker.add(name)) {
@@ -7476,7 +8063,7 @@ async function generateObjects(options) {
     try {
       const filePath = generateNotePath(options.outputDir, OBJECTS_SUBDIR, name);
       const frontmatter = buildObjectFrontmatter(obj);
-      const content = buildObjectContent(obj);
+      const content = buildObjectContent(obj, relationshipEngine, includeRelated);
       const note = buildNote(frontmatter, content);
       const written = await writeNoteFile(filePath, note, {
         force: options.force,
@@ -7739,7 +8326,7 @@ function buildTags4(event) {
   }
   return tags;
 }
-function buildEventContent(event) {
+function buildEventContent(event, relationshipEngine, includeRelated) {
   const parts = [];
   parts.push(`# ${event.description}
 
@@ -7758,6 +8345,13 @@ function buildEventContent(event) {
   }
   parts.push(section("Description"));
   parts.push(event.description + "\n\n");
+  if (shouldIncludeRelatedEntities(includeRelated) && relationshipEngine) {
+    const relationships = relationshipEngine.getRelationshipsFor(event.id);
+    const relatedSection = buildRelatedEntitiesSection(relationships);
+    if (relatedSection) {
+      parts.push(relatedSection);
+    }
+  }
   parts.push(section("Related Notes"));
   parts.push("*Characters, locations, and objects involved in this event:*\n\n");
   parts.push("```dataview\n");
@@ -7776,7 +8370,7 @@ function buildEventContent(event) {
   parts.push("```\n\n");
   return parts.join("");
 }
-function getEventFilename(event) {
+function getEventFilename2(event) {
   const chapterStr = event.chapter.toString().padStart(2, "0");
   const eventNum = event.id.replace(/[^0-9]/g, "").padStart(3, "0");
   return `Event-${chapterStr}-${eventNum}`;
@@ -7803,6 +8397,8 @@ async function generateTimeline(options) {
     return result;
   }
   const tracker = new EntityTracker();
+  const relationshipEngine = new RelationshipEngine(kb, options.coOccurrenceThreshold);
+  const includeRelated = shouldIncludeRelatedEntities(options.includeRelatedEntities);
   const sortedEvents = [...kb.timeline].sort((a, b) => a.chapter - b.chapter);
   for (const event of sortedEvents) {
     const eventId = event.id;
@@ -7813,10 +8409,10 @@ async function generateTimeline(options) {
       continue;
     }
     try {
-      const filename = getEventFilename(event);
+      const filename = getEventFilename2(event);
       const filePath = generateNotePath(options.outputDir, TIMELINE_SUBDIR, filename);
       const frontmatter = buildEventFrontmatter(event);
-      const content = buildEventContent(event);
+      const content = buildEventContent(event, relationshipEngine, includeRelated);
       const note = buildNote(frontmatter, content);
       const written = await writeNoteFile(filePath, note, {
         force: options.force,
@@ -8752,8 +9348,1024 @@ Errors (${result.errors.length}):`);
   }
 });
 
+// src/cli/commands/visualize.ts
+import { Command as Command12 } from "commander";
+import process2 from "process";
+import * as fs11 from "fs";
+import * as path14 from "path";
+import open from "open";
+var typeColors = {
+  note: "#94a3b8",
+  // Slate 400
+  scene: "#a78bfa",
+  // Violet 400
+  character: "#34d399",
+  // Emerald 400
+  location: "#60a5fa",
+  // Blue 400
+  object: "#fbbf24",
+  // Amber 400
+  event: "#f87171",
+  // Red 400
+  concept: "#f472b6",
+  // Pink 400
+  moc: "#fb923c",
+  // Orange 400
+  timeline: "#818cf8",
+  // Indigo 400
+  draft: "#52525b"
+  // Zinc 600
+};
+var edgeStyles = {
+  explicit_link: { color: "#22d3ee", dash: [], label: "Links to" },
+  // Cyan
+  backlink: { color: "#a78bfa", dash: [5, 5], label: "Backlinks" },
+  // Violet
+  sequence: { color: "#34d399", dash: [], label: "Sequence" },
+  // Emerald
+  hierarchy: { color: "#fbbf24", dash: [], label: "Hierarchy" },
+  // Amber
+  participation: { color: "#f472b6", dash: [], label: "Participation" },
+  // Pink
+  pov_visible_to: { color: "#60a5fa", dash: [3, 3], label: "POV Visible" },
+  // Blue
+  causes: { color: "#f87171", dash: [], label: "Causes" },
+  // Red
+  setup_payoff: { color: "#fb923c", dash: [], label: "Setup/Payoff" },
+  // Orange
+  semantic: { color: "#94a3b8", dash: [2, 2], label: "Semantic" },
+  // Gray
+  mention: { color: "#2dd4bf", dash: [2, 2], label: "Mention" },
+  // Teal
+  alias: { color: "#818cf8", dash: [4, 2], label: "Alias" }
+  // Indigo
+};
+function generateVisualizationHtml(graphData, nodeTypeColors) {
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>ZettelScript Atlas</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel-bg: rgba(30, 41, 59, 0.7);
+      --border: rgba(148, 163, 184, 0.2);
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+      --accent: #38bdf8;
+    }
+    body { margin: 0; font-family: 'Inter', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text-main); overflow: hidden; }
+
+    #graph { width: 100vw; height: 100vh; cursor: crosshair; }
+
+    /* Glassmorphism Panels */
+    .panel {
+      background: var(--panel-bg);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
+      border-radius: 12px;
+      padding: 16px;
+      position: absolute;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    /* Breadcrumb Navigation */
+    #breadcrumbs {
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      opacity: 0;
+      pointer-events: none;
+    }
+    #breadcrumbs.active { opacity: 1; pointer-events: auto; }
+
+    .nav-btn {
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      width: 32px;
+      height: 32px;
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+      font-size: 1rem;
+    }
+    .nav-btn:hover:not(:disabled) { background: rgba(56, 189, 248, 0.2); color: var(--accent); border-color: var(--accent); }
+    .nav-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+    .breadcrumb-trail {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      max-width: 400px;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .breadcrumb-trail::-webkit-scrollbar { display: none; }
+
+    .breadcrumb-item {
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      white-space: nowrap;
+      color: var(--text-muted);
+      transition: all 0.2s;
+    }
+    .breadcrumb-item:hover { background: rgba(255,255,255,0.1); color: var(--text-main); }
+    .breadcrumb-item.current { color: var(--accent); font-weight: 600; }
+    .breadcrumb-sep { color: var(--text-muted); opacity: 0.5; }
+
+    /* Sidebar */
+    #sidebar {
+      top: 20px;
+      right: 20px;
+      width: 320px;
+      max-height: calc(100vh - 40px);
+      overflow-y: auto;
+      transform: translateX(400px);
+      opacity: 0;
+    }
+    #sidebar.active { transform: translateX(0); opacity: 1; }
+    #sidebar::-webkit-scrollbar { width: 6px; }
+    #sidebar::-webkit-scrollbar-track { background: transparent; }
+    #sidebar::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.3); border-radius: 3px; }
+
+    .node-header { padding-bottom: 12px; border-bottom: 1px solid var(--border); margin-bottom: 12px; }
+    .node-title { margin: 0; font-size: 1.25rem; font-weight: 600; line-height: 1.3; color: var(--text-main); }
+    .node-badge {
+      display: inline-block; margin-top: 8px; padding: 4px 8px;
+      border-radius: 99px; font-size: 0.75rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.05em;
+      color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+    }
+
+    .meta-grid { display: grid; gap: 12px; }
+    .meta-item { display: flex; flex-direction: column; gap: 4px; }
+    .meta-key { font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600; }
+    .meta-val { font-size: 0.9rem; color: var(--text-main); word-break: break-word; line-height: 1.5; }
+
+    code {
+      background: rgba(0, 0, 0, 0.3);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85em;
+    }
+
+    /* Connections Section */
+    .connections-section {
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+    }
+    .connections-title {
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      margin-bottom: 12px;
+      letter-spacing: 0.05em;
+    }
+    .connection-group {
+      margin-bottom: 12px;
+    }
+    .connection-group-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+    }
+    .connection-group-icon {
+      font-size: 0.9rem;
+    }
+    .connection-group-count {
+      background: rgba(255,255,255,0.1);
+      padding: 1px 6px;
+      border-radius: 10px;
+      font-size: 0.7rem;
+    }
+    .connected-node {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 8px;
+      margin: 2px 0;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .connected-node:hover {
+      background: rgba(56, 189, 248, 0.15);
+    }
+    .connected-node-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .connected-node-name {
+      font-size: 0.85rem;
+      color: var(--text-main);
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .connected-node-type {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      text-transform: lowercase;
+    }
+
+    /* Controls & Legend */
+    #controls {
+      top: 20px;
+      left: 20px;
+      max-width: 250px;
+      max-height: calc(100vh - 40px);
+      overflow-y: auto;
+    }
+    #controls::-webkit-scrollbar { width: 6px; }
+    #controls::-webkit-scrollbar-track { background: transparent; }
+    #controls::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.3); border-radius: 3px; }
+
+    .search-wrapper { position: relative; margin-bottom: 16px; }
+    input[type="text"] {
+      width: 100%;
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      padding: 10px 12px;
+      border-radius: 8px;
+      outline: none;
+      box-sizing: border-box;
+      transition: border-color 0.2s;
+    }
+    input[type="text"]:focus { border-color: var(--accent); }
+
+    .legend-title { font-size: 0.8rem; font-weight: 700; color: var(--text-muted); margin-bottom: 8px; text-transform: uppercase; }
+    .legend-grid { display: grid; grid-template-columns: 1fr; gap: 4px; }
+    .legend-item {
+      display: flex; align-items: center; gap: 10px;
+      font-size: 0.85rem; cursor: pointer; padding: 4px 8px;
+      border-radius: 6px; transition: background 0.2s;
+      user-select: none;
+    }
+    .legend-item:hover { background: rgba(255,255,255,0.05); }
+    .legend-item.hidden { opacity: 0.4; }
+    .legend-dot { width: 10px; height: 10px; border-radius: 50%; box-shadow: 0 0 8px currentColor; }
+
+    /* Edge Type Filter */
+    .filter-section {
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+    }
+    .edge-legend-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 6px;
+      transition: background 0.2s;
+      user-select: none;
+    }
+    .edge-legend-item:hover { background: rgba(255,255,255,0.05); }
+    .edge-legend-item.hidden { opacity: 0.4; }
+    .edge-line {
+      width: 20px;
+      height: 2px;
+      border-radius: 1px;
+    }
+
+    /* Keyboard shortcuts hint */
+    .shortcuts-hint {
+      margin-top: 16px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      text-align: center;
+      line-height: 1.6;
+    }
+    kbd {
+      background: rgba(0, 0, 0, 0.3);
+      padding: 2px 5px;
+      border-radius: 3px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.7rem;
+    }
+  </style>
+  <script src="https://unpkg.com/force-graph"></script>
+</head>
+<body>
+  <div id="breadcrumbs" class="panel">
+    <button class="nav-btn" id="btn-back" onclick="goBack()" disabled title="Go back (Alt+Left)">&#8592;</button>
+    <button class="nav-btn" id="btn-forward" onclick="goForward()" disabled title="Go forward (Alt+Right)">&#8594;</button>
+    <div class="breadcrumb-trail" id="breadcrumb-trail"></div>
+  </div>
+
+  <div id="controls" class="panel">
+    <div class="search-wrapper">
+      <input type="text" id="search" placeholder="Search nodes... (/)" oninput="searchNode(this.value)">
+    </div>
+    <div class="legend-title">Filter by Node Type</div>
+    <div class="legend-grid" id="legend"></div>
+
+    <div class="filter-section">
+      <div class="legend-title">Filter by Edge Type</div>
+      <div class="legend-grid" id="edge-legend"></div>
+    </div>
+
+    <div class="shortcuts-hint">
+      <kbd>/</kbd> Search &nbsp; <kbd>Esc</kbd> Close<br>
+      <kbd>Alt+&#8592;</kbd> Back &nbsp; <kbd>Alt+&#8594;</kbd> Forward
+    </div>
+  </div>
+
+  <div id="graph"></div>
+
+  <div id="sidebar" class="panel">
+    <div class="node-header">
+      <h2 class="node-title" id="sb-title"></h2>
+      <span class="node-badge" id="sb-type"></span>
+    </div>
+    <div id="sb-content" class="meta-grid"></div>
+    <div id="sb-connections" class="connections-section"></div>
+  </div>
+
+  <script>
+    const data = ${JSON.stringify(graphData)};
+    const typeColors = ${JSON.stringify(nodeTypeColors)};
+    const edgeStyles = ${JSON.stringify(edgeStyles)};
+
+    // Pre-compute adjacency index for O(1) lookups
+    const adjacency = {};
+    const nodeMap = {};
+    data.nodes.forEach(n => {
+      nodeMap[n.id] = n;
+      adjacency[n.id] = { outgoing: [], incoming: [] };
+    });
+    data.links.forEach(link => {
+      const srcId = typeof link.source === 'object' ? link.source.id : link.source;
+      const tgtId = typeof link.target === 'object' ? link.target.id : link.target;
+      if (adjacency[srcId]) adjacency[srcId].outgoing.push({ nodeId: tgtId, type: link.type, link });
+      if (adjacency[tgtId]) adjacency[tgtId].incoming.push({ nodeId: srcId, type: link.type, link });
+    });
+
+    // State
+    const hiddenTypes = new Set();
+    const hiddenEdgeTypes = new Set();
+    const highlightNodes = new Set();
+    const highlightLinks = new Set();
+    let hoverNode = null;
+    let selectedNode = null;
+
+    // Navigation history
+    const navHistory = [];
+    let navIndex = -1;
+
+    // Navigation functions
+    function navigateToNode(nodeId, addToHistory = true) {
+      const node = nodeMap[nodeId];
+      if (!node) return;
+
+      // Unhide type if hidden
+      if (hiddenTypes.has(node.type)) {
+        hiddenTypes.delete(node.type);
+        updateLegendUI();
+      }
+
+      // Update history
+      if (addToHistory) {
+        // Remove any forward history
+        navHistory.splice(navIndex + 1);
+        navHistory.push(nodeId);
+        navIndex = navHistory.length - 1;
+      }
+
+      selectedNode = node;
+      showSidebar(node);
+      updateBreadcrumbs();
+
+      // Center and zoom
+      Graph.centerAt(node.x, node.y, 1000);
+      Graph.zoom(6, 2000);
+
+      // Highlight
+      highlightNodes.clear();
+      highlightLinks.clear();
+      highlightNodes.add(node);
+      data.links.forEach(link => {
+        const srcId = typeof link.source === 'object' ? link.source.id : link.source;
+        const tgtId = typeof link.target === 'object' ? link.target.id : link.target;
+        if (srcId === node.id || tgtId === node.id) {
+          highlightLinks.add(link);
+          highlightNodes.add(nodeMap[srcId]);
+          highlightNodes.add(nodeMap[tgtId]);
+        }
+      });
+      hoverNode = node;
+      updateGraphVisibility();
+    }
+
+    function goBack() {
+      if (navIndex > 0) {
+        navIndex--;
+        navigateToNode(navHistory[navIndex], false);
+      }
+    }
+
+    function goForward() {
+      if (navIndex < navHistory.length - 1) {
+        navIndex++;
+        navigateToNode(navHistory[navIndex], false);
+      }
+    }
+
+    function updateBreadcrumbs() {
+      const panel = document.getElementById('breadcrumbs');
+      const trail = document.getElementById('breadcrumb-trail');
+      const btnBack = document.getElementById('btn-back');
+      const btnForward = document.getElementById('btn-forward');
+
+      if (navHistory.length === 0) {
+        panel.classList.remove('active');
+        return;
+      }
+
+      panel.classList.add('active');
+      btnBack.disabled = navIndex <= 0;
+      btnForward.disabled = navIndex >= navHistory.length - 1;
+
+      // Show last 5 items max
+      const startIdx = Math.max(0, navHistory.length - 5);
+      const visibleHistory = navHistory.slice(startIdx);
+      const offset = startIdx;
+
+      trail.innerHTML = visibleHistory.map((nodeId, i) => {
+        const node = nodeMap[nodeId];
+        const actualIndex = i + offset;
+        const isCurrent = actualIndex === navIndex;
+        const name = node ? node.name : nodeId;
+        return \`<span class="breadcrumb-item \${isCurrent ? 'current' : ''}" onclick="jumpToBreadcrumb(\${actualIndex})">\${name}</span>\` +
+          (i < visibleHistory.length - 1 ? '<span class="breadcrumb-sep">/</span>' : '');
+      }).join('');
+    }
+
+    function jumpToBreadcrumb(index) {
+      if (index >= 0 && index < navHistory.length) {
+        navIndex = index;
+        navigateToNode(navHistory[index], false);
+      }
+    }
+
+    // Node type filter
+    function toggleType(type) {
+      if (hiddenTypes.has(type)) {
+        hiddenTypes.delete(type);
+      } else {
+        hiddenTypes.add(type);
+      }
+      updateGraphVisibility();
+      updateLegendUI();
+    }
+
+    // Edge type filter
+    function toggleEdgeType(type) {
+      if (hiddenEdgeTypes.has(type)) {
+        hiddenEdgeTypes.delete(type);
+      } else {
+        hiddenEdgeTypes.add(type);
+      }
+      updateGraphVisibility();
+      updateEdgeLegendUI();
+    }
+
+    function updateLegendUI() {
+      const legend = document.getElementById('legend');
+      legend.innerHTML = '';
+      Object.entries(typeColors).forEach(([type, color]) => {
+        const item = document.createElement('div');
+        item.className = \`legend-item \${hiddenTypes.has(type) ? 'hidden' : ''}\`;
+        item.onclick = () => toggleType(type);
+        item.innerHTML = \`<div class="legend-dot" style="background: \${color}; color: \${color}"></div>\${type.charAt(0).toUpperCase() + type.slice(1)}\`;
+        legend.appendChild(item);
+      });
+    }
+
+    function updateEdgeLegendUI() {
+      const legend = document.getElementById('edge-legend');
+      legend.innerHTML = '';
+      Object.entries(edgeStyles).forEach(([type, style]) => {
+        const item = document.createElement('div');
+        item.className = \`edge-legend-item \${hiddenEdgeTypes.has(type) ? 'hidden' : ''}\`;
+        item.onclick = () => toggleEdgeType(type);
+        const dashStyle = style.dash.length > 0
+          ? \`background: repeating-linear-gradient(90deg, \${style.color} 0px, \${style.color} \${style.dash[0]}px, transparent \${style.dash[0]}px, transparent \${style.dash[0] + style.dash[1]}px)\`
+          : \`background: \${style.color}\`;
+        item.innerHTML = \`<div class="edge-line" style="\${dashStyle}"></div>\${style.label}\`;
+        legend.appendChild(item);
+      });
+    }
+
+    // Initial Legend
+    updateLegendUI();
+    updateEdgeLegendUI();
+
+    // Init Graph
+    const Graph = ForceGraph()
+      (document.getElementById('graph'))
+      .graphData(data)
+      .nodeId('id')
+      .nodeLabel('name')
+      .nodeColor(node => hiddenTypes.has(node.type) ? 'rgba(0,0,0,0)' : node.color)
+      .nodeVal('val')
+      .nodeRelSize(4)
+      .linkWidth(link => highlightLinks.has(link) ? 3 : 1.5)
+      .linkDirectionalParticles(link => highlightLinks.has(link) ? 4 : 0)
+      .linkDirectionalParticleWidth(3)
+      .linkLineDash(link => {
+        const style = edgeStyles[link.type];
+        return style ? style.dash : [];
+      })
+      .linkColor(link => {
+        if (hiddenEdgeTypes.has(link.type)) return 'rgba(0,0,0,0)';
+        if (highlightLinks.has(link)) return '#38bdf8';
+        const style = edgeStyles[link.type];
+        return style ? style.color : 'rgba(148, 163, 184, 0.3)';
+      })
+      .backgroundColor('#0f172a')
+      .onNodeHover(node => {
+        if ((!node && !highlightNodes.size) || (node && hoverNode === node)) return;
+
+        highlightNodes.clear();
+        highlightLinks.clear();
+        if (node) {
+          highlightNodes.add(node);
+          data.links.forEach(link => {
+            const srcId = typeof link.source === 'object' ? link.source.id : link.source;
+            const tgtId = typeof link.target === 'object' ? link.target.id : link.target;
+            if (srcId === node.id || tgtId === node.id) {
+              highlightLinks.add(link);
+              highlightNodes.add(nodeMap[srcId]);
+              highlightNodes.add(nodeMap[tgtId]);
+            }
+          });
+        }
+
+        hoverNode = node || null;
+        updateGraphVisibility();
+      })
+      .onNodeClick(node => {
+        navigateToNode(node.id);
+      })
+      .onBackgroundClick(() => {
+        document.getElementById('sidebar').classList.remove('active');
+        selectedNode = null;
+        highlightNodes.clear();
+        highlightLinks.clear();
+        hoverNode = null;
+        updateGraphVisibility();
+      });
+
+    // Physics
+    Graph.d3Force('charge').strength(-150);
+    Graph.d3Force('link').distance(70);
+
+    function updateGraphVisibility() {
+      Graph.nodeCanvasObject((node, ctx, globalScale) => {
+        if (hiddenTypes.has(node.type)) return;
+
+        const label = node.name;
+        const fontSize = 12/globalScale;
+        const isHighlighted = highlightNodes.size === 0 || highlightNodes.has(node);
+        const isSelected = selectedNode && selectedNode.id === node.id;
+
+        // Node circle
+        const radius = Math.sqrt(node.val) * 4;
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, radius, 0, 2 * Math.PI, false);
+        ctx.fillStyle = isHighlighted ? node.color : convertHexToRGBA(node.color, 0.2);
+        ctx.fill();
+
+        // Ring for selected/hovered
+        if (hoverNode === node || isSelected) {
+          ctx.strokeStyle = isSelected ? '#38bdf8' : '#fff';
+          ctx.lineWidth = (isSelected ? 3 : 2) / globalScale;
+          ctx.stroke();
+        }
+
+        // Text Label (only if highlighted or zoomed in)
+        if (globalScale > 2.5 || (isHighlighted && highlightNodes.size > 0)) {
+          ctx.font = \`\${fontSize}px Sans-Serif\`;
+          const textWidth = ctx.measureText(label).width;
+          const bckgDimensions = [textWidth, fontSize].map(n => n + fontSize * 0.2);
+
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.8)';
+          ctx.fillRect(node.x - bckgDimensions[0] / 2, node.y - bckgDimensions[1] - radius - 2, bckgDimensions[0], bckgDimensions[1]);
+
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillStyle = isHighlighted ? '#fff' : 'rgba(255,255,255,0.4)';
+          ctx.fillText(label, node.x, node.y - bckgDimensions[1]/2 - radius - 2);
+        }
+      });
+
+      Graph.linkVisibility(link => {
+        const srcNode = typeof link.source === 'object' ? link.source : nodeMap[link.source];
+        const tgtNode = typeof link.target === 'object' ? link.target : nodeMap[link.target];
+        if (!srcNode || !tgtNode) return false;
+        if (hiddenTypes.has(srcNode.type) || hiddenTypes.has(tgtNode.type)) return false;
+        if (hiddenEdgeTypes.has(link.type)) return false;
+        return true;
+      });
+    }
+
+    function buildConnectionsUI(node) {
+      const adj = adjacency[node.id];
+      if (!adj) return '';
+
+      // Group connections by edge type
+      const outgoingByType = {};
+      const incomingByType = {};
+
+      adj.outgoing.forEach(conn => {
+        const targetNode = nodeMap[conn.nodeId];
+        if (!targetNode) return;
+        if (!outgoingByType[conn.type]) outgoingByType[conn.type] = [];
+        outgoingByType[conn.type].push(targetNode);
+      });
+
+      adj.incoming.forEach(conn => {
+        const sourceNode = nodeMap[conn.nodeId];
+        if (!sourceNode) return;
+        if (!incomingByType[conn.type]) incomingByType[conn.type] = [];
+        incomingByType[conn.type].push(sourceNode);
+      });
+
+      const totalConnections = adj.outgoing.length + adj.incoming.length;
+      if (totalConnections === 0) return '';
+
+      let html = '<div class="connections-title">Connections</div>';
+
+      // Helper to render a connection group
+      const renderGroup = (label, icon, nodes, edgeType) => {
+        if (!nodes || nodes.length === 0) return '';
+        const style = edgeStyles[edgeType] || { color: '#94a3b8', label: edgeType };
+        return \`
+          <div class="connection-group">
+            <div class="connection-group-header">
+              <span class="connection-group-icon">\${icon}</span>
+              <span>\${label}</span>
+              <span class="connection-group-count">\${nodes.length}</span>
+            </div>
+            \${nodes.map(n => \`
+              <div class="connected-node" onclick="navigateToNode('\${n.id}')">
+                <div class="connected-node-dot" style="background: \${n.color}"></div>
+                <span class="connected-node-name">\${n.name}</span>
+                <span class="connected-node-type">\${n.type}</span>
+              </div>
+            \`).join('')}
+          </div>
+        \`;
+      };
+
+      // Outgoing connections (Links to)
+      Object.entries(outgoingByType).forEach(([type, nodes]) => {
+        const style = edgeStyles[type] || { label: type };
+        html += renderGroup(style.label + ' (out)', '\u2192', nodes, type);
+      });
+
+      // Incoming connections (Backlinks from)
+      Object.entries(incomingByType).forEach(([type, nodes]) => {
+        const style = edgeStyles[type] || { label: type };
+        html += renderGroup(style.label + ' (in)', '\u2190', nodes, type);
+      });
+
+      return html;
+    }
+
+    function showSidebar(node) {
+      const sb = document.getElementById('sidebar');
+      document.getElementById('sb-title').innerText = node.name;
+
+      const typeEl = document.getElementById('sb-type');
+      typeEl.innerText = node.type;
+      typeEl.style.backgroundColor = node.color;
+
+      const content = document.getElementById('sb-content');
+      let html = \`
+        <div class="meta-item">
+          <span class="meta-key">Location</span>
+          <span class="meta-val"><code>\${node.path}</code></span>
+        </div>\`;
+
+      if (node.metadata) {
+        const priority = ['id', 'tags', 'aliases', 'role'];
+        const sortedKeys = Object.keys(node.metadata).sort((a, b) => {
+          const ai = priority.indexOf(a);
+          const bi = priority.indexOf(b);
+          if (ai !== -1 && bi !== -1) return ai - bi;
+          if (ai !== -1) return -1;
+          if (bi !== -1) return 1;
+          return a.localeCompare(b);
+        });
+
+        sortedKeys.forEach(key => {
+          if (['title', 'type'].includes(key)) return;
+          const val = node.metadata[key];
+          if (!val && val !== 0) return;
+
+          let displayVal = val;
+          if (Array.isArray(val)) {
+            displayVal = val.map(v => \`<code>\${v}</code>\`).join(' ');
+          } else if (typeof val === 'object') {
+            displayVal = JSON.stringify(val);
+          }
+
+          html += \`
+            <div class="meta-item">
+              <span class="meta-key">\${key.replace(/_/g, ' ')}</span>
+              <span class="meta-val">\${displayVal}</span>
+            </div>\`;
+        });
+      }
+
+      content.innerHTML = html;
+
+      // Build connections UI
+      const connectionsEl = document.getElementById('sb-connections');
+      connectionsEl.innerHTML = buildConnectionsUI(node);
+
+      sb.classList.add('active');
+    }
+
+    function searchNode(query) {
+      if (!query) return;
+      const node = data.nodes.find(n => n.name.toLowerCase().includes(query.toLowerCase()));
+      if (node) {
+        navigateToNode(node.id);
+      }
+    }
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+      // Alt+Left: Go back
+      if (e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault();
+        goBack();
+      }
+      // Alt+Right: Go forward
+      if (e.altKey && e.key === 'ArrowRight') {
+        e.preventDefault();
+        goForward();
+      }
+      // Escape: Close sidebar
+      if (e.key === 'Escape') {
+        document.getElementById('sidebar').classList.remove('active');
+        selectedNode = null;
+        highlightNodes.clear();
+        highlightLinks.clear();
+        hoverNode = null;
+        updateGraphVisibility();
+      }
+      // /: Focus search
+      if (e.key === '/' && document.activeElement.tagName !== 'INPUT') {
+        e.preventDefault();
+        document.getElementById('search').focus();
+      }
+    });
+
+    // Helper
+    function convertHexToRGBA(hex, opacity) {
+      let c;
+      if(/^#([A-Fa-f0-9]{3}){1,2}$/.test(hex)){
+          c= hex.substring(1).split('');
+          if(c.length== 3){
+              c= [c[0], c[0], c[1], c[1], c[2], c[2]];
+          }
+          c= '0x'+c.join('');
+          return 'rgba('+[(c>>16)&255, (c>>8)&255, c&255].join(',')+','+opacity+')';
+      }
+      return hex;
+    }
+  </script>
+</body>
+</html>
+  `;
+}
+var visualizeCommand = new Command12("visualize").alias("viz").description("Visualize the knowledge graph in the browser").option("-o, --output <path>", "Custom output path for the HTML file").option("--no-open", "Do not open the browser automatically").action(async (options) => {
+  try {
+    const ctx = await initContext();
+    console.log("Generating graph data...");
+    const nodes2 = await ctx.nodeRepository.findAll();
+    const edges2 = await ctx.edgeRepository.findAll();
+    const nodeWeights = /* @__PURE__ */ new Map();
+    edges2.forEach((e) => {
+      nodeWeights.set(e.sourceId, (nodeWeights.get(e.sourceId) || 0) + 1);
+      nodeWeights.set(e.targetId, (nodeWeights.get(e.targetId) || 0) + 1);
+    });
+    const graphData = {
+      nodes: nodes2.map((n) => ({
+        id: n.nodeId,
+        name: n.title,
+        type: n.type,
+        val: Math.max(1, Math.min(10, (nodeWeights.get(n.nodeId) || 0) / 2)),
+        color: typeColors[n.type] || "#94a3b8",
+        path: n.path,
+        metadata: n.metadata
+      })),
+      links: edges2.map((e) => ({
+        source: e.sourceId,
+        target: e.targetId,
+        type: e.edgeType,
+        strength: e.strength ?? 1,
+        provenance: e.provenance
+      }))
+    };
+    const htmlContent = generateVisualizationHtml(graphData, typeColors);
+    const outputDir = options.output ? path14.dirname(options.output) : getZettelScriptDir(ctx.vaultPath);
+    if (!fs11.existsSync(outputDir)) {
+      fs11.mkdirSync(outputDir, { recursive: true });
+    }
+    const outputPath = options.output || path14.join(outputDir, "graph.html");
+    fs11.writeFileSync(outputPath, htmlContent, "utf-8");
+    console.log(`
+Graph visualization generated at: ${outputPath}`);
+    if (options.open) {
+      console.log("Opening in default browser...");
+      await open(outputPath);
+    }
+    ctx.connectionManager.close();
+  } catch (error) {
+    console.error("Visualization failed:", error);
+    process2.exit(1);
+  }
+});
+
+// src/cli/commands/setup.ts
+import { Command as Command13 } from "commander";
+import * as fs12 from "fs";
+import * as path15 from "path";
+import process3 from "process";
+import { stringify as stringifyYaml6 } from "yaml";
+var setupCommand = new Command13("setup").alias("go").description("Initialize vault, index files, and generate visualization (0 to hero)").option("-f, --force", "Reinitialize even if already set up").option("--manuscript", "Enable manuscript mode with POV and timeline validation").option("--no-viz", "Skip visualization generation").option("-v, --verbose", "Show detailed output").action(async (options) => {
+  const vaultPath = process3.cwd();
+  const zettelDir = getZettelScriptDir(vaultPath);
+  let needsInit = true;
+  console.log("ZettelScript Setup");
+  console.log("==================\n");
+  if (fs12.existsSync(zettelDir) && !options.force) {
+    const existingRoot = findVaultRoot(vaultPath);
+    if (existingRoot) {
+      console.log("Step 1: Initialize");
+      console.log("  Already initialized, skipping...\n");
+      needsInit = false;
+    }
+  }
+  if (needsInit) {
+    console.log("Step 1: Initialize");
+    try {
+      fs12.mkdirSync(zettelDir, { recursive: true });
+      console.log(`  Created ${path15.relative(vaultPath, zettelDir)}/`);
+      const config = {
+        ...DEFAULT_CONFIG,
+        vault: {
+          ...DEFAULT_CONFIG.vault,
+          path: "."
+        },
+        manuscript: {
+          ...DEFAULT_CONFIG.manuscript,
+          enabled: options.manuscript || false
+        }
+      };
+      const configPath = getConfigPath(vaultPath);
+      fs12.writeFileSync(configPath, stringifyYaml6(config), "utf-8");
+      console.log(`  Created ${path15.relative(vaultPath, configPath)}`);
+      const dbPath = getDbPath(vaultPath);
+      const manager = ConnectionManager.getInstance(dbPath);
+      await manager.initialize();
+      manager.close();
+      ConnectionManager.resetInstance();
+      console.log(`  Created ${path15.relative(vaultPath, dbPath)}`);
+      const gitignorePath = path15.join(zettelDir, ".gitignore");
+      fs12.writeFileSync(gitignorePath, "# Ignore database (regenerated from files)\nzettelscript.db\nzettelscript.db-*\n", "utf-8");
+      console.log("  Done!\n");
+    } catch (error) {
+      console.error("  Failed to initialize:", error);
+      process3.exit(1);
+    }
+  }
+  console.log("Step 2: Index files");
+  try {
+    const ctx = await initContext();
+    const spinner = new Spinner("  Scanning files...");
+    spinner.start();
+    let lastProgress = 0;
+    const result = await fullIndex(ctx.pipeline, ctx.vaultPath, {
+      excludePatterns: ctx.config.vault.excludePatterns,
+      onProgress: (current, total, filePath) => {
+        if (current > lastProgress) {
+          lastProgress = current;
+          spinner.update(`  Indexing ${current}/${total}: ${filePath}`);
+        }
+      }
+    });
+    spinner.stop();
+    console.log(`  Files: ${result.stats.totalFiles}`);
+    console.log(`  Nodes: ${result.stats.nodeCount}`);
+    console.log(`  Edges: ${result.stats.edgeCount}`);
+    if (result.stats.unresolvedCount > 0) {
+      console.log(`  Unresolved links: ${result.stats.unresolvedCount}`);
+    }
+    console.log(`  Duration: ${formatDuration(result.stats.durationMs)}`);
+    if (result.errors.length > 0 && options.verbose) {
+      console.log(`  Errors (${result.errors.length}):`);
+      for (const err of result.errors.slice(0, 5)) {
+        console.log(`    ${err.path}: ${err.error}`);
+      }
+      if (result.errors.length > 5) {
+        console.log(`    ... and ${result.errors.length - 5} more`);
+      }
+    }
+    console.log("  Done!\n");
+    if (options.viz) {
+      console.log("Step 3: Generate visualization");
+      const nodes2 = await ctx.nodeRepository.findAll();
+      const edges2 = await ctx.edgeRepository.findAll();
+      if (nodes2.length === 0) {
+        console.log("  No nodes to visualize, skipping...\n");
+      } else {
+        const nodeWeights = /* @__PURE__ */ new Map();
+        edges2.forEach((e) => {
+          nodeWeights.set(e.sourceId, (nodeWeights.get(e.sourceId) || 0) + 1);
+          nodeWeights.set(e.targetId, (nodeWeights.get(e.targetId) || 0) + 1);
+        });
+        const graphData = {
+          nodes: nodes2.map((n) => ({
+            id: n.nodeId,
+            name: n.title,
+            type: n.type,
+            val: Math.max(1, Math.min(10, (nodeWeights.get(n.nodeId) || 0) / 2)),
+            color: typeColors[n.type] || "#94a3b8",
+            path: n.path,
+            metadata: n.metadata
+          })),
+          links: edges2.map((e) => ({
+            source: e.sourceId,
+            target: e.targetId,
+            type: e.edgeType,
+            strength: e.strength ?? 1,
+            provenance: e.provenance
+          }))
+        };
+        const htmlContent = generateVisualizationHtml(graphData, typeColors);
+        const outputPath = path15.join(getZettelScriptDir(ctx.vaultPath), "graph.html");
+        fs12.writeFileSync(outputPath, htmlContent, "utf-8");
+        console.log(`  Generated: ${path15.relative(vaultPath, outputPath)}`);
+        console.log("  Done!\n");
+      }
+    }
+    ctx.connectionManager.close();
+    console.log("Setup complete!");
+    console.log("---------------");
+    console.log("Next steps:");
+    console.log("  zettel query <search>   Search your knowledge graph");
+    console.log("  zettel discover --all   Find unlinked mentions");
+    console.log("  zettel watch            Watch for file changes");
+    if (options.viz && result.stats.nodeCount > 0) {
+      console.log("  zettel visualize        Open graph in browser");
+    }
+    if (options.manuscript) {
+      console.log("\nManuscript mode enabled:");
+      console.log("  zettel validate --continuity   Check POV/timeline consistency");
+    }
+  } catch (error) {
+    console.error("  Failed:", error);
+    process3.exit(1);
+  }
+});
+
 // src/cli/index.ts
-var program = new Command12();
+var program = new Command14();
 program.name("zettel").description("ZettelScript - Graph-first knowledge management system").version("0.1.0");
 program.addCommand(initCommand);
 program.addCommand(indexCommand);
@@ -8766,5 +10378,7 @@ program.addCommand(rewriteCommand);
 program.addCommand(extractCommand);
 program.addCommand(generateCommand);
 program.addCommand(injectLinksCommand);
+program.addCommand(visualizeCommand);
+program.addCommand(setupCommand);
 program.parse();
 //# sourceMappingURL=index.js.map

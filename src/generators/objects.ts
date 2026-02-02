@@ -21,6 +21,8 @@ import {
   kvPair,
 } from './utils.js';
 import { getLockLevel } from './types.js';
+import { RelationshipEngine } from './relationships.js';
+import { buildRelatedEntitiesSection, shouldIncludeRelatedEntities } from './related-entities.js';
 
 const OBJECTS_SUBDIR = 'Objects';
 
@@ -89,7 +91,11 @@ function getLockIcon(lockLevel: LockLevel): string {
 /**
  * Build the content body for an object note
  */
-function buildObjectContent(obj: KBObject): string {
+function buildObjectContent(
+  obj: KBObject,
+  relationshipEngine?: RelationshipEngine,
+  includeRelated?: boolean
+): string {
   const parts: string[] = [];
   const lockLevel = getLockLevel(obj);
   const lockIcon = getLockIcon(lockLevel);
@@ -130,6 +136,15 @@ function buildObjectContent(obj: KBObject): string {
   if (obj.significance) {
     parts.push(section('Significance'));
     parts.push(obj.significance + '\n\n');
+  }
+
+  // Related Entities
+  if (shouldIncludeRelatedEntities(includeRelated) && relationshipEngine) {
+    const relationships = relationshipEngine.getRelationshipsFor(obj.id);
+    const relatedSection = buildRelatedEntitiesSection(relationships);
+    if (relatedSection) {
+      parts.push(relatedSection);
+    }
   }
 
   // Lock warning for critical items
@@ -182,6 +197,10 @@ export async function generateObjects(
   // Track entities to avoid duplicates
   const tracker = new EntityTracker();
 
+  // Create relationship engine for cross-linking
+  const relationshipEngine = new RelationshipEngine(kb, options.coOccurrenceThreshold);
+  const includeRelated = shouldIncludeRelatedEntities(options.includeRelatedEntities);
+
   // Process each object
   for (const obj of kb.objects) {
     const name = obj.name;
@@ -197,7 +216,7 @@ export async function generateObjects(
     try {
       const filePath = generateNotePath(options.outputDir, OBJECTS_SUBDIR, name);
       const frontmatter = buildObjectFrontmatter(obj);
-      const content = buildObjectContent(obj);
+      const content = buildObjectContent(obj, relationshipEngine, includeRelated);
       const note = buildNote(frontmatter, content);
 
       const written = await writeNoteFile(filePath, note, {

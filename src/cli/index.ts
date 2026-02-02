@@ -12,6 +12,8 @@ import { rewriteCommand } from './commands/rewrite.js';
 import { extractCommand } from './commands/extract.js';
 import { generateCommand } from './commands/generate.js';
 import { injectLinksCommand } from './commands/inject-links.js';
+import { visualizeCommand } from './commands/visualize.js';
+import { setupCommand } from './commands/setup.js';
 
 const program = new Command();
 
@@ -32,6 +34,8 @@ program.addCommand(rewriteCommand);
 program.addCommand(extractCommand);
 program.addCommand(generateCommand);
 program.addCommand(injectLinksCommand);
+program.addCommand(visualizeCommand);
+program.addCommand(setupCommand);
 
 // Parse arguments
 program.parse();

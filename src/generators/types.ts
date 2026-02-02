@@ -101,6 +101,58 @@ export interface KBNameNormalization {
   variants: string[];
 }
 
+// ============================================================================
+// Relationship Types
+// ============================================================================
+
+export type RelationshipKind =
+  // character↔character
+  | 'ally'
+  | 'enemy'
+  | 'family'
+  | 'mentor'
+  | 'rival'
+  // character↔location
+  | 'visits'
+  | 'resides'
+  // character↔object
+  | 'owns'
+  | 'holds'
+  | 'formerly_held'
+  // character↔event
+  | 'participated'
+  | 'witnessed'
+  // location↔object/event
+  | 'contains'
+  | 'occurred_at'
+  // generic
+  | 'co_occurrence'
+  | 'associated';
+
+export interface KBRelationship {
+  sourceId: string;
+  targetId: string;
+  type: RelationshipKind;
+  description?: string;
+  chapters?: number[];
+}
+
+export type EntityType = 'character' | 'location' | 'object' | 'event';
+
+export interface ComputedRelationship {
+  targetId: string;
+  targetName: string;
+  targetType: EntityType;
+  relationshipType: RelationshipKind;
+  description?: string | undefined;
+  chapters?: number[] | undefined;
+  source: 'explicit' | 'inferred' | 'co_occurrence';
+  /** Wikilink target (e.g., "Event-01-001" for events) */
+  linkTarget?: string | undefined;
+  /** Optional display text for wikilink (e.g., "Alpha arrives at the facility") */
+  linkDisplay?: string | undefined;
+}
+
 export interface KBData {
   schema_version: string;
   book_id: string;
@@ -115,7 +167,7 @@ export interface KBData {
   timeline: KBTimelineEvent[];
   plot_threads?: KBPlotThread[];
   facts?: KBFact[];
-  relationships?: unknown[];
+  relationships?: KBRelationship[];
   contradictions?: unknown[];
   name_normalization?: KBNameNormalization[];
   cross_reference?: Record<string, unknown>;
@@ -199,6 +251,10 @@ export interface GeneratorOptions {
   force?: boolean | undefined;
   /** Verbose output */
   verbose?: boolean | undefined;
+  /** Include Related Entities section in generated notes */
+  includeRelatedEntities?: boolean | undefined;
+  /** Minimum shared chapters for co-occurrence relationships (default: 2) */
+  coOccurrenceThreshold?: number | undefined;
 }
 
 export interface ChapterGeneratorOptions extends GeneratorOptions {

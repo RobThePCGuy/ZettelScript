@@ -17,6 +17,8 @@ import {
   EntityTracker,
   section,
 } from './utils.js';
+import { RelationshipEngine } from './relationships.js';
+import { buildRelatedEntitiesSection, shouldIncludeRelatedEntities } from './related-entities.js';
 
 const TIMELINE_SUBDIR = 'Timeline';
 
@@ -77,7 +79,11 @@ function buildTags(event: KBTimelineEvent): string[] {
 /**
  * Build the content body for a timeline event note
  */
-function buildEventContent(event: KBTimelineEvent): string {
+function buildEventContent(
+  event: KBTimelineEvent,
+  relationshipEngine?: RelationshipEngine,
+  includeRelated?: boolean
+): string {
   const parts: string[] = [];
 
   // Title
@@ -99,6 +105,15 @@ function buildEventContent(event: KBTimelineEvent): string {
   // Description (expanded)
   parts.push(section('Description'));
   parts.push(event.description + '\n\n');
+
+  // Related Entities
+  if (shouldIncludeRelatedEntities(includeRelated) && relationshipEngine) {
+    const relationships = relationshipEngine.getRelationshipsFor(event.id);
+    const relatedSection = buildRelatedEntitiesSection(relationships);
+    if (relatedSection) {
+      parts.push(relatedSection);
+    }
+  }
 
   // Connections placeholder
   parts.push(section('Related Notes'));
@@ -161,6 +176,10 @@ export async function generateTimeline(
   // Track entities to avoid duplicates
   const tracker = new EntityTracker();
 
+  // Create relationship engine for cross-linking
+  const relationshipEngine = new RelationshipEngine(kb, options.coOccurrenceThreshold);
+  const includeRelated = shouldIncludeRelatedEntities(options.includeRelatedEntities);
+
   // Sort events by chapter
   const sortedEvents = [...kb.timeline].sort((a, b) => a.chapter - b.chapter);
 
@@ -180,7 +199,7 @@ export async function generateTimeline(
       const filename = getEventFilename(event);
       const filePath = generateNotePath(options.outputDir, TIMELINE_SUBDIR, filename);
       const frontmatter = buildEventFrontmatter(event);
-      const content = buildEventContent(event);
+      const content = buildEventContent(event, relationshipEngine, includeRelated);
       const note = buildNote(frontmatter, content);
 
       const written = await writeNoteFile(filePath, note, {

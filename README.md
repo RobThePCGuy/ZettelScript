@@ -1,43 +1,89 @@
 # ZettelScript
 
-**Graph-first knowledge management combining Zettelkasten-style notes and GraphRAG retrieval.**
+**Your notes aren't connected. They're buried.**
 
+Folders lie to you. They promise organization but deliver graveyards: ideas filed away, never to resurface. You've felt it: that nagging sense that you've written this before, somewhere.
+
+ZettelScript doesn't organize your notes. It **unleashes** them.
+
+> Notes become nodes. Links become meaning. Structure emerges from chaos.
+
+[![npm](https://img.shields.io/npm/v/zettelscript.svg)](https://www.npmjs.com/package/zettelscript)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D20.0.0-brightgreen.svg)](https://nodejs.org/)
 
 ---
 
-## What is ZettelScript?
+## See Your Thinking
 
-ZettelScript is a graph-first knowledge system where **notes are nodes**, **links are typed edges**, and **structure emerges from associations** rather than folders.
+> **[View Demo Graph](demo-vault/.zettelscript/graph.html)** — Download and open in your browser to explore a sample knowledge graph.
 
-1. **Zettelkasten-style notes** — Atomic ideas connected through bidirectional links
-2. **GraphRAG retrieval** — Semantic + keyword + graph traversal with bounded expansion
+One command. Your entire knowledge graph, alive in your browser.
 
-### Core Principles
+```bash
+zettel go
+```
 
-- **Stable identity**: Nodes are referenced by immutable IDs, not titles
-- **Bidirectional links**: Author forward links once; backlinks are computed
-- **Discovery**: Unlinked mentions are detected, ranked, and suggested for approval
-- **Safe write-back**: Models propose; humans approve; system validates
+**ZettelScript Atlas** renders every note, character, location, and connection as an interactive force-directed graph. Every node is a portal to its connections—click to see related nodes, click again to navigate there. Color-coded edges show relationship types at a glance. Filter what you see. Search by name. Navigate with breadcrumbs.
+
+This isn't a pretty picture. It's a **thinking tool**. Watch your ideas cluster. Spot the orphaned notes. Find the hidden hub you didn't know existed. Then click through to explore it.
 
 ---
 
-## Quick Start
+## Zero to Graph in 30 Seconds
 
 ```bash
-# Initialize a vault in the current directory
-zettel init
-
-# Index all markdown files
-zettel index
-
-# View graph statistics
-zettel query stats
-
-# Find unlinked mentions
-zettel discover --all
+npm install -g zettelscript
+cd your-notes-folder
+zettel go
 ```
+
+That's it. Your vault is indexed, your graph is built, and **Atlas opens in your browser**.
+
+Your graph lives at `.zettelscript/graph.html` — a single self-contained file you can share, bookmark, or open offline anytime.
+
+**Still organizing notes into folders?** That's archaeology, not knowledge management.
+
+---
+
+## Try It Now (No Install)
+
+The repository includes a `demo-vault/` with sample characters, locations, events, and a pre-built graph.
+
+1. Clone or download this repo
+2. Open `demo-vault/.zettelscript/graph.html` in your browser
+3. Explore the Atlas — click nodes, navigate connections, filter by type
+
+No installation required. See what your notes could look like.
+
+---
+
+## Why Your Current System Fails
+
+| The Problem | What You Do Now | What ZettelScript Does |
+|-------------|-----------------|------------------------|
+| **Lost connections** | Hope you remember related notes | Graph traversal finds them automatically |
+| **Duplicate work** | Rewrite ideas you've already captured | Unlinked mention detection surfaces them |
+| **Search hell** | Keyword guessing games | Semantic + graph + lexical retrieval |
+| **Fragile links** | Rename a file, break everything | Immutable IDs survive restructuring |
+
+---
+
+## What Makes This Different
+
+- **Stable identity**: Nodes are referenced by immutable IDs, not titles. Rename freely.
+- **Bidirectional links**: Author forward links once; backlinks are computed automatically.
+- **Discovery**: Unlinked mentions are detected, ranked, and suggested for approval.
+- **Safe write-back**: Models propose; humans approve; system validates.
+
+---
+
+## Not Another Note-Taking App
+
+- **No proprietary lock-in.** Your notes stay as plain markdown.
+- **No cloud dependency.** Runs entirely local with SQLite.
+- **No AI subscription.** Use free local models via Ollama.
+- **No folder prison.** Graphs beat hierarchies.
 
 ---
 
@@ -80,6 +126,75 @@ node dist/cli/index.js <command>
 ---
 
 ## CLI Commands
+
+### `setup` / `go`
+
+**Zero to hero.** Initialize, index, and visualize in one command.
+
+```bash
+zettel go
+zettel setup --manuscript   # Enable manuscript mode
+```
+
+| Option | Description |
+|--------|-------------|
+| `-f, --force` | Reinitialize even if already set up |
+| `--manuscript` | Enable manuscript mode with POV and timeline validation |
+| `--no-viz` | Skip visualization generation |
+| `-v, --verbose` | Show detailed output |
+
+---
+
+### `visualize` / `viz`
+
+**See your graph.** Generates an interactive force-directed visualization and opens it in your browser.
+
+```bash
+zettel viz
+zettel visualize --output ~/Desktop/my-graph.html
+```
+
+| Option | Description |
+|--------|-------------|
+| `-o, --output <path>` | Custom output path for the HTML file |
+| `--no-open` | Generate without opening browser |
+
+**Output location:** `.zettelscript/graph.html` in your vault directory (or custom path with `-o`).
+
+Opens **ZettelScript Atlas**, a fully navigable knowledge exploration tool.
+
+#### Atlas Features
+
+**Clickable Navigation** — Every node is a portal. Click any node to see its connections in the sidebar, grouped by relationship type. Click a connected node to navigate instantly. Your graph becomes a web you can traverse.
+
+**Navigation History** — Breadcrumb trail appears at top-center as you explore. Back/forward buttons let you retrace your steps. Jump to any previous node with a click.
+
+**Edge Type Styling** — Relationships are color-coded by type:
+
+| Edge Type | Color | Style |
+|-----------|-------|-------|
+| Links to | Cyan | Solid |
+| Backlinks | Violet | Dashed |
+| Sequence | Emerald | Solid |
+| Hierarchy | Amber | Solid |
+| Causes | Red | Solid |
+| Semantic | Gray | Dotted |
+| Mention | Teal | Dotted |
+
+**Edge Filtering** — Toggle edge types on/off in the left panel. Hide backlinks to see only forward links. Show only causal relationships. Focus on what matters.
+
+**Keyboard Shortcuts**
+
+| Key | Action |
+|-----|--------|
+| `/` | Focus search |
+| `Escape` | Close sidebar |
+| `Alt+Left` | Go back |
+| `Alt+Right` | Go forward |
+
+The generated HTML is a single self-contained file (~45KB) that works offline.
+
+---
 
 ### `init`
 
@@ -220,7 +335,9 @@ zettel validate [options]
 
 ### `discover`
 
-Find unlinked mentions — plain-text references that could become wikilinks.
+**Your vault is full of hidden connections.** Every time you type a character name, a concept, or a location without linking it, that's a connection lost.
+
+`zettel discover` hunts them down.
 
 ```bash
 zettel discover [options]
@@ -239,7 +356,9 @@ zettel discover [options]
 
 ### `retrieve`
 
-GraphRAG context retrieval combining semantic search, keyword matching, and graph expansion.
+**Search that actually understands what you're looking for.**
+
+Traditional search matches keywords. ZettelScript matches *meaning*, then follows the graph to find related ideas you didn't even think to search for.
 
 ```bash
 zettel retrieve "<query>" [options]
@@ -262,7 +381,7 @@ Requires embeddings configuration for semantic search.
 
 ### `extract`
 
-Extract entities (characters, locations, objects, events) from prose using a local LLM.
+**Let AI find the entities you missed.** Extract characters, locations, objects, and events from prose using a local LLM.
 
 ```bash
 zettel extract [options]
@@ -296,17 +415,24 @@ zettel index
 
 ### Node Types
 
+Every note is a node. But not all nodes are equal.
+
 | Type | Description |
 |------|-------------|
 | `note` | General-purpose atomic note |
+| `scene` | Story scene or chapter |
 | `character` | Character profile |
 | `location` | Place or setting |
 | `object` | Significant item or prop |
 | `event` | Timeline event |
 | `concept` | Abstract idea or theme |
 | `moc` | Map of Content (hub note) |
+| `timeline` | Timeline or chronology |
+| `draft` | Work in progress |
 
 ### Edge Types
+
+Links aren't just links. They carry meaning.
 
 | Type | Description |
 |------|-------------|
@@ -314,7 +440,10 @@ zettel index
 | `backlink` | Computed incoming link |
 | `sequence` | Chronological ordering |
 | `hierarchy` | Parent-child relationship |
+| `participation` | Character/entity involvement |
+| `pov_visible_to` | POV character visibility |
 | `causes` | Causal relationship |
+| `setup_payoff` | Narrative setup and payoff |
 | `semantic` | Inferred semantic similarity |
 | `mention` | Unlinked mention detected |
 | `alias` | Alternative name reference |
@@ -441,7 +570,7 @@ discovery:
 
 ## How Ollama Integration Works
 
-ZettelScript uses [Ollama](https://ollama.ai) for local LLM features (entity extraction, embeddings). Ollama runs as a **separate local server** on your machine — it is not bundled with ZettelScript.
+ZettelScript uses [Ollama](https://ollama.ai) for local LLM features (entity extraction, embeddings). Ollama runs as a **separate local server** on your machine. It is not bundled with ZettelScript.
 
 ```
 Your Machine
@@ -483,6 +612,18 @@ The `dist/` directory is committed to the repository. This allows `npx github:Ro
 npm run build
 git add dist/
 ```
+
+---
+
+## Your Notes Deserve Better
+
+You didn't write all those ideas just to lose them in folders. ZettelScript finds the connections you forgot existed and shows you the ones you never knew were there.
+
+```bash
+npm install -g zettelscript && zettel go
+```
+
+**Start seeing your thinking.**
 
 ---
 

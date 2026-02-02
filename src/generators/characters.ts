@@ -23,6 +23,8 @@ import {
   formatList,
   kvPair,
 } from './utils.js';
+import { RelationshipEngine } from './relationships.js';
+import { buildRelatedEntitiesSection, shouldIncludeRelatedEntities } from './related-entities.js';
 
 const CHARACTERS_SUBDIR = 'Characters';
 
@@ -84,7 +86,11 @@ function buildTags(char: KBCharacter): string[] {
 /**
  * Build the content body for a character note
  */
-function buildCharacterContent(char: KBCharacter): string {
+function buildCharacterContent(
+  char: KBCharacter,
+  relationshipEngine?: RelationshipEngine,
+  includeRelated?: boolean
+): string {
   const parts: string[] = [];
 
   // Title
@@ -156,6 +162,15 @@ function buildCharacterContent(char: KBCharacter): string {
   if (char.equipment && char.equipment.length > 0) {
     parts.push(section('Equipment'));
     parts.push(char.equipment.map(e => `- ${wikilink(e)}`).join('\n') + '\n\n');
+  }
+
+  // Related Entities
+  if (shouldIncludeRelatedEntities(includeRelated) && relationshipEngine) {
+    const relationships = relationshipEngine.getRelationshipsFor(char.id);
+    const relatedSection = buildRelatedEntitiesSection(relationships);
+    if (relatedSection) {
+      parts.push(relatedSection);
+    }
   }
 
   // Coping mechanism
@@ -309,6 +324,10 @@ export async function generateCharacters(
   // Track entities to avoid duplicates
   const tracker = new EntityTracker();
 
+  // Create relationship engine for cross-linking
+  const relationshipEngine = new RelationshipEngine(kb, options.coOccurrenceThreshold);
+  const includeRelated = shouldIncludeRelatedEntities(options.includeRelatedEntities);
+
   // Process each character
   for (const char of kb.characters) {
     const name = char.canonical_name;
@@ -324,7 +343,7 @@ export async function generateCharacters(
     try {
       const filePath = generateNotePath(options.outputDir, CHARACTERS_SUBDIR, name);
       const frontmatter = buildCharacterFrontmatter(char);
-      const content = buildCharacterContent(char);
+      const content = buildCharacterContent(char, relationshipEngine, includeRelated);
       const note = buildNote(frontmatter, content);
 
       const written = await writeNoteFile(filePath, note, {
