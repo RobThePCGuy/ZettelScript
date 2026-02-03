@@ -168,9 +168,16 @@ export class EdgeRepository {
   }
 
   /**
-   * Get all edges
+   * Get all edges, optionally filtered by edge types
    */
-  async findAll(): Promise<Edge[]> {
+  async findAll(edgeTypes?: EdgeType[]): Promise<Edge[]> {
+    if (edgeTypes && edgeTypes.length > 0) {
+      const result = await this.db
+        .select()
+        .from(edges)
+        .where(inArray(edges.edgeType, edgeTypes));
+      return result.map(this.rowToEdge);
+    }
     const result = await this.db.select().from(edges);
     return result.map(this.rowToEdge);
   }

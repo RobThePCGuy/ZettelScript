@@ -153,6 +153,72 @@ export const unresolvedLinks = sqliteTable('unresolved_links', {
   index('idx_unresolved_target').on(table.targetText),
 ]);
 
+// ============================================================================
+// Constellations Table (Saved Graph Views)
+// ============================================================================
+
+export const constellations = sqliteTable('constellations', {
+  constellationId: text('constellation_id').primaryKey(),
+  name: text('name').notNull().unique(),
+  description: text('description'),
+
+  // Filter state (JSON arrays)
+  hiddenNodeTypes: text('hidden_node_types', { mode: 'json' }),
+  hiddenEdgeTypes: text('hidden_edge_types', { mode: 'json' }),
+
+  // Ghost node config
+  showGhosts: integer('show_ghosts').notNull().default(1),
+  ghostThreshold: integer('ghost_threshold').notNull().default(1),
+
+  // Camera state
+  cameraX: real('camera_x'),
+  cameraY: real('camera_y'),
+  cameraZoom: real('camera_zoom'),
+
+  // Focus nodes (seed nodes for the view)
+  focusNodeIds: text('focus_node_ids', { mode: 'json' }),
+
+  // Timestamps
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => [
+  index('idx_constellations_name').on(table.name),
+]);
+
+// ============================================================================
+// Node Embeddings Table (for Semantic Wormholes)
+// ============================================================================
+
+export const nodeEmbeddings = sqliteTable('node_embeddings', {
+  embeddingId: text('embedding_id').primaryKey(),
+  nodeId: text('node_id').notNull().unique().references(() => nodes.nodeId, { onDelete: 'cascade' }),
+  embedding: text('embedding', { mode: 'json' }).notNull(), // Float array as JSON
+  model: text('model').notNull(),  // e.g., 'openai:text-embedding-3-small'
+  dimensions: integer('dimensions').notNull(),
+  contentHash: text('content_hash').notNull(),  // To detect when recompute is needed
+  computedAt: text('computed_at').notNull(),
+}, (table) => [
+  index('idx_embeddings_node').on(table.nodeId),
+  index('idx_embeddings_model').on(table.model),
+]);
+
+// ============================================================================
+// Wormhole Rejections Table (Tracks Rejected Semantic Suggestions)
+// ============================================================================
+
+export const wormholeRejections = sqliteTable('wormhole_rejections', {
+  rejectionId: text('rejection_id').primaryKey(),
+  sourceId: text('source_id').notNull().references(() => nodes.nodeId, { onDelete: 'cascade' }),
+  targetId: text('target_id').notNull().references(() => nodes.nodeId, { onDelete: 'cascade' }),
+  sourceContentHash: text('source_content_hash').notNull(),
+  targetContentHash: text('target_content_hash').notNull(),
+  rejectedAt: text('rejected_at').notNull(),
+}, (table) => [
+  index('idx_rejections_source').on(table.sourceId),
+  index('idx_rejections_target').on(table.targetId),
+  index('idx_rejections_pair').on(table.sourceId, table.targetId),
+]);
+
 // Type exports for use in repositories
 export type NodeRow = typeof nodes.$inferSelect;
 export type NewNodeRow = typeof nodes.$inferInsert;
@@ -174,3 +240,12 @@ export type NewAliasRow = typeof aliases.$inferInsert;
 
 export type ProposalRow = typeof proposals.$inferSelect;
 export type NewProposalRow = typeof proposals.$inferInsert;
+
+export type ConstellationRow = typeof constellations.$inferSelect;
+export type NewConstellationRow = typeof constellations.$inferInsert;
+
+export type NodeEmbeddingRow = typeof nodeEmbeddings.$inferSelect;
+export type NewNodeEmbeddingRow = typeof nodeEmbeddings.$inferInsert;
+
+export type WormholeRejectionRow = typeof wormholeRejections.$inferSelect;
+export type NewWormholeRejectionRow = typeof wormholeRejections.$inferInsert;

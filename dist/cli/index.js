@@ -6,7 +6,7 @@ var __export = (target, all) => {
 };
 
 // src/cli/index.ts
-import { Command as Command14 } from "commander";
+import { Command as Command18 } from "commander";
 
 // src/cli/commands/init.ts
 import { Command } from "commander";
@@ -23,13 +23,16 @@ var schema_exports = {};
 __export(schema_exports, {
   aliases: () => aliases,
   chunks: () => chunks,
+  constellations: () => constellations,
   edges: () => edges,
   graphMetrics: () => graphMetrics,
   mentionCandidates: () => mentionCandidates,
+  nodeEmbeddings: () => nodeEmbeddings,
   nodes: () => nodes,
   proposals: () => proposals,
   unresolvedLinks: () => unresolvedLinks,
-  versions: () => versions
+  versions: () => versions,
+  wormholeRejections: () => wormholeRejections
 });
 import { sqliteTable, text, real, integer, index } from "drizzle-orm/sqlite-core";
 var nodes = sqliteTable("nodes", {
@@ -140,6 +143,55 @@ var unresolvedLinks = sqliteTable("unresolved_links", {
   index("idx_unresolved_source").on(table.sourceId),
   index("idx_unresolved_target").on(table.targetText)
 ]);
+var constellations = sqliteTable("constellations", {
+  constellationId: text("constellation_id").primaryKey(),
+  name: text("name").notNull().unique(),
+  description: text("description"),
+  // Filter state (JSON arrays)
+  hiddenNodeTypes: text("hidden_node_types", { mode: "json" }),
+  hiddenEdgeTypes: text("hidden_edge_types", { mode: "json" }),
+  // Ghost node config
+  showGhosts: integer("show_ghosts").notNull().default(1),
+  ghostThreshold: integer("ghost_threshold").notNull().default(1),
+  // Camera state
+  cameraX: real("camera_x"),
+  cameraY: real("camera_y"),
+  cameraZoom: real("camera_zoom"),
+  // Focus nodes (seed nodes for the view)
+  focusNodeIds: text("focus_node_ids", { mode: "json" }),
+  // Timestamps
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull()
+}, (table) => [
+  index("idx_constellations_name").on(table.name)
+]);
+var nodeEmbeddings = sqliteTable("node_embeddings", {
+  embeddingId: text("embedding_id").primaryKey(),
+  nodeId: text("node_id").notNull().unique().references(() => nodes.nodeId, { onDelete: "cascade" }),
+  embedding: text("embedding", { mode: "json" }).notNull(),
+  // Float array as JSON
+  model: text("model").notNull(),
+  // e.g., 'openai:text-embedding-3-small'
+  dimensions: integer("dimensions").notNull(),
+  contentHash: text("content_hash").notNull(),
+  // To detect when recompute is needed
+  computedAt: text("computed_at").notNull()
+}, (table) => [
+  index("idx_embeddings_node").on(table.nodeId),
+  index("idx_embeddings_model").on(table.model)
+]);
+var wormholeRejections = sqliteTable("wormhole_rejections", {
+  rejectionId: text("rejection_id").primaryKey(),
+  sourceId: text("source_id").notNull().references(() => nodes.nodeId, { onDelete: "cascade" }),
+  targetId: text("target_id").notNull().references(() => nodes.nodeId, { onDelete: "cascade" }),
+  sourceContentHash: text("source_content_hash").notNull(),
+  targetContentHash: text("target_content_hash").notNull(),
+  rejectedAt: text("rejected_at").notNull()
+}, (table) => [
+  index("idx_rejections_source").on(table.sourceId),
+  index("idx_rejections_target").on(table.targetId),
+  index("idx_rejections_pair").on(table.sourceId, table.targetId)
+]);
 
 // src/core/errors.ts
 var ZettelScriptError = class extends Error {
@@ -173,6 +225,13 @@ var FileSystemError = class extends ZettelScriptError {
     this.name = "FileSystemError";
   }
 };
+var EmbeddingError = class extends ZettelScriptError {
+  constructor(message, provider, details) {
+    super(message, "EMBEDDING_ERROR", { provider, ...details });
+    this.provider = provider;
+    this.name = "EmbeddingError";
+  }
+};
 
 // src/storage/database/connection.ts
 import * as fs from "fs";
@@ -201,7 +260,7 @@ CREATE TRIGGER IF NOT EXISTS chunks_au AFTER UPDATE ON chunks BEGIN
   VALUES (new.chunk_id, new.node_id, new.text);
 END;
 `;
-var SCHEMA_VERSION = 1;
+var SCHEMA_VERSION = 2;
 var ConnectionManager = class _ConnectionManager {
   static instance = null;
   sqlite = null;
@@ -378,6 +437,44 @@ var ConnectionManager = class _ConnectionManager {
         created_at TEXT NOT NULL
       );
 
+      -- Constellations (saved graph views)
+      CREATE TABLE IF NOT EXISTS constellations (
+        constellation_id TEXT PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE,
+        description TEXT,
+        hidden_node_types TEXT,
+        hidden_edge_types TEXT,
+        show_ghosts INTEGER NOT NULL DEFAULT 1,
+        ghost_threshold INTEGER NOT NULL DEFAULT 1,
+        camera_x REAL,
+        camera_y REAL,
+        camera_zoom REAL,
+        focus_node_ids TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      -- Node embeddings (for semantic wormholes)
+      CREATE TABLE IF NOT EXISTS node_embeddings (
+        embedding_id TEXT PRIMARY KEY,
+        node_id TEXT NOT NULL UNIQUE REFERENCES nodes(node_id) ON DELETE CASCADE,
+        embedding TEXT NOT NULL,
+        model TEXT NOT NULL,
+        dimensions INTEGER NOT NULL,
+        content_hash TEXT NOT NULL,
+        computed_at TEXT NOT NULL
+      );
+
+      -- Wormhole rejections (tracks rejected semantic suggestions)
+      CREATE TABLE IF NOT EXISTS wormhole_rejections (
+        rejection_id TEXT PRIMARY KEY,
+        source_id TEXT NOT NULL REFERENCES nodes(node_id) ON DELETE CASCADE,
+        target_id TEXT NOT NULL REFERENCES nodes(node_id) ON DELETE CASCADE,
+        source_content_hash TEXT NOT NULL,
+        target_content_hash TEXT NOT NULL,
+        rejected_at TEXT NOT NULL
+      );
+
       -- Performance indexes
       CREATE INDEX IF NOT EXISTS idx_nodes_title ON nodes(title COLLATE NOCASE);
       CREATE INDEX IF NOT EXISTS idx_nodes_type ON nodes(type);
@@ -399,6 +496,12 @@ var ConnectionManager = class _ConnectionManager {
       CREATE INDEX IF NOT EXISTS idx_proposals_status ON proposals(status);
       CREATE INDEX IF NOT EXISTS idx_unresolved_source ON unresolved_links(source_id);
       CREATE INDEX IF NOT EXISTS idx_unresolved_target ON unresolved_links(target_text);
+      CREATE INDEX IF NOT EXISTS idx_constellations_name ON constellations(name);
+      CREATE INDEX IF NOT EXISTS idx_embeddings_node ON node_embeddings(node_id);
+      CREATE INDEX IF NOT EXISTS idx_embeddings_model ON node_embeddings(model);
+      CREATE INDEX IF NOT EXISTS idx_rejections_source ON wormhole_rejections(source_id);
+      CREATE INDEX IF NOT EXISTS idx_rejections_target ON wormhole_rejections(target_id);
+      CREATE INDEX IF NOT EXISTS idx_rejections_pair ON wormhole_rejections(source_id, target_id);
     `);
     this.sqlite.exec(FTS5_SCHEMA);
     this.sqlite.exec(FTS5_TRIGGERS);
@@ -500,6 +603,8 @@ var EdgeTypeSchema = Type.Union([
   Type.Literal("causes"),
   Type.Literal("setup_payoff"),
   Type.Literal("semantic"),
+  Type.Literal("semantic_suggestion"),
+  // Pending semantic wormhole (not yet accepted)
   Type.Literal("mention"),
   Type.Literal("alias")
 ]);
@@ -759,8 +864,8 @@ var NodeRepository = class {
   /**
    * Find a node by path
    */
-  async findByPath(path16) {
-    const result = await this.db.select().from(nodes).where(eq(nodes.path, path16)).limit(1);
+  async findByPath(path18) {
+    const result = await this.db.select().from(nodes).where(eq(nodes.path, path18)).limit(1);
     return result[0] ? this.rowToNode(result[0]) : null;
   }
   /**
@@ -1036,9 +1141,13 @@ var EdgeRepository = class {
     return result.map(this.rowToEdge);
   }
   /**
-   * Get all edges
+   * Get all edges, optionally filtered by edge types
    */
-  async findAll() {
+  async findAll(edgeTypes) {
+    if (edgeTypes && edgeTypes.length > 0) {
+      const result2 = await this.db.select().from(edges).where(inArray2(edges.edgeType, edgeTypes));
+      return result2.map(this.rowToEdge);
+    }
     const result = await this.db.select().from(edges);
     return result.map(this.rowToEdge);
   }
@@ -1691,6 +1800,524 @@ var MentionRepository = class {
   }
 };
 
+// src/storage/database/repositories/unresolved-link-repository.ts
+import { sql as sql6 } from "drizzle-orm";
+var UnresolvedLinkRepository = class {
+  constructor(db) {
+    this.db = db;
+  }
+  /**
+   * Get all unresolved links grouped by target text for ghost node visualization.
+   * Returns ghost node data sorted by reference count (most referenced first).
+   */
+  async getGhostNodes() {
+    const result = await this.db.select({
+      targetText: unresolvedLinks.targetText,
+      sourceIds: sql6`GROUP_CONCAT(${unresolvedLinks.sourceId}, ',')`,
+      referenceCount: sql6`COUNT(*)`,
+      firstSeen: sql6`MIN(${unresolvedLinks.createdAt})`
+    }).from(unresolvedLinks).groupBy(unresolvedLinks.targetText).orderBy(sql6`COUNT(*) DESC`);
+    return result.filter((row) => row.targetText && row.targetText.trim() !== "").map((row) => ({
+      targetText: row.targetText,
+      sourceIds: row.sourceIds ? row.sourceIds.split(",") : [],
+      referenceCount: row.referenceCount,
+      firstSeen: row.firstSeen
+    }));
+  }
+  /**
+   * Get ghost nodes with a minimum reference count threshold.
+   * Useful for filtering out rarely-referenced unresolved links.
+   */
+  async getGhostNodesWithThreshold(minReferenceCount) {
+    const result = await this.db.select({
+      targetText: unresolvedLinks.targetText,
+      sourceIds: sql6`GROUP_CONCAT(${unresolvedLinks.sourceId}, ',')`,
+      referenceCount: sql6`COUNT(*)`,
+      firstSeen: sql6`MIN(${unresolvedLinks.createdAt})`
+    }).from(unresolvedLinks).groupBy(unresolvedLinks.targetText).having(sql6`COUNT(*) >= ${minReferenceCount}`).orderBy(sql6`COUNT(*) DESC`);
+    return result.filter((row) => row.targetText && row.targetText.trim() !== "").map((row) => ({
+      targetText: row.targetText,
+      sourceIds: row.sourceIds ? row.sourceIds.split(",") : [],
+      referenceCount: row.referenceCount,
+      firstSeen: row.firstSeen
+    }));
+  }
+  /**
+   * Count total number of unique unresolved link targets (ghost nodes)
+   */
+  async countGhostNodes() {
+    const result = await this.db.select({
+      count: sql6`COUNT(DISTINCT ${unresolvedLinks.targetText})`
+    }).from(unresolvedLinks);
+    return result[0]?.count ?? 0;
+  }
+  /**
+   * Count total number of unresolved link references
+   */
+  async countReferences() {
+    const result = await this.db.select({
+      count: sql6`COUNT(*)`
+    }).from(unresolvedLinks);
+    return result[0]?.count ?? 0;
+  }
+  /**
+   * Get ghost nodes with most recent reference time included.
+   * The most recent reference time is the latest of:
+   * - The unresolved_link createdAt timestamp
+   * - The referencing node's updatedAt timestamp
+   *
+   * Returns ghost node data sorted by reference count (most referenced first).
+   */
+  async getGhostNodesWithRecency() {
+    const result = await this.db.select({
+      targetText: unresolvedLinks.targetText,
+      sourceIds: sql6`GROUP_CONCAT(${unresolvedLinks.sourceId}, ',')`,
+      referenceCount: sql6`COUNT(*)`,
+      firstSeen: sql6`MIN(${unresolvedLinks.createdAt})`,
+      mostRecentLinkCreated: sql6`MAX(${unresolvedLinks.createdAt})`
+    }).from(unresolvedLinks).groupBy(unresolvedLinks.targetText).orderBy(sql6`COUNT(*) DESC`);
+    const ghostsWithRecency = await Promise.all(
+      result.filter((row) => row.targetText && row.targetText.trim() !== "").map(async (row) => {
+        const sourceIds = row.sourceIds ? row.sourceIds.split(",") : [];
+        let mostRecentReferencerUpdate = null;
+        if (sourceIds.length > 0) {
+          const referencerResult = await this.db.select({
+            maxUpdatedAt: sql6`MAX(${nodes.updatedAt})`
+          }).from(nodes).where(sql6`${nodes.nodeId} IN (${sql6.join(sourceIds.map((id) => sql6`${id}`), sql6`, `)})`);
+          mostRecentReferencerUpdate = referencerResult[0]?.maxUpdatedAt ?? null;
+        }
+        const mostRecentRef = [
+          row.mostRecentLinkCreated,
+          mostRecentReferencerUpdate
+        ].filter((t) => t !== null).sort().reverse()[0];
+        return {
+          targetText: row.targetText,
+          sourceIds,
+          referenceCount: row.referenceCount,
+          firstSeen: row.firstSeen,
+          mostRecentRef
+        };
+      })
+    );
+    return ghostsWithRecency;
+  }
+  /**
+   * Delete unresolved links by target text
+   */
+  async deleteByTargetText(targetText) {
+    const result = await this.db.delete(unresolvedLinks).where(sql6`${unresolvedLinks.targetText} COLLATE NOCASE = ${targetText}`);
+    return result.changes;
+  }
+};
+
+// src/storage/database/repositories/constellation-repository.ts
+import { eq as eq6 } from "drizzle-orm";
+import { randomUUID } from "crypto";
+var ConstellationRepository = class {
+  constructor(db) {
+    this.db = db;
+  }
+  /**
+   * Convert a database row to a Constellation object
+   */
+  rowToConstellation(row) {
+    return {
+      constellationId: row.constellationId,
+      name: row.name,
+      description: row.description ?? void 0,
+      hiddenNodeTypes: row.hiddenNodeTypes ?? [],
+      hiddenEdgeTypes: row.hiddenEdgeTypes ?? [],
+      showGhosts: row.showGhosts === 1,
+      ghostThreshold: row.ghostThreshold,
+      cameraX: row.cameraX ?? void 0,
+      cameraY: row.cameraY ?? void 0,
+      cameraZoom: row.cameraZoom ?? void 0,
+      focusNodeIds: row.focusNodeIds ?? void 0,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt
+    };
+  }
+  /**
+   * Create a new constellation
+   */
+  async create(input) {
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const id = randomUUID();
+    const row = {
+      constellationId: id,
+      name: input.name,
+      description: input.description ?? null,
+      hiddenNodeTypes: input.hiddenNodeTypes ?? [],
+      hiddenEdgeTypes: input.hiddenEdgeTypes ?? [],
+      showGhosts: input.showGhosts !== false ? 1 : 0,
+      ghostThreshold: input.ghostThreshold ?? 1,
+      cameraX: input.cameraX ?? null,
+      cameraY: input.cameraY ?? null,
+      cameraZoom: input.cameraZoom ?? null,
+      focusNodeIds: input.focusNodeIds ?? null,
+      createdAt: now,
+      updatedAt: now
+    };
+    await this.db.insert(constellations).values(row);
+    return this.rowToConstellation(row);
+  }
+  /**
+   * Find a constellation by ID
+   */
+  async findById(id) {
+    const rows = await this.db.select().from(constellations).where(eq6(constellations.constellationId, id)).limit(1);
+    const row = rows[0];
+    if (!row) return null;
+    return this.rowToConstellation(row);
+  }
+  /**
+   * Find a constellation by name
+   */
+  async findByName(name) {
+    const rows = await this.db.select().from(constellations).where(eq6(constellations.name, name)).limit(1);
+    const row = rows[0];
+    if (!row) return null;
+    return this.rowToConstellation(row);
+  }
+  /**
+   * Find all constellations
+   */
+  async findAll() {
+    const rows = await this.db.select().from(constellations);
+    return rows.map((row) => this.rowToConstellation(row));
+  }
+  /**
+   * Update an existing constellation
+   */
+  async update(id, input) {
+    const existing = await this.findById(id);
+    if (!existing) return null;
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const updates = {
+      updatedAt: now
+    };
+    if (input.name !== void 0) updates.name = input.name;
+    if (input.description !== void 0) updates.description = input.description;
+    if (input.hiddenNodeTypes !== void 0) updates.hiddenNodeTypes = input.hiddenNodeTypes;
+    if (input.hiddenEdgeTypes !== void 0) updates.hiddenEdgeTypes = input.hiddenEdgeTypes;
+    if (input.showGhosts !== void 0) updates.showGhosts = input.showGhosts ? 1 : 0;
+    if (input.ghostThreshold !== void 0) updates.ghostThreshold = input.ghostThreshold;
+    if (input.cameraX !== void 0) updates.cameraX = input.cameraX;
+    if (input.cameraY !== void 0) updates.cameraY = input.cameraY;
+    if (input.cameraZoom !== void 0) updates.cameraZoom = input.cameraZoom;
+    if (input.focusNodeIds !== void 0) updates.focusNodeIds = input.focusNodeIds;
+    await this.db.update(constellations).set(updates).where(eq6(constellations.constellationId, id));
+    return this.findById(id);
+  }
+  /**
+   * Delete a constellation by ID
+   */
+  async delete(id) {
+    const result = await this.db.delete(constellations).where(eq6(constellations.constellationId, id));
+    return result.changes !== 0;
+  }
+  /**
+   * Delete a constellation by name
+   */
+  async deleteByName(name) {
+    const result = await this.db.delete(constellations).where(eq6(constellations.name, name));
+    return result.changes !== 0;
+  }
+};
+
+// src/storage/database/repositories/embedding-repository.ts
+import { eq as eq7, inArray as inArray4, sql as sql7 } from "drizzle-orm";
+import { nanoid as nanoid6 } from "nanoid";
+var EmbeddingRepository = class {
+  constructor(db) {
+    this.db = db;
+  }
+  /**
+   * Create a new embedding
+   */
+  async create(data) {
+    const embeddingId = nanoid6();
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const row = {
+      embeddingId,
+      nodeId: data.nodeId,
+      embedding: data.embedding,
+      model: data.model,
+      dimensions: data.dimensions,
+      contentHash: data.contentHash,
+      computedAt: now
+    };
+    await this.db.insert(nodeEmbeddings).values(row);
+    return this.rowToEmbedding({ ...row, embeddingId, computedAt: now });
+  }
+  /**
+   * Create or update an embedding for a node
+   */
+  async upsert(data) {
+    const existing = await this.findByNodeId(data.nodeId);
+    if (existing) {
+      return this.update(existing.embeddingId, data);
+    }
+    return this.create(data);
+  }
+  /**
+   * Find an embedding by ID
+   */
+  async findById(embeddingId) {
+    const result = await this.db.select().from(nodeEmbeddings).where(eq7(nodeEmbeddings.embeddingId, embeddingId)).limit(1);
+    return result[0] ? this.rowToEmbedding(result[0]) : null;
+  }
+  /**
+   * Find embedding by node ID
+   */
+  async findByNodeId(nodeId) {
+    const result = await this.db.select().from(nodeEmbeddings).where(eq7(nodeEmbeddings.nodeId, nodeId)).limit(1);
+    return result[0] ? this.rowToEmbedding(result[0]) : null;
+  }
+  /**
+   * Find all embeddings
+   */
+  async findAll() {
+    const result = await this.db.select().from(nodeEmbeddings);
+    return result.map((row) => this.rowToEmbedding(row));
+  }
+  /**
+   * Find embeddings by model
+   */
+  async findByModel(model) {
+    const result = await this.db.select().from(nodeEmbeddings).where(eq7(nodeEmbeddings.model, model));
+    return result.map((row) => this.rowToEmbedding(row));
+  }
+  /**
+   * Find embeddings by node IDs
+   */
+  async findByNodeIds(nodeIds) {
+    if (nodeIds.length === 0) return [];
+    const result = await this.db.select().from(nodeEmbeddings).where(inArray4(nodeEmbeddings.nodeId, nodeIds));
+    return result.map((row) => this.rowToEmbedding(row));
+  }
+  /**
+   * Find nodes that need embedding computation
+   * Returns nodes where either:
+   * - No embedding exists
+   * - The content hash has changed since last embedding
+   */
+  async findDirtyNodeIds() {
+    const allNodes = await this.db.select({
+      nodeId: nodes.nodeId,
+      contentHash: nodes.contentHash
+    }).from(nodes);
+    const embeddings = await this.db.select({
+      nodeId: nodeEmbeddings.nodeId,
+      contentHash: nodeEmbeddings.contentHash
+    }).from(nodeEmbeddings);
+    const embeddingMap = new Map(embeddings.map((e) => [e.nodeId, e.contentHash]));
+    const dirtyNodeIds = [];
+    for (const node of allNodes) {
+      const existingHash = embeddingMap.get(node.nodeId);
+      if (!existingHash || existingHash !== node.contentHash) {
+        dirtyNodeIds.push(node.nodeId);
+      }
+    }
+    return dirtyNodeIds;
+  }
+  /**
+   * Update an embedding
+   */
+  async update(embeddingId, data) {
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const updateData = {
+      computedAt: now
+    };
+    if (data.embedding !== void 0) updateData.embedding = data.embedding;
+    if (data.model !== void 0) updateData.model = data.model;
+    if (data.dimensions !== void 0) updateData.dimensions = data.dimensions;
+    if (data.contentHash !== void 0) updateData.contentHash = data.contentHash;
+    await this.db.update(nodeEmbeddings).set(updateData).where(eq7(nodeEmbeddings.embeddingId, embeddingId));
+    const updated = await this.findById(embeddingId);
+    if (!updated) {
+      throw new Error(`Embedding ${embeddingId} not found after update`);
+    }
+    return updated;
+  }
+  /**
+   * Delete an embedding by ID
+   */
+  async delete(embeddingId) {
+    await this.db.delete(nodeEmbeddings).where(eq7(nodeEmbeddings.embeddingId, embeddingId));
+  }
+  /**
+   * Delete embedding by node ID
+   */
+  async deleteByNodeId(nodeId) {
+    await this.db.delete(nodeEmbeddings).where(eq7(nodeEmbeddings.nodeId, nodeId));
+  }
+  /**
+   * Delete all embeddings for a model
+   */
+  async deleteByModel(model) {
+    const result = await this.db.delete(nodeEmbeddings).where(eq7(nodeEmbeddings.model, model));
+    return result.changes;
+  }
+  /**
+   * Count embeddings
+   */
+  async count() {
+    const result = await this.db.select({ count: sql7`count(*)` }).from(nodeEmbeddings);
+    return result[0]?.count ?? 0;
+  }
+  /**
+   * Count embeddings by model
+   */
+  async countByModel() {
+    const result = await this.db.select({
+      model: nodeEmbeddings.model,
+      count: sql7`count(*)`
+    }).from(nodeEmbeddings).groupBy(nodeEmbeddings.model);
+    const counts = {};
+    for (const row of result) {
+      counts[row.model] = row.count;
+    }
+    return counts;
+  }
+  /**
+   * Convert database row to NodeEmbedding type
+   */
+  rowToEmbedding(row) {
+    return {
+      embeddingId: row.embeddingId,
+      nodeId: row.nodeId,
+      embedding: row.embedding,
+      model: row.model,
+      dimensions: row.dimensions,
+      contentHash: row.contentHash,
+      computedAt: row.computedAt
+    };
+  }
+};
+
+// src/storage/database/repositories/wormhole-repository.ts
+import { eq as eq8, and as and5, or as or2, sql as sql8 } from "drizzle-orm";
+import { nanoid as nanoid7 } from "nanoid";
+var WormholeRepository = class {
+  constructor(db) {
+    this.db = db;
+  }
+  /**
+   * Create a new rejection
+   */
+  async createRejection(data) {
+    const rejectionId = nanoid7();
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const [normalizedSourceId, normalizedTargetId, normalizedSourceHash, normalizedTargetHash] = data.sourceId < data.targetId ? [data.sourceId, data.targetId, data.sourceContentHash, data.targetContentHash] : [data.targetId, data.sourceId, data.targetContentHash, data.sourceContentHash];
+    const row = {
+      rejectionId,
+      sourceId: normalizedSourceId,
+      targetId: normalizedTargetId,
+      sourceContentHash: normalizedSourceHash,
+      targetContentHash: normalizedTargetHash,
+      rejectedAt: now
+    };
+    await this.db.insert(wormholeRejections).values(row);
+    return this.rowToRejection({ ...row, rejectionId, rejectedAt: now });
+  }
+  /**
+   * Check if a pair is rejected (considering content hashes)
+   * Returns true if the pair was rejected AND the content hasn't changed
+   */
+  async isRejected(sourceId, targetId, sourceContentHash, targetContentHash) {
+    const [normalizedSourceId, normalizedTargetId, normalizedSourceHash, normalizedTargetHash] = sourceId < targetId ? [sourceId, targetId, sourceContentHash, targetContentHash] : [targetId, sourceId, targetContentHash, sourceContentHash];
+    const result = await this.db.select().from(wormholeRejections).where(and5(
+      eq8(wormholeRejections.sourceId, normalizedSourceId),
+      eq8(wormholeRejections.targetId, normalizedTargetId),
+      eq8(wormholeRejections.sourceContentHash, normalizedSourceHash),
+      eq8(wormholeRejections.targetContentHash, normalizedTargetHash)
+    )).limit(1);
+    return result.length > 0;
+  }
+  /**
+   * Check if any rejection exists for a pair (regardless of content hash)
+   */
+  async hasAnyRejection(sourceId, targetId) {
+    const [normalizedSourceId, normalizedTargetId] = sourceId < targetId ? [sourceId, targetId] : [targetId, sourceId];
+    const result = await this.db.select().from(wormholeRejections).where(and5(
+      eq8(wormholeRejections.sourceId, normalizedSourceId),
+      eq8(wormholeRejections.targetId, normalizedTargetId)
+    )).limit(1);
+    return result.length > 0;
+  }
+  /**
+   * Find all rejections
+   */
+  async findAll() {
+    const result = await this.db.select().from(wormholeRejections);
+    return result.map((row) => this.rowToRejection(row));
+  }
+  /**
+   * Find rejections for a specific node
+   */
+  async findByNodeId(nodeId) {
+    const result = await this.db.select().from(wormholeRejections).where(or2(
+      eq8(wormholeRejections.sourceId, nodeId),
+      eq8(wormholeRejections.targetId, nodeId)
+    ));
+    return result.map((row) => this.rowToRejection(row));
+  }
+  /**
+   * Delete a rejection by ID
+   */
+  async delete(rejectionId) {
+    await this.db.delete(wormholeRejections).where(eq8(wormholeRejections.rejectionId, rejectionId));
+  }
+  /**
+   * Delete rejections for a node pair
+   */
+  async deleteForPair(sourceId, targetId) {
+    const [normalizedSourceId, normalizedTargetId] = sourceId < targetId ? [sourceId, targetId] : [targetId, sourceId];
+    await this.db.delete(wormholeRejections).where(and5(
+      eq8(wormholeRejections.sourceId, normalizedSourceId),
+      eq8(wormholeRejections.targetId, normalizedTargetId)
+    ));
+  }
+  /**
+   * Delete all rejections for a node
+   */
+  async deleteForNode(nodeId) {
+    const result = await this.db.delete(wormholeRejections).where(or2(
+      eq8(wormholeRejections.sourceId, nodeId),
+      eq8(wormholeRejections.targetId, nodeId)
+    ));
+    return result.changes;
+  }
+  /**
+   * Clear all rejections
+   */
+  async clearAll() {
+    const result = await this.db.delete(wormholeRejections);
+    return result.changes;
+  }
+  /**
+   * Count rejections
+   */
+  async count() {
+    const result = await this.db.select({ count: sql8`count(*)` }).from(wormholeRejections);
+    return result[0]?.count ?? 0;
+  }
+  /**
+   * Convert database row to WormholeRejection type
+   */
+  rowToRejection(row) {
+    return {
+      rejectionId: row.rejectionId,
+      sourceId: row.sourceId,
+      targetId: row.targetId,
+      sourceContentHash: row.sourceContentHash,
+      targetContentHash: row.targetContentHash,
+      rejectedAt: row.rejectedAt
+    };
+  }
+};
+
 // src/parser/markdown.ts
 import { unified } from "unified";
 import remarkParse from "remark-parse";
@@ -2298,8 +2925,8 @@ var IndexingPipeline = class {
   /**
    * Remove a node by path
    */
-  async removeByPath(path16) {
-    const node = await this.nodeRepo.findByPath(path16);
+  async removeByPath(path18) {
+    const node = await this.nodeRepo.findByPath(path18);
     if (node) {
       await this.removeNode(node.nodeId);
     }
@@ -2328,6 +2955,334 @@ var IndexingPipeline = class {
   }
 };
 
+// src/core/graph/pathfinder.ts
+var EDGE_PENALTIES = {
+  explicit_link: 0,
+  sequence: 0.1,
+  causes: 0.2,
+  semantic: 0.3,
+  semantic_suggestion: 0.5
+};
+var DEFAULT_EDGE_PENALTY = 0.3;
+function buildAdjacencyLists(edges2, edgeTypes) {
+  const forward = /* @__PURE__ */ new Map();
+  const backward = /* @__PURE__ */ new Map();
+  const typeSet = edgeTypes ? new Set(edgeTypes) : null;
+  for (const edge of edges2) {
+    if (typeSet && !typeSet.has(edge.edgeType)) continue;
+    if (!forward.has(edge.sourceId)) {
+      forward.set(edge.sourceId, []);
+    }
+    forward.get(edge.sourceId).push({
+      nodeId: edge.targetId,
+      edgeType: edge.edgeType
+    });
+    if (!backward.has(edge.targetId)) {
+      backward.set(edge.targetId, []);
+    }
+    backward.get(edge.targetId).push({
+      nodeId: edge.sourceId,
+      edgeType: edge.edgeType
+    });
+  }
+  return { forward, backward };
+}
+function bidirectionalBFS(startId, endId, forward, backward, maxDepth, disabledEdges, disabledNodes) {
+  if (startId === endId) {
+    return { path: [startId], edges: [] };
+  }
+  if (disabledNodes?.has(startId) || disabledNodes?.has(endId)) {
+    return null;
+  }
+  const forwardVisited = /* @__PURE__ */ new Map();
+  forwardVisited.set(startId, { parent: null, edgeType: null });
+  let forwardQueue = [startId];
+  let forwardDepth = 0;
+  const backwardVisited = /* @__PURE__ */ new Map();
+  backwardVisited.set(endId, { parent: null, edgeType: null });
+  let backwardQueue = [endId];
+  let backwardDepth = 0;
+  let bestDistance = Infinity;
+  let meetingNode = null;
+  while ((forwardQueue.length > 0 || backwardQueue.length > 0) && forwardDepth + backwardDepth < bestDistance) {
+    if (forwardDepth + backwardDepth >= maxDepth * 2) break;
+    const expandForward = forwardQueue.length > 0 && (backwardQueue.length === 0 || forwardQueue.length <= backwardQueue.length);
+    if (expandForward && forwardQueue.length > 0) {
+      const nextQueue = [];
+      forwardDepth++;
+      if (forwardDepth > bestDistance) break;
+      for (const nodeId of forwardQueue) {
+        const neighbors = forward.get(nodeId) || [];
+        for (const { nodeId: neighborId, edgeType } of neighbors) {
+          if (disabledNodes?.has(neighborId)) continue;
+          const edgeKey = `${nodeId}->${neighborId}`;
+          if (disabledEdges?.has(edgeKey)) continue;
+          if (!forwardVisited.has(neighborId)) {
+            forwardVisited.set(neighborId, { parent: nodeId, edgeType });
+            nextQueue.push(neighborId);
+            if (backwardVisited.has(neighborId)) {
+              const totalDist = forwardDepth + backwardDepth;
+              if (totalDist < bestDistance) {
+                bestDistance = totalDist;
+                meetingNode = neighborId;
+              }
+            }
+          }
+        }
+      }
+      forwardQueue = nextQueue;
+    } else if (backwardQueue.length > 0) {
+      const nextQueue = [];
+      backwardDepth++;
+      if (backwardDepth > bestDistance) break;
+      for (const nodeId of backwardQueue) {
+        const neighbors = backward.get(nodeId) || [];
+        for (const { nodeId: neighborId, edgeType } of neighbors) {
+          if (disabledNodes?.has(neighborId)) continue;
+          const edgeKey = `${neighborId}->${nodeId}`;
+          if (disabledEdges?.has(edgeKey)) continue;
+          if (!backwardVisited.has(neighborId)) {
+            backwardVisited.set(neighborId, { parent: nodeId, edgeType });
+            nextQueue.push(neighborId);
+            if (forwardVisited.has(neighborId)) {
+              const totalDist = forwardDepth + backwardDepth;
+              if (totalDist < bestDistance) {
+                bestDistance = totalDist;
+                meetingNode = neighborId;
+              }
+            }
+          }
+        }
+      }
+      backwardQueue = nextQueue;
+    } else {
+      break;
+    }
+  }
+  if (!meetingNode) {
+    return null;
+  }
+  const pathToMeeting = [];
+  const edgesToMeeting = [];
+  let current = meetingNode;
+  while (current !== null) {
+    pathToMeeting.unshift(current);
+    const info = forwardVisited.get(current);
+    if (info?.edgeType) {
+      edgesToMeeting.unshift(info.edgeType);
+    }
+    current = info?.parent ?? null;
+  }
+  const pathFromMeeting = [];
+  const edgesFromMeeting = [];
+  current = backwardVisited.get(meetingNode)?.parent ?? null;
+  while (current !== null) {
+    pathFromMeeting.push(current);
+    const info = backwardVisited.get(current);
+    const prevNode = pathFromMeeting.length > 1 ? pathFromMeeting[pathFromMeeting.length - 2] : meetingNode;
+    const prevInfo = backwardVisited.get(prevNode);
+    if (prevInfo?.edgeType) {
+      edgesFromMeeting.push(prevInfo.edgeType);
+    }
+    current = info?.parent ?? null;
+  }
+  const path18 = [...pathToMeeting, ...pathFromMeeting];
+  const edges2 = [...edgesToMeeting, ...edgesFromMeeting];
+  return { path: path18, edges: edges2 };
+}
+function calculateJaccardOverlap(pathA, pathB, excludeEndpoints = false) {
+  let nodesA = new Set(pathA);
+  let nodesB = new Set(pathB);
+  if (excludeEndpoints && pathA.length >= 2 && pathB.length >= 2) {
+    nodesA = new Set(pathA.slice(1, -1));
+    nodesB = new Set(pathB.slice(1, -1));
+  }
+  if (nodesA.size === 0 && nodesB.size === 0) {
+    return 1;
+  }
+  const intersection = new Set([...nodesA].filter((x) => nodesB.has(x)));
+  const union = /* @__PURE__ */ new Set([...nodesA, ...nodesB]);
+  if (union.size === 0) return 1;
+  return intersection.size / union.size;
+}
+function calculatePathScore(edges2) {
+  const hopCount = edges2.length;
+  let penalty = 0;
+  for (const edgeType of edges2) {
+    penalty += EDGE_PENALTIES[edgeType] ?? DEFAULT_EDGE_PENALTY;
+  }
+  return hopCount + penalty;
+}
+function isSimplePath(path18) {
+  const seen = /* @__PURE__ */ new Set();
+  for (const nodeId of path18) {
+    if (seen.has(nodeId)) return false;
+    seen.add(nodeId);
+  }
+  return true;
+}
+function findKShortestPaths(startId, endId, edges2, options = {}) {
+  const {
+    k = 3,
+    edgeTypes = ["explicit_link", "sequence", "causes", "semantic"],
+    maxDepth = 15,
+    overlapThreshold = 0.7,
+    maxCandidates = 100,
+    maxExtraHops = 2
+  } = options;
+  const { forward, backward } = buildAdjacencyLists(edges2, edgeTypes);
+  const firstResult = bidirectionalBFS(startId, endId, forward, backward, maxDepth);
+  if (!firstResult) {
+    return { paths: [], reason: "no_path" };
+  }
+  const shortestHopCount = firstResult.path.length - 1;
+  const maxAllowedHops = shortestHopCount + maxExtraHops;
+  const results = [{
+    path: firstResult.path,
+    edges: firstResult.edges,
+    hopCount: shortestHopCount,
+    score: calculatePathScore(firstResult.edges)
+  }];
+  const candidates = [];
+  const seenPaths = /* @__PURE__ */ new Set([firstResult.path.join("|")]);
+  for (let i = 0; i < results.length && results.length < k; i++) {
+    const resultItem = results[i];
+    const currentPath = resultItem.path;
+    for (let spurIndex = 0; spurIndex < currentPath.length - 1; spurIndex++) {
+      const spurNode = currentPath[spurIndex];
+      const rootPath = currentPath.slice(0, spurIndex + 1);
+      const rootEdges = resultItem.edges.slice(0, spurIndex);
+      const disabledEdges = /* @__PURE__ */ new Set();
+      const disabledNodes = /* @__PURE__ */ new Set();
+      for (const result of results) {
+        if (result.path.length > spurIndex) {
+          const matchesRoot = rootPath.every((node, idx) => result.path[idx] === node);
+          if (matchesRoot && spurIndex < result.path.length - 1) {
+            const edgeKey = `${result.path[spurIndex]}->${result.path[spurIndex + 1]}`;
+            disabledEdges.add(edgeKey);
+          }
+        }
+      }
+      for (let j = 0; j < rootPath.length - 1; j++) {
+        const nodeToDisable = rootPath[j];
+        if (nodeToDisable) {
+          disabledNodes.add(nodeToDisable);
+        }
+      }
+      const spurResult = bidirectionalBFS(
+        spurNode,
+        endId,
+        forward,
+        backward,
+        maxDepth - spurIndex,
+        disabledEdges,
+        disabledNodes
+      );
+      if (spurResult && spurResult.path.length > 1) {
+        const totalPath = [...rootPath.slice(0, -1), ...spurResult.path];
+        const totalEdges = [...rootEdges, ...spurResult.edges];
+        const pathKey = totalPath.join("|");
+        if (!seenPaths.has(pathKey) && isSimplePath(totalPath) && totalPath.length - 1 <= maxAllowedHops) {
+          seenPaths.add(pathKey);
+          candidates.push({
+            path: totalPath,
+            edges: totalEdges,
+            score: calculatePathScore(totalEdges)
+          });
+        }
+      }
+      if (candidates.length > maxCandidates) {
+        candidates.sort((a, b) => {
+          const hopDiff = a.path.length - 1 - (b.path.length - 1);
+          if (hopDiff !== 0) return hopDiff;
+          const scoreDiff = a.score - b.score;
+          if (scoreDiff !== 0) return scoreDiff;
+          return a.path.join("|").localeCompare(b.path.join("|"));
+        });
+        candidates.length = maxCandidates;
+      }
+    }
+    if (candidates.length > 0) {
+      candidates.sort((a, b) => {
+        const hopDiff = a.path.length - 1 - (b.path.length - 1);
+        if (hopDiff !== 0) return hopDiff;
+        const scoreDiff = a.score - b.score;
+        if (scoreDiff !== 0) return scoreDiff;
+        return a.path.join("|").localeCompare(b.path.join("|"));
+      });
+      let addedIndex = -1;
+      for (let j = 0; j < candidates.length; j++) {
+        const candidate = candidates[j];
+        let tooSimilar = false;
+        for (const accepted of results) {
+          const overlap = calculateJaccardOverlap(
+            candidate.path,
+            accepted.path,
+            candidate.path.length <= 4 || accepted.path.length <= 4
+          );
+          if (overlap > overlapThreshold) {
+            tooSimilar = true;
+            break;
+          }
+        }
+        if (!tooSimilar) {
+          results.push({
+            path: candidate.path,
+            edges: candidate.edges,
+            hopCount: candidate.path.length - 1,
+            score: candidate.score
+          });
+          addedIndex = j;
+          break;
+        }
+      }
+      if (addedIndex >= 0) {
+        candidates.splice(addedIndex, 1);
+      }
+    }
+  }
+  let reason = "found_all";
+  if (results.length < k) {
+    if (candidates.length === 0) {
+      reason = "exhausted_candidates";
+    } else {
+      reason = "diversity_filter";
+    }
+  }
+  return { paths: results, reason };
+}
+function simpleBFS(startId, endId, forward, maxDepth = 15) {
+  if (startId === endId) return [startId];
+  const visited = /* @__PURE__ */ new Map();
+  visited.set(startId, null);
+  let queue = [startId];
+  let depth = 0;
+  while (queue.length > 0 && depth < maxDepth) {
+    const nextQueue = [];
+    depth++;
+    for (const nodeId of queue) {
+      const neighbors = forward.get(nodeId) || [];
+      for (const { nodeId: neighborId } of neighbors) {
+        if (neighborId === endId) {
+          const path18 = [endId, nodeId];
+          let current = nodeId;
+          while (visited.get(current) !== null) {
+            current = visited.get(current);
+            path18.push(current);
+          }
+          return path18.reverse();
+        }
+        if (!visited.has(neighborId)) {
+          visited.set(neighborId, nodeId);
+          nextQueue.push(neighborId);
+        }
+      }
+    }
+    queue = nextQueue;
+  }
+  return null;
+}
+
 // src/core/graph/engine.ts
 var GraphEngine = class {
   nodeRepo;
@@ -2344,8 +3299,8 @@ var GraphEngine = class {
   async getNode(nodeId) {
     return this.nodeRepo.findById(nodeId);
   }
-  async getNodeByPath(path16) {
-    return this.nodeRepo.findByPath(path16);
+  async getNodeByPath(path18) {
+    return this.nodeRepo.findByPath(path18);
   }
   async getNodeByTitle(title) {
     return this.nodeRepo.findByTitle(title);
@@ -2518,32 +3473,28 @@ var GraphEngine = class {
   // Path Finding
   // ============================================================================
   /**
-   * Find shortest path between two nodes (BFS)
+   * Find shortest path between two nodes using optimized BFS
    */
   async findShortestPath(startId, endId, edgeTypes) {
     if (startId === endId) return [startId];
-    const visited = /* @__PURE__ */ new Set([startId]);
-    const queue = [
-      { nodeId: startId, path: [startId] }
-    ];
-    while (queue.length > 0) {
-      const current = queue.shift();
-      if (!current) break;
-      const edges2 = await this.edgeRepo.findOutgoing(current.nodeId, edgeTypes);
-      for (const edge of edges2) {
-        if (edge.targetId === endId) {
-          return [...current.path, endId];
-        }
-        if (!visited.has(edge.targetId)) {
-          visited.add(edge.targetId);
-          queue.push({
-            nodeId: edge.targetId,
-            path: [...current.path, edge.targetId]
-          });
-        }
-      }
-    }
-    return null;
+    const edges2 = await this.edgeRepo.findAll(edgeTypes);
+    const { forward } = buildAdjacencyLists(edges2, edgeTypes);
+    return simpleBFS(startId, endId, forward, this.config.graph.defaultMaxDepth * 5);
+  }
+  /**
+   * Find K shortest diverse paths between two nodes
+   *
+   * Uses Yen's algorithm with Jaccard diversity filtering.
+   *
+   * @param startId - Starting node ID
+   * @param endId - Ending node ID
+   * @param options - Search options
+   * @returns Array of path results and reason for stopping
+   */
+  async findKShortestPaths(startId, endId, options) {
+    const edgeTypes = options?.edgeTypes ?? ["explicit_link", "sequence", "causes", "semantic"];
+    const edges2 = await this.edgeRepo.findAll(edgeTypes);
+    return findKShortestPaths(startId, endId, edges2, options);
   }
   /**
    * Check if two nodes are connected
@@ -2760,6 +3711,10 @@ async function initContext(vaultPath) {
   const versionRepository = new VersionRepository(db);
   const chunkRepository = new ChunkRepository(db, sqlite);
   const mentionRepository = new MentionRepository(db);
+  const unresolvedLinkRepository = new UnresolvedLinkRepository(db);
+  const constellationRepository = new ConstellationRepository(db);
+  const embeddingRepository = new EmbeddingRepository(db);
+  const wormholeRepository = new WormholeRepository(db);
   const pipeline = new IndexingPipeline({
     nodeRepository,
     edgeRepository,
@@ -2778,6 +3733,10 @@ async function initContext(vaultPath) {
     versionRepository,
     chunkRepository,
     mentionRepository,
+    unresolvedLinkRepository,
+    constellationRepository,
+    embeddingRepository,
+    wormholeRepository,
     pipeline,
     graphEngine
   };
@@ -3095,10 +4054,10 @@ var indexCommand = new Command2("index").description("Index all markdown files i
     let lastProgress = 0;
     const result = await fullIndex(ctx.pipeline, ctx.vaultPath, {
       excludePatterns: ctx.config.vault.excludePatterns,
-      onProgress: (current, total, path16) => {
+      onProgress: (current, total, path18) => {
         if (current > lastProgress) {
           lastProgress = current;
-          spinner.update(`Indexing ${current}/${total}: ${path16}`);
+          spinner.update(`Indexing ${current}/${total}: ${path18}`);
         }
       }
     });
@@ -3563,22 +4522,22 @@ queryCommand.command("path <from> <to>").description("Find shortest path between
     }
     console.log(`Path from "${fromNode.title}" to "${toNode.title}":
 `);
-    const path16 = await ctx.graphEngine.findShortestPath(fromNode.nodeId, toNode.nodeId);
-    if (!path16) {
+    const path18 = await ctx.graphEngine.findShortestPath(fromNode.nodeId, toNode.nodeId);
+    if (!path18) {
       console.log("No path found.");
     } else {
-      const pathNodes = await ctx.nodeRepository.findByIds(path16);
+      const pathNodes = await ctx.nodeRepository.findByIds(path18);
       const nodeMap = new Map(pathNodes.map((n) => [n.nodeId, n]));
-      for (let i = 0; i < path16.length; i++) {
-        const nodeId = path16[i];
+      for (let i = 0; i < path18.length; i++) {
+        const nodeId = path18[i];
         if (nodeId) {
           const node = nodeMap.get(nodeId);
-          const prefix = i === 0 ? "\u2192" : i === path16.length - 1 ? "\u25C9" : "\u2193";
+          const prefix = i === 0 ? "\u2192" : i === path18.length - 1 ? "\u25C9" : "\u2193";
           console.log(`  ${prefix} ${node?.title || nodeId}`);
         }
       }
       console.log(`
-Path length: ${path16.length - 1} hops`);
+Path length: ${path18.length - 1} hops`);
     }
     ctx.connectionManager.close();
   } catch (error) {
@@ -4929,14 +5888,14 @@ var discoverCommand = new Command6("discover").description("Find unlinked mentio
       return;
     }
     let totalMentions = 0;
-    for (const { nodeId, path: path16, title } of nodesToCheck) {
+    for (const { nodeId, path: path18, title } of nodesToCheck) {
       const mentions = await detector.detectInNode(nodeId);
       if (mentions.length === 0) continue;
       const ranked = await ranker.rank(mentions);
       const filtered = ranked.filter((m) => m.confidence >= threshold);
       if (filtered.length === 0) continue;
       console.log(`
-${title} (${path16}):`);
+${title} (${path18}):`);
       const display = filtered.slice(0, limit);
       const rows = display.map((m) => [
         m.surfaceText,
@@ -5951,11 +6910,10 @@ async function getOllamaModelInfo(model, baseUrl = "http://localhost:11434") {
         }
       }
     }
-    return {
-      contextLength,
-      parameterSize: data.details?.parameter_size,
-      family: data.details?.family
-    };
+    const info = { contextLength };
+    if (data.details?.parameter_size) info.parameterSize = data.details.parameter_size;
+    if (data.details?.family) info.family = data.details.family;
+    return info;
   } catch {
     return null;
   }
@@ -6445,7 +7403,7 @@ var EntityExtractor = class {
 };
 
 // src/cli/commands/extract.ts
-import { nanoid as nanoid6 } from "nanoid";
+import { nanoid as nanoid8 } from "nanoid";
 import { stringify as stringifyYaml4 } from "yaml";
 var extractCommand = new Command9("extract").description("Extract entities (characters, locations, etc.) from prose").option("-f, --file <path>", "Extract from specific file").option("--all", "Extract from all markdown files").option("-m, --model <model>", "Ollama model to use", "qwen2.5:7b").option("--dry-run", "Show what would be extracted without creating files").option("-o, --output <dir>", "Output directory for entity files").option("-v, --verbose", "Show detailed output").action(async (options) => {
   try {
@@ -6604,7 +7562,7 @@ Creating entity files in: ${path8.relative(ctx.vaultPath, outputDir)}/`);
           continue;
         }
         const frontmatter = {
-          id: nanoid6(),
+          id: nanoid8(),
           title: entity.name,
           type: entity.type
         };
@@ -9419,9 +10377,554 @@ Errors (${result.errors.length}):`);
 // src/cli/commands/visualize.ts
 import { Command as Command12 } from "commander";
 import process2 from "process";
+import * as fs12 from "fs";
+import * as path15 from "path";
+import open from "open";
+
+// src/cli/server/visualize-server.ts
+import { createServer } from "http";
+import { WebSocketServer, WebSocket } from "ws";
+import { nanoid as nanoid9 } from "nanoid";
 import * as fs11 from "fs";
 import * as path14 from "path";
-import open from "open";
+import { stringify as stringifyYaml6 } from "yaml";
+
+// src/cli/server/ws-protocol.ts
+var PROTOCOL_VERSION = "1.0.0";
+function parseClientMessage(data) {
+  try {
+    const parsed = JSON.parse(data);
+    if (typeof parsed !== "object" || !parsed.type) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+function serializeServerMessage(message) {
+  return JSON.stringify(message);
+}
+function isValidPath(targetFolder) {
+  if (!targetFolder) return true;
+  if (targetFolder.startsWith("/") || /^[a-zA-Z]:/.test(targetFolder)) {
+    return false;
+  }
+  if (targetFolder.includes("..")) {
+    return false;
+  }
+  if (targetFolder.startsWith(".") || targetFolder.includes("/.")) {
+    return false;
+  }
+  return true;
+}
+function generateToken() {
+  const array = new Uint8Array(32);
+  crypto.getRandomValues(array);
+  return Array.from(array, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+function generateSessionNonce() {
+  const array = new Uint8Array(16);
+  crypto.getRandomValues(array);
+  return Array.from(array, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+// src/cli/server/visualize-server.ts
+var TOKEN_VALIDITY_MS = 10 * 60 * 1e3;
+var RECONNECT_GRACE_MS = 30 * 1e3;
+var VisualizeServer = class {
+  server;
+  wss;
+  ctx;
+  token;
+  tokenExpiry;
+  sessions = /* @__PURE__ */ new Map();
+  recentCreations = /* @__PURE__ */ new Map();
+  onClose;
+  constructor(options) {
+    this.ctx = options.ctx;
+    this.onClose = options.onClose;
+    this.token = generateToken();
+    this.tokenExpiry = Date.now() + TOKEN_VALIDITY_MS;
+    this.server = createServer();
+    this.wss = new WebSocketServer({
+      server: this.server,
+      verifyClient: (info, callback) => {
+        const valid = this.verifyClient(info);
+        callback(valid);
+      }
+    });
+    this.setupWebSocket();
+  }
+  /**
+   * Verify client connection before upgrade
+   */
+  verifyClient(info) {
+    const origin = info.origin || info.req.headers.origin;
+    if (origin) {
+      const validOrigins = [
+        "file://",
+        "null",
+        // file:// protocol sends "null" as origin
+        "http://localhost",
+        "http://127.0.0.1",
+        "https://localhost",
+        "https://127.0.0.1"
+      ];
+      const originValid = validOrigins.some(
+        (v) => origin === v || origin.startsWith(v + ":")
+      );
+      if (!originValid) {
+        console.error(`[WS] Rejected connection from origin: ${origin}`);
+        return false;
+      }
+    }
+    return true;
+  }
+  /**
+   * Set up WebSocket event handlers
+   */
+  setupWebSocket() {
+    this.wss.on("connection", (ws, req) => {
+      const clientAddr = req.socket.remoteAddress;
+      console.log(`[WS] New connection from ${clientAddr}`);
+      const sessionId = nanoid9();
+      const session = {
+        ws,
+        sessionId,
+        sessionNonce: "",
+        authenticated: false,
+        lastActivity: Date.now(),
+        patchSeq: 0,
+        pendingCreates: /* @__PURE__ */ new Set()
+      };
+      this.sessions.set(sessionId, session);
+      ws.on("message", (data) => {
+        this.handleMessage(sessionId, data);
+      });
+      ws.on("close", () => {
+        console.log(`[WS] Connection closed: ${sessionId}`);
+        this.sessions.delete(sessionId);
+        if (this.sessions.size === 0) {
+          setTimeout(() => {
+            if (this.sessions.size === 0 && this.onClose) {
+              this.onClose();
+            }
+          }, RECONNECT_GRACE_MS);
+        }
+      });
+      ws.on("error", (err) => {
+        console.error(`[WS] Error on session ${sessionId}:`, err);
+      });
+      setTimeout(() => {
+        const s = this.sessions.get(sessionId);
+        if (s && !s.authenticated) {
+          console.log(`[WS] Auth timeout for session ${sessionId}`);
+          ws.close(4001, "Authentication timeout");
+          this.sessions.delete(sessionId);
+        }
+      }, 1e4);
+    });
+  }
+  /**
+   * Handle incoming WebSocket message
+   */
+  handleMessage(sessionId, data) {
+    const session = this.sessions.get(sessionId);
+    if (!session) return;
+    const message = parseClientMessage(data.toString());
+    if (!message) {
+      this.sendError(session, "Invalid message format");
+      return;
+    }
+    session.lastActivity = Date.now();
+    switch (message.type) {
+      case "hello":
+        this.handleHello(session, message);
+        break;
+      case "create_from_ghost":
+        this.handleCreateFromGhost(session, message);
+        break;
+      case "sync_request":
+        this.handleSyncRequest(session, message);
+        break;
+      case "ping":
+        this.send(session, { type: "pong" });
+        break;
+      default:
+        this.sendError(session, `Unknown message type: ${message.type}`);
+    }
+  }
+  /**
+   * Handle hello handshake
+   */
+  handleHello(session, message) {
+    if (message.token !== this.token) {
+      this.send(session, {
+        type: "hello_error",
+        error: "Invalid authentication token",
+        code: "invalid_token"
+      });
+      session.ws.close(4003, "Invalid token");
+      return;
+    }
+    if (Date.now() > this.tokenExpiry) {
+      this.send(session, {
+        type: "hello_error",
+        error: "Token has expired",
+        code: "invalid_token"
+      });
+      session.ws.close(4003, "Token expired");
+      return;
+    }
+    const clientMajor = message.protocolVersion.split(".")[0];
+    const serverMajor = PROTOCOL_VERSION.split(".")[0];
+    if (clientMajor !== serverMajor) {
+      this.send(session, {
+        type: "hello_error",
+        error: `Protocol version mismatch: server=${PROTOCOL_VERSION}, client=${message.protocolVersion}`,
+        code: "protocol_mismatch"
+      });
+      session.ws.close(4002, "Protocol mismatch");
+      return;
+    }
+    session.sessionNonce = generateSessionNonce();
+    session.authenticated = true;
+    console.log(`[WS] Session ${session.sessionId} authenticated`);
+    this.send(session, {
+      type: "hello_ok",
+      protocolVersion: PROTOCOL_VERSION,
+      sessionId: session.sessionId,
+      sessionNonce: session.sessionNonce,
+      features: {
+        ghostCreate: true,
+        patch: true
+      }
+    });
+  }
+  /**
+   * Handle ghost creation request
+   */
+  async handleCreateFromGhost(session, message) {
+    if (!session.authenticated) {
+      this.sendError(session, "Not authenticated");
+      return;
+    }
+    if (message.sessionNonce !== session.sessionNonce) {
+      this.sendError(session, "Invalid session nonce");
+      return;
+    }
+    if (!isValidPath(message.targetFolder)) {
+      this.sendError(session, "Invalid target folder path", message.ghostId);
+      return;
+    }
+    if (session.pendingCreates.has(message.ghostId)) {
+      this.sendError(session, "Create already in progress", message.ghostId);
+      return;
+    }
+    session.pendingCreates.add(message.ghostId);
+    this.send(session, {
+      type: "create_ack",
+      ghostId: message.ghostId,
+      status: "pending"
+    });
+    try {
+      const existingNodes = await this.ctx.nodeRepository.findByTitleOrAlias(message.title);
+      if (existingNodes.length > 0) {
+        const existingNode = existingNodes[0];
+        await this.handleLinkToExisting(session, message, existingNode);
+        return;
+      }
+      await this.createNoteFromGhost(session, message);
+    } catch (error) {
+      console.error(`[WS] Error creating ghost:`, error);
+      this.sendError(
+        session,
+        error instanceof Error ? error.message : "Unknown error",
+        message.ghostId
+      );
+    } finally {
+      session.pendingCreates.delete(message.ghostId);
+    }
+  }
+  /**
+   * Create a new note from a ghost node
+   */
+  async createNoteFromGhost(session, message) {
+    const { title, targetFolder, ghostId } = message;
+    const folder = targetFolder || "";
+    const filename = this.sanitizeFilename(title) + ".md";
+    const relativePath = folder ? path14.join(folder, filename) : filename;
+    const absolutePath = path14.join(this.ctx.vaultPath, relativePath);
+    const dir = path14.dirname(absolutePath);
+    if (!fs11.existsSync(dir)) {
+      fs11.mkdirSync(dir, { recursive: true });
+    }
+    const nodeId = nanoid9();
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const frontmatter = {
+      id: nodeId,
+      type: "note",
+      title,
+      created: now
+    };
+    const content = `---
+${stringifyYaml6(frontmatter)}---
+
+# ${title}
+
+`;
+    fs11.writeFileSync(absolutePath, content, "utf-8");
+    const node = await this.ctx.nodeRepository.create({
+      type: "note",
+      title,
+      path: relativePath,
+      createdAt: now,
+      updatedAt: now,
+      metadata: { id: nodeId }
+    });
+    const convertedEdges = await this.convertUnresolvedLinks(ghostId, node.nodeId, title);
+    const ops = [];
+    ops.push({
+      op: "node_replace",
+      ghostId,
+      newNodeId: node.nodeId,
+      label: title,
+      filePath: relativePath,
+      type: "note",
+      createdAt: now,
+      updatedAt: now
+    });
+    for (const edge of convertedEdges) {
+      ops.push({
+        op: "edge_replace",
+        newEdgeId: edge.edgeId,
+        fromId: edge.sourceId,
+        toId: edge.targetId,
+        type: edge.edgeType
+      });
+    }
+    this.recentCreations.set(ghostId, {
+      newNodeId: node.nodeId,
+      title,
+      createdAt: now
+    });
+    this.broadcast({
+      type: "patch",
+      patchSeq: ++session.patchSeq,
+      ops
+    });
+    this.send(session, {
+      type: "create_ack",
+      ghostId,
+      status: "success"
+    });
+    console.log(`[WS] Created note "${title}" at ${relativePath}`);
+  }
+  /**
+   * Handle linking ghost to an existing node
+   */
+  async handleLinkToExisting(session, message, existingNode) {
+    const { ghostId, title } = message;
+    const convertedEdges = await this.convertUnresolvedLinks(ghostId, existingNode.nodeId, title);
+    const ops = [];
+    ops.push({
+      op: "node_replace",
+      ghostId,
+      newNodeId: existingNode.nodeId,
+      label: existingNode.title,
+      filePath: existingNode.path,
+      type: existingNode.type,
+      createdAt: existingNode.createdAt,
+      updatedAt: existingNode.updatedAt,
+      linkedExisting: true
+    });
+    for (const edge of convertedEdges) {
+      ops.push({
+        op: "edge_replace",
+        newEdgeId: edge.edgeId,
+        fromId: edge.sourceId,
+        toId: edge.targetId,
+        type: edge.edgeType
+      });
+    }
+    this.recentCreations.set(ghostId, {
+      newNodeId: existingNode.nodeId,
+      title: existingNode.title,
+      createdAt: (/* @__PURE__ */ new Date()).toISOString()
+    });
+    this.broadcast({
+      type: "patch",
+      patchSeq: ++session.patchSeq,
+      ops
+    });
+    this.send(session, {
+      type: "create_ack",
+      ghostId,
+      status: "success"
+    });
+    console.log(`[WS] Linked ghost "${title}" to existing node "${existingNode.title}"`);
+  }
+  /**
+   * Convert unresolved links for a ghost to explicit_link edges
+   */
+  async convertUnresolvedLinks(ghostId, targetNodeId, targetText) {
+    const edges2 = [];
+    const ghostNodes = await this.ctx.unresolvedLinkRepository.getGhostNodes();
+    const ghostNode = ghostNodes.find(
+      (g) => `ghost:${g.targetText}` === ghostId || g.targetText.toLowerCase() === targetText.toLowerCase()
+    );
+    if (!ghostNode) {
+      return edges2;
+    }
+    for (const sourceId of ghostNode.sourceIds) {
+      const edge = await this.ctx.edgeRepository.create({
+        sourceId,
+        targetId: targetNodeId,
+        edgeType: "explicit_link",
+        provenance: "explicit",
+        attributes: {
+          convertedFrom: "unresolved_link",
+          originalGhostId: ghostId
+        }
+      });
+      edges2.push({
+        edgeId: edge.edgeId,
+        sourceId: edge.sourceId,
+        targetId: edge.targetId,
+        edgeType: edge.edgeType
+      });
+    }
+    return edges2;
+  }
+  /**
+   * Handle sync request (for reconnection)
+   */
+  async handleSyncRequest(session, message) {
+    if (!session.authenticated) {
+      this.sendError(session, "Not authenticated");
+      return;
+    }
+    if (message.sessionNonce !== session.sessionNonce) {
+      this.sendError(session, "Invalid session nonce");
+      return;
+    }
+    const ghostNodes = await this.ctx.unresolvedLinkRepository.getGhostNodes();
+    const unresolvedList = ghostNodes.map((g) => ({
+      ghostId: `ghost:${g.targetText}`,
+      title: g.targetText,
+      referenceCount: g.referenceCount,
+      sourceIds: g.sourceIds,
+      firstSeen: g.firstSeen
+    }));
+    const recentCreations = Array.from(this.recentCreations.entries()).map(
+      ([ghostId, info]) => ({
+        ghostId,
+        newNodeId: info.newNodeId,
+        title: info.title,
+        createdAt: info.createdAt
+      })
+    );
+    this.send(session, {
+      type: "sync_response",
+      unresolvedList,
+      recentCreations
+    });
+  }
+  /**
+   * Sanitize a filename
+   */
+  sanitizeFilename(name) {
+    return name.replace(/[<>:"/\\|?*]/g, "").replace(/\s+/g, " ").trim().slice(0, 200);
+  }
+  /**
+   * Send a message to a specific session
+   */
+  send(session, message) {
+    if (session.ws.readyState === WebSocket.OPEN) {
+      session.ws.send(serializeServerMessage(message));
+    }
+  }
+  /**
+   * Send an error message
+   */
+  sendError(session, message, ghostId) {
+    this.send(session, {
+      type: "error",
+      message,
+      ghostId
+    });
+  }
+  /**
+   * Broadcast a message to all authenticated sessions
+   */
+  broadcast(message) {
+    for (const session of this.sessions.values()) {
+      if (session.authenticated) {
+        this.send(session, message);
+      }
+    }
+  }
+  /**
+   * Start the server
+   */
+  async start() {
+    return new Promise((resolve4, reject) => {
+      this.server.listen(0, "127.0.0.1", () => {
+        const addr = this.server.address();
+        if (typeof addr === "object" && addr) {
+          const port = addr.port;
+          console.log(`[WS] Server listening on 127.0.0.1:${port}`);
+          resolve4({
+            port,
+            token: this.token,
+            tokenExpiry: this.tokenExpiry
+          });
+        } else {
+          reject(new Error("Failed to get server address"));
+        }
+      });
+      this.server.on("error", (err) => {
+        reject(err);
+      });
+    });
+  }
+  /**
+   * Stop the server
+   */
+  async stop() {
+    return new Promise((resolve4) => {
+      for (const session of this.sessions.values()) {
+        session.ws.close(1e3, "Server shutting down");
+      }
+      this.sessions.clear();
+      this.wss.close(() => {
+        this.server.close(() => {
+          console.log("[WS] Server stopped");
+          resolve4();
+        });
+      });
+    });
+  }
+  /**
+   * Refresh the auth token
+   */
+  refreshToken() {
+    this.token = generateToken();
+    this.tokenExpiry = Date.now() + TOKEN_VALIDITY_MS;
+    return this.token;
+  }
+};
+async function createVisualizeServer(ctx, options) {
+  const server = new VisualizeServer({
+    ctx,
+    onClose: options?.onClose
+  });
+  const info = await server.start();
+  return { server, info };
+}
+
+// src/cli/commands/visualize.ts
 var typeColors = {
   note: "#94a3b8",
   // Slate 400
@@ -9441,8 +10944,10 @@ var typeColors = {
   // Orange 400
   timeline: "#818cf8",
   // Indigo 400
-  draft: "#52525b"
+  draft: "#52525b",
   // Zinc 600
+  ghost: "#64748b"
+  // Slate 500 (for ghost nodes)
 };
 var edgeStyles = {
   explicit_link: { color: "#22d3ee", dash: [], label: "Links to" },
@@ -9462,13 +10967,20 @@ var edgeStyles = {
   setup_payoff: { color: "#fb923c", dash: [], label: "Setup/Payoff" },
   // Orange
   semantic: { color: "#94a3b8", dash: [2, 2], label: "Semantic" },
-  // Gray
+  // Gray (accepted wormholes)
+  semantic_suggestion: { color: "#64748b", dash: [3, 3], label: "Wormhole" },
+  // Slate 500 (pending wormholes)
   mention: { color: "#2dd4bf", dash: [2, 2], label: "Mention" },
   // Teal
-  alias: { color: "#818cf8", dash: [4, 2], label: "Alias" }
+  alias: { color: "#818cf8", dash: [4, 2], label: "Alias" },
   // Indigo
+  ghost_ref: { color: "#64748b", dash: [2, 2], label: "Ghost Reference" }
+  // Slate 500
 };
-function generateVisualizationHtml(graphData, nodeTypeColors) {
+function generateVisualizationHtml(graphData, nodeTypeColors, constellation, pathData, wsConfig) {
+  const constellationState = constellation ? JSON.stringify(constellation) : "null";
+  const pathDataJson = pathData ? JSON.stringify(pathData) : "null";
+  const wsConfigJson = wsConfig ? JSON.stringify(wsConfig) : "null";
   return `
 <!DOCTYPE html>
 <html lang="en">
@@ -9740,6 +11252,484 @@ function generateVisualizationHtml(graphData, nodeTypeColors) {
       font-family: 'JetBrains Mono', monospace;
       font-size: 0.7rem;
     }
+
+    /* Ghost nodes controls */
+    .ghost-controls {
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+    }
+    .toggle-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      padding: 4px 0;
+    }
+    .toggle-item input[type="checkbox"] {
+      accent-color: var(--accent);
+      width: 16px;
+      height: 16px;
+    }
+    .threshold-control {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+    .threshold-control input[type="range"] {
+      flex: 1;
+      accent-color: var(--accent);
+    }
+    .threshold-val {
+      min-width: 20px;
+      text-align: center;
+      color: var(--text-main);
+    }
+    .ghost-count {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    /* Ghost sidebar action */
+    .ghost-action {
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+    }
+    .create-note-btn {
+      width: 100%;
+      background: rgba(56, 189, 248, 0.2);
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      padding: 10px 16px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+    .create-note-btn:hover {
+      background: rgba(56, 189, 248, 0.3);
+    }
+    .ghost-info {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-top: 8px;
+      line-height: 1.4;
+    }
+
+    /* Constellation controls */
+    .constellation-section {
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+    }
+    .save-constellation-btn {
+      width: 100%;
+      background: rgba(251, 146, 60, 0.2);
+      border: 1px solid #fb923c;
+      color: #fb923c;
+      padding: 8px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+    .save-constellation-btn:hover {
+      background: rgba(251, 146, 60, 0.3);
+    }
+    .constellation-name {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-top: 8px;
+      text-align: center;
+    }
+    .constellation-name strong {
+      color: #fb923c;
+    }
+
+    /* Path Finder Panel */
+    #path-panel {
+      bottom: 20px;
+      left: 20px;
+      max-width: 400px;
+      display: none;
+    }
+    #path-panel.active {
+      display: block;
+    }
+    .path-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .path-title {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+    .path-close-btn {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 1.2rem;
+      padding: 4px;
+    }
+    .path-close-btn:hover {
+      color: var(--text-main);
+    }
+    .path-selector {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .path-option {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+      border: 1px solid var(--border);
+      background: rgba(15, 23, 42, 0.4);
+    }
+    .path-option:hover {
+      background: rgba(56, 189, 248, 0.1);
+      border-color: var(--accent);
+    }
+    .path-option.selected {
+      background: rgba(251, 191, 36, 0.2);
+      border-color: #fbbf24;
+    }
+    .path-option-num {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+    .path-option.selected .path-option-num {
+      background: #fbbf24;
+      color: #000;
+    }
+    .path-option-info {
+      flex: 1;
+    }
+    .path-option-route {
+      font-size: 0.8rem;
+      color: var(--text-main);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .path-option-meta {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+    }
+    .path-show-all {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+    .path-show-all input[type="checkbox"] {
+      accent-color: var(--accent);
+    }
+
+    /* Backlog Panel */
+    .backlog-panel {
+      bottom: 20px;
+      right: 20px;
+      width: 280px;
+      max-height: 400px;
+    }
+    .backlog-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    .backlog-toggle {
+      transition: transform 0.2s;
+      font-size: 0.7rem;
+      color: var(--text-muted);
+    }
+    .backlog-panel:not(.expanded) .backlog-toggle {
+      transform: rotate(-90deg);
+    }
+    .backlog-panel:not(.expanded) .backlog-content {
+      display: none;
+    }
+    .backlog-sort {
+      margin-left: auto;
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 0.7rem;
+      cursor: pointer;
+    }
+    .backlog-search {
+      margin: 8px 0;
+    }
+    .backlog-search input {
+      width: 100%;
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      padding: 6px 8px;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      box-sizing: border-box;
+    }
+    .backlog-list {
+      max-height: 280px;
+      overflow-y: auto;
+    }
+    .backlog-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 4px;
+      border-radius: 4px;
+      transition: background 0.2s;
+    }
+    .backlog-row:hover {
+      background: rgba(56, 189, 248, 0.1);
+    }
+    .backlog-row.pending {
+      opacity: 0.6;
+    }
+    .backlog-row-main {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      overflow: hidden;
+    }
+    .backlog-title {
+      flex: 1;
+      font-size: 0.85rem;
+      color: var(--text-main);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .backlog-badges {
+      display: flex;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+    .backlog-ref-count {
+      background: rgba(56, 189, 248, 0.2);
+      color: var(--accent);
+      padding: 1px 5px;
+      border-radius: 10px;
+      font-size: 0.7rem;
+      font-weight: 600;
+    }
+    .backlog-recency {
+      color: var(--text-muted);
+      font-size: 0.7rem;
+    }
+    .backlog-create-btn {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: rgba(56, 189, 248, 0.2);
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      cursor: pointer;
+      font-size: 1rem;
+      line-height: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .backlog-create-btn:hover:not(:disabled) {
+      background: rgba(56, 189, 248, 0.3);
+    }
+    .backlog-create-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    .backlog-more {
+      padding: 8px 4px;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      text-align: center;
+    }
+
+    /* Create Panel Modal */
+    .create-panel {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(15, 23, 42, 0.8);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+    .create-panel.active {
+      display: flex;
+    }
+    .create-panel-inner {
+      width: 340px;
+      position: relative;
+    }
+    .create-panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 16px;
+    }
+    .create-panel-body {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .create-field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .create-field span {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+    .create-field input,
+    .create-field select {
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      padding: 8px 10px;
+      border-radius: 6px;
+      font-size: 0.9rem;
+    }
+    .create-field input:focus,
+    .create-field select:focus {
+      border-color: var(--accent);
+      outline: none;
+    }
+    .create-panel-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+    }
+    .create-cancel-btn {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      padding: 8px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .create-cancel-btn:hover {
+      background: rgba(255, 255, 255, 0.05);
+    }
+    .create-submit-btn {
+      background: rgba(56, 189, 248, 0.2);
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      padding: 8px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .create-submit-btn:hover {
+      background: rgba(56, 189, 248, 0.3);
+    }
+
+    /* WebSocket Status Indicator */
+    .ws-status {
+      position: fixed;
+      top: 20px;
+      right: 350px;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      transition: all 0.3s;
+    }
+    .ws-status.connected {
+      background: #34d399;
+      box-shadow: 0 0 8px #34d399;
+    }
+    .ws-status.disconnected {
+      background: #fbbf24;
+      box-shadow: 0 0 8px #fbbf24;
+      animation: pulse 1.5s infinite;
+    }
+    .ws-status.error {
+      background: #f87171;
+      box-shadow: 0 0 8px #f87171;
+    }
+
+    /* Toast Notifications */
+    .toast {
+      position: fixed;
+      bottom: 80px;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: var(--panel-bg);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      opacity: 0;
+      transition: all 0.3s;
+      z-index: 1001;
+    }
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+    .toast-error {
+      border-color: #f87171;
+      color: #f87171;
+    }
+    .toast-warning {
+      border-color: #fbbf24;
+      color: #fbbf24;
+    }
+    .toast-success {
+      border-color: #34d399;
+      color: #34d399;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
   </style>
   <script src="https://unpkg.com/force-graph"></script>
 </head>
@@ -9762,6 +11752,29 @@ function generateVisualizationHtml(graphData, nodeTypeColors) {
       <div class="legend-grid" id="edge-legend"></div>
     </div>
 
+    <div class="ghost-controls" id="ghost-controls">
+      <div class="legend-title">Ghost Nodes</div>
+      <label class="toggle-item">
+        <input type="checkbox" id="show-ghosts" checked onchange="toggleGhosts()">
+        <span>Show unresolved links</span>
+      </label>
+      <div class="threshold-control" id="threshold-container">
+        <span>Min refs:</span>
+        <input type="range" id="ghost-threshold" min="1" max="10" value="1"
+               oninput="updateGhostThreshold(this.value)">
+        <span class="threshold-val" id="threshold-val">1</span>
+      </div>
+      <div class="ghost-count" id="ghost-count"></div>
+    </div>
+
+    <div class="constellation-section">
+      <div class="legend-title">Constellations</div>
+      <button class="save-constellation-btn" onclick="showSaveConstellationDialog()">
+        Save Current View
+      </button>
+      <div class="constellation-name" id="constellation-name"></div>
+    </div>
+
     <div class="shortcuts-hint">
       <kbd>/</kbd> Search &nbsp; <kbd>Esc</kbd> Close<br>
       <kbd>Alt+&#8592;</kbd> Back &nbsp; <kbd>Alt+&#8594;</kbd> Forward
@@ -9779,14 +11792,77 @@ function generateVisualizationHtml(graphData, nodeTypeColors) {
     <div id="sb-connections" class="connections-section"></div>
   </div>
 
+  <div id="path-panel" class="panel">
+    <div class="path-header">
+      <span class="path-title" id="path-title">Paths</span>
+      <button class="path-close-btn" onclick="closePathPanel()">&times;</button>
+    </div>
+    <div class="path-selector" id="path-selector"></div>
+    <label class="path-show-all">
+      <input type="checkbox" id="path-show-all" onchange="toggleShowAllPaths()">
+      <span>Show all paths</span>
+    </label>
+  </div>
+
+  <!-- Backlog Panel -->
+  <div id="backlog-panel" class="panel backlog-panel">
+    <div class="backlog-header" onclick="toggleBacklog()">
+      <span class="backlog-toggle">&#9660;</span>
+      <span class="legend-title">Unresolved (<span id="backlog-count">0</span>)</span>
+      <select id="backlog-sort" class="backlog-sort" onclick="event.stopPropagation()" onchange="setBacklogSort(this.value)">
+        <option value="importance">Importance</option>
+        <option value="refs">Most referenced</option>
+        <option value="recent">Most recent</option>
+        <option value="alpha">Alphabetical</option>
+      </select>
+    </div>
+    <div class="backlog-content">
+      <div class="backlog-search">
+        <input type="text" placeholder="Filter..." oninput="filterBacklog(this.value)">
+      </div>
+      <div id="backlog-list" class="backlog-list"></div>
+    </div>
+  </div>
+
+  <!-- Create Panel Modal -->
+  <div id="create-panel" class="create-panel">
+    <div class="create-panel-inner panel">
+      <div class="create-panel-header">
+        <span class="legend-title">Create Note</span>
+        <button class="path-close-btn" onclick="hideCreatePanel()">&times;</button>
+      </div>
+      <div class="create-panel-body">
+        <label class="create-field">
+          <span>Title</span>
+          <input type="text" id="create-title" placeholder="Note title">
+        </label>
+        <label class="create-field">
+          <span>Folder</span>
+          <select id="create-folder"></select>
+        </label>
+      </div>
+      <div class="create-panel-footer">
+        <button class="create-cancel-btn" onclick="hideCreatePanel()">Cancel</button>
+        <button class="create-submit-btn" onclick="submitCreate()">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- WebSocket Status Indicator -->
+  <div id="ws-status" class="ws-status disconnected" title="Disconnected"></div>
+
   <script>
     const data = ${JSON.stringify(graphData)};
     const typeColors = ${JSON.stringify(nodeTypeColors)};
     const edgeStyles = ${JSON.stringify(edgeStyles)};
+    const loadedConstellation = ${constellationState};
+    const pathData = ${pathDataJson};
+    const wsConfig = ${wsConfigJson};
 
     // Pre-compute adjacency index for O(1) lookups
     const adjacency = {};
     const nodeMap = {};
+    const ghostIdMap = {}; // Track ghost -> new node ID mappings
     data.nodes.forEach(n => {
       nodeMap[n.id] = n;
       adjacency[n.id] = { outgoing: [], incoming: [] };
@@ -9805,10 +11881,177 @@ function generateVisualizationHtml(graphData, nodeTypeColors) {
     const highlightLinks = new Set();
     let hoverNode = null;
     let selectedNode = null;
+    let showGhosts = true;
+    let ghostThreshold = 1;
 
     // Navigation history
     const navHistory = [];
     let navIndex = -1;
+
+    // WebSocket state
+    let ws = null;
+    let wsSessionNonce = null;
+    let wsConnected = false;
+    let wsReconnectAttempts = 0;
+    const wsMaxReconnectAttempts = 10;
+    let wsPatchSeq = 0;
+    const pendingCreates = new Set();
+
+    // Ghost node functions
+    function toggleGhosts() {
+      showGhosts = document.getElementById('show-ghosts').checked;
+      updateGhostCount();
+      updateGraphVisibility();
+    }
+
+    function updateGhostThreshold(val) {
+      ghostThreshold = parseInt(val, 10);
+      document.getElementById('threshold-val').innerText = val;
+      updateGhostCount();
+      updateGraphVisibility();
+    }
+
+    function updateGhostCount() {
+      const ghostNodes = data.nodes.filter(n => n.isGhost);
+      const visibleGhosts = ghostNodes.filter(n => showGhosts && (n.referenceCount || 1) >= ghostThreshold);
+      const countEl = document.getElementById('ghost-count');
+      if (ghostNodes.length === 0) {
+        document.getElementById('ghost-controls').style.display = 'none';
+      } else {
+        countEl.innerText = \`Showing \${visibleGhosts.length} of \${ghostNodes.length} ghost nodes\`;
+      }
+    }
+
+    function isGhostVisible(node) {
+      if (!node.isGhost) return true;
+      return showGhosts && (node.referenceCount || 1) >= ghostThreshold;
+    }
+
+    // Path highlighting state
+    let selectedPathIndex = 0;
+    let showAllPaths = false;
+    const pathNodes = new Set();
+    const pathLinks = new Set();
+    const pathNodeOrder = new Map(); // nodeId -> order number in selected path
+
+    // Path highlighting functions
+    function initPathPanel() {
+      if (!pathData || !pathData.paths || pathData.paths.length === 0) return;
+
+      const panel = document.getElementById('path-panel');
+      const title = document.getElementById('path-title');
+      const selector = document.getElementById('path-selector');
+
+      panel.classList.add('active');
+      title.innerText = \`\${pathData.fromLabel} \u2192 \${pathData.toLabel}\`;
+
+      // Build path options
+      let html = '';
+      pathData.paths.forEach((p, i) => {
+        const route = p.path.map(id => {
+          const node = nodeMap[id];
+          return node ? node.name : id.slice(0, 8);
+        });
+        const shortRoute = route.length > 4
+          ? route[0] + ' \u2192 ... \u2192 ' + route[route.length - 1]
+          : route.join(' \u2192 ');
+
+        html += \`
+          <div class="path-option \${i === 0 ? 'selected' : ''}" onclick="selectPath(\${i})" data-index="\${i}">
+            <div class="path-option-num">\${i + 1}</div>
+            <div class="path-option-info">
+              <div class="path-option-route">\${shortRoute}</div>
+              <div class="path-option-meta">\${p.hopCount} hops \u2022 score \${p.score.toFixed(1)}</div>
+            </div>
+          </div>\`;
+      });
+      selector.innerHTML = html;
+
+      // Select first path
+      selectPath(0);
+    }
+
+    function selectPath(index) {
+      selectedPathIndex = index;
+
+      // Update UI
+      document.querySelectorAll('.path-option').forEach((el, i) => {
+        el.classList.toggle('selected', i === index);
+      });
+
+      updatePathHighlight();
+    }
+
+    function toggleShowAllPaths() {
+      showAllPaths = document.getElementById('path-show-all').checked;
+      updatePathHighlight();
+    }
+
+    function closePathPanel() {
+      const panel = document.getElementById('path-panel');
+      panel.classList.remove('active');
+      pathNodes.clear();
+      pathLinks.clear();
+      pathNodeOrder.clear();
+      updateGraphVisibility();
+    }
+
+    function updatePathHighlight() {
+      pathNodes.clear();
+      pathLinks.clear();
+      pathNodeOrder.clear();
+
+      if (!pathData || !pathData.paths || pathData.paths.length === 0) return;
+
+      if (showAllPaths) {
+        // Highlight all paths
+        pathData.paths.forEach((p, pathIdx) => {
+          p.path.forEach((nodeId, nodeIdx) => {
+            pathNodes.add(nodeId);
+            if (pathIdx === selectedPathIndex) {
+              pathNodeOrder.set(nodeId, nodeIdx + 1);
+            }
+          });
+          // Add edges
+          for (let i = 0; i < p.path.length - 1; i++) {
+            pathLinks.add(\`\${p.path[i]}->\${p.path[i+1]}\`);
+          }
+        });
+      } else {
+        // Highlight only selected path
+        const p = pathData.paths[selectedPathIndex];
+        if (p) {
+          p.path.forEach((nodeId, nodeIdx) => {
+            pathNodes.add(nodeId);
+            pathNodeOrder.set(nodeId, nodeIdx + 1);
+          });
+          for (let i = 0; i < p.path.length - 1; i++) {
+            pathLinks.add(\`\${p.path[i]}->\${p.path[i+1]}\`);
+          }
+        }
+      }
+
+      // Pin path nodes to prevent layout wiggle
+      data.nodes.forEach(n => {
+        if (pathNodes.has(n.id)) {
+          n.fx = n.x;
+          n.fy = n.y;
+        } else {
+          n.fx = undefined;
+          n.fy = undefined;
+        }
+      });
+
+      updateGraphVisibility();
+    }
+
+    function isOnPath(nodeId) {
+      return pathNodes.has(nodeId);
+    }
+
+    function isPathEdge(srcId, tgtId) {
+      return pathLinks.has(\`\${srcId}->\${tgtId}\`) || pathLinks.has(\`\${tgtId}->\${srcId}\`);
+    }
 
     // Navigation functions
     function navigateToNode(nodeId, addToHistory = true) {
@@ -9931,6 +12174,8 @@ function generateVisualizationHtml(graphData, nodeTypeColors) {
       const legend = document.getElementById('legend');
       legend.innerHTML = '';
       Object.entries(typeColors).forEach(([type, color]) => {
+        // Skip ghost type - it has its own controls
+        if (type === 'ghost') return;
         const item = document.createElement('div');
         item.className = \`legend-item \${hiddenTypes.has(type) ? 'hidden' : ''}\`;
         item.onclick = () => toggleType(type);
@@ -9943,6 +12188,8 @@ function generateVisualizationHtml(graphData, nodeTypeColors) {
       const legend = document.getElementById('edge-legend');
       legend.innerHTML = '';
       Object.entries(edgeStyles).forEach(([type, style]) => {
+        // Skip ghost_ref - it's controlled by ghost toggle
+        if (type === 'ghost_ref') return;
         const item = document.createElement('div');
         item.className = \`edge-legend-item \${hiddenEdgeTypes.has(type) ? 'hidden' : ''}\`;
         item.onclick = () => toggleEdgeType(type);
@@ -9957,6 +12204,712 @@ function generateVisualizationHtml(graphData, nodeTypeColors) {
     // Initial Legend
     updateLegendUI();
     updateEdgeLegendUI();
+    updateGhostCount();
+
+    // Apply loaded constellation state
+    function applyConstellationState() {
+      if (!loadedConstellation) return;
+
+      // Apply hidden node types
+      if (loadedConstellation.hiddenNodeTypes) {
+        loadedConstellation.hiddenNodeTypes.forEach(t => hiddenTypes.add(t));
+      }
+
+      // Apply hidden edge types
+      if (loadedConstellation.hiddenEdgeTypes) {
+        loadedConstellation.hiddenEdgeTypes.forEach(t => hiddenEdgeTypes.add(t));
+      }
+
+      // Apply ghost settings
+      showGhosts = loadedConstellation.showGhosts !== false;
+      ghostThreshold = loadedConstellation.ghostThreshold || 1;
+      document.getElementById('show-ghosts').checked = showGhosts;
+      document.getElementById('ghost-threshold').value = ghostThreshold;
+      document.getElementById('threshold-val').innerText = ghostThreshold;
+
+      // Update UI
+      updateLegendUI();
+      updateEdgeLegendUI();
+      updateGhostCount();
+
+      // Show constellation name
+      const nameEl = document.getElementById('constellation-name');
+      nameEl.innerHTML = \`Viewing: <strong>\${loadedConstellation.name}</strong>\`;
+    }
+
+    // Apply constellation state before graph init
+    applyConstellationState();
+
+    // Save constellation dialog
+    function showSaveConstellationDialog() {
+      const name = prompt('Enter constellation name:');
+      if (!name || !name.trim()) return;
+
+      const state = {
+        hiddenNodeTypes: Array.from(hiddenTypes),
+        hiddenEdgeTypes: Array.from(hiddenEdgeTypes),
+        showGhosts,
+        ghostThreshold,
+        cameraX: Graph ? Graph.centerAt().x : null,
+        cameraY: Graph ? Graph.centerAt().y : null,
+        cameraZoom: Graph ? Graph.zoom() : null,
+      };
+
+      const stateJson = JSON.stringify(state);
+      const cmd = \`zs constellation save "\${name.trim()}" --state '\${stateJson}'\`;
+
+      // Try to copy to clipboard
+      navigator.clipboard.writeText(cmd).then(() => {
+        alert(\`Run this command to save the constellation:\\n\\n\${cmd}\\n\\n(Copied to clipboard)\`);
+      }).catch(() => {
+        alert(\`Run this command to save the constellation:\\n\\n\${cmd}\`);
+      });
+    }
+
+    // ========================================================================
+    // WebSocket Client for Live Updates
+    // ========================================================================
+
+    function initWebSocket() {
+      if (!wsConfig || !wsConfig.enabled) return;
+
+      const url = \`ws://127.0.0.1:\${wsConfig.port}\`;
+      console.log('[WS] Connecting to', url);
+
+      ws = new WebSocket(url);
+
+      ws.onopen = () => {
+        console.log('[WS] Connected, sending hello');
+        ws.send(JSON.stringify({
+          type: 'hello',
+          protocolVersion: wsConfig.protocolVersion,
+          atlasVersion: '2.0.0',
+          token: wsConfig.token,
+        }));
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          handleWsMessage(msg);
+        } catch (e) {
+          console.error('[WS] Failed to parse message:', e);
+        }
+      };
+
+      ws.onclose = (event) => {
+        console.log('[WS] Disconnected:', event.code, event.reason);
+        wsConnected = false;
+        wsSessionNonce = null;
+        updateConnectionStatus('disconnected');
+
+        // Attempt reconnect with exponential backoff
+        if (wsReconnectAttempts < wsMaxReconnectAttempts) {
+          const delay = Math.min(1000 * Math.pow(2, wsReconnectAttempts), 30000);
+          wsReconnectAttempts++;
+          console.log(\`[WS] Reconnecting in \${delay}ms (attempt \${wsReconnectAttempts})\`);
+          setTimeout(initWebSocket, delay);
+        }
+      };
+
+      ws.onerror = (error) => {
+        console.error('[WS] Error:', error);
+      };
+    }
+
+    function handleWsMessage(msg) {
+      switch (msg.type) {
+        case 'hello_ok':
+          wsConnected = true;
+          wsSessionNonce = msg.sessionNonce;
+          wsReconnectAttempts = 0;
+          console.log('[WS] Authenticated, features:', msg.features);
+          updateConnectionStatus('connected');
+          break;
+
+        case 'hello_error':
+          console.error('[WS] Auth failed:', msg.error);
+          updateConnectionStatus('error');
+          break;
+
+        case 'create_ack':
+          handleCreateAck(msg);
+          break;
+
+        case 'patch':
+          handlePatch(msg);
+          break;
+
+        case 'error':
+          handleWsError(msg);
+          break;
+
+        case 'sync_response':
+          handleSyncResponse(msg);
+          break;
+
+        case 'pong':
+          // Heartbeat response
+          break;
+
+        default:
+          console.log('[WS] Unknown message type:', msg.type);
+      }
+    }
+
+    function handleCreateAck(msg) {
+      if (msg.status === 'pending') {
+        console.log('[WS] Create pending for ghost:', msg.ghostId);
+      } else if (msg.status === 'success') {
+        console.log('[WS] Create succeeded for ghost:', msg.ghostId);
+        pendingCreates.delete(msg.ghostId);
+        hideCreatePanel();
+      } else if (msg.status === 'error') {
+        console.error('[WS] Create failed for ghost:', msg.ghostId);
+        pendingCreates.delete(msg.ghostId);
+        revertGhostState(msg.ghostId);
+      }
+      updateBacklogRow(msg.ghostId);
+    }
+
+    function handlePatch(msg) {
+      // Ignore out-of-order patches
+      if (msg.patchSeq <= wsPatchSeq) {
+        console.log('[WS] Ignoring out-of-order patch:', msg.patchSeq, 'current:', wsPatchSeq);
+        return;
+      }
+      wsPatchSeq = msg.patchSeq;
+
+      console.log('[WS] Applying patch:', msg.patchSeq, 'ops:', msg.ops.length);
+
+      for (const op of msg.ops) {
+        switch (op.op) {
+          case 'node_replace':
+            applyNodeReplace(op);
+            break;
+          case 'edge_replace':
+            applyEdgeReplace(op);
+            break;
+          case 'node_remove':
+            applyNodeRemove(op);
+            break;
+          case 'edge_remove':
+            applyEdgeRemove(op);
+            break;
+        }
+      }
+
+      // Refresh the graph visualization
+      updateGraphVisibility();
+      updateBacklog();
+    }
+
+    function applyNodeReplace(op) {
+      const ghostNode = nodeMap[op.ghostId];
+      if (!ghostNode) {
+        console.warn('[WS] Ghost node not found:', op.ghostId);
+        return;
+      }
+
+      // Store mapping
+      ghostIdMap[op.ghostId] = op.newNodeId;
+
+      // Preserve position
+      const x = ghostNode.x;
+      const y = ghostNode.y;
+      const vx = ghostNode.vx || 0;
+      const vy = ghostNode.vy || 0;
+
+      // Update node in place
+      ghostNode.id = op.newNodeId;
+      ghostNode.name = op.label;
+      ghostNode.path = op.filePath;
+      ghostNode.type = op.type;
+      ghostNode.color = typeColors[op.type] || '#94a3b8';
+      ghostNode.isGhost = false;
+      ghostNode.isPending = false;
+      delete ghostNode.sourceIds;
+      delete ghostNode.referenceCount;
+      delete ghostNode.mostRecentRef;
+
+      // Preserve position
+      ghostNode.x = x;
+      ghostNode.y = y;
+      ghostNode.vx = vx;
+      ghostNode.vy = vy;
+
+      // Update nodeMap with new ID
+      delete nodeMap[op.ghostId];
+      nodeMap[op.newNodeId] = ghostNode;
+
+      // Update adjacency
+      adjacency[op.newNodeId] = adjacency[op.ghostId] || { outgoing: [], incoming: [] };
+      delete adjacency[op.ghostId];
+
+      // Unpin after brief delay
+      setTimeout(() => {
+        if (ghostNode.fx != null) {
+          ghostNode.fx = undefined;
+          ghostNode.fy = undefined;
+        }
+      }, 800);
+
+      console.log('[WS] Replaced ghost', op.ghostId, 'with node', op.newNodeId, op.linkedExisting ? '(linked to existing)' : '');
+    }
+
+    function applyEdgeReplace(op) {
+      // Find and update edge
+      for (const link of data.links) {
+        const srcId = typeof link.source === 'object' ? link.source.id : link.source;
+        const tgtId = typeof link.target === 'object' ? link.target.id : link.target;
+
+        // Check if this is a ghost_ref edge that should be replaced
+        if (link.type === 'ghost_ref' || link.type === 'pending_link') {
+          const oldTargetId = ghostIdMap[tgtId] ? tgtId : null;
+          if (oldTargetId && srcId === op.fromId) {
+            link.type = op.type;
+            link.edgeId = op.newEdgeId;
+            if (typeof link.target === 'object') {
+              link.target.id = op.toId;
+            } else {
+              link.target = op.toId;
+            }
+            console.log('[WS] Replaced edge from', op.fromId, 'to', op.toId);
+            break;
+          }
+        }
+      }
+    }
+
+    function applyNodeRemove(op) {
+      const node = nodeMap[op.nodeId];
+      if (node) {
+        const idx = data.nodes.indexOf(node);
+        if (idx !== -1) {
+          data.nodes.splice(idx, 1);
+        }
+        delete nodeMap[op.nodeId];
+        delete adjacency[op.nodeId];
+      }
+    }
+
+    function applyEdgeRemove(op) {
+      const idx = data.links.findIndex(l => l.edgeId === op.edgeId);
+      if (idx !== -1) {
+        data.links.splice(idx, 1);
+      }
+    }
+
+    function handleWsError(msg) {
+      console.error('[WS] Server error:', msg.message);
+      if (msg.ghostId) {
+        pendingCreates.delete(msg.ghostId);
+        revertGhostState(msg.ghostId);
+        showToast('Error: ' + msg.message, 'error');
+      }
+    }
+
+    function handleSyncResponse(msg) {
+      console.log('[WS] Sync response:', msg.unresolvedList.length, 'ghosts,', msg.recentCreations.length, 'recent');
+      // Update ghost ID mappings from recent creations
+      for (const creation of msg.recentCreations) {
+        ghostIdMap[creation.ghostId] = creation.newNodeId;
+      }
+      updateBacklog();
+    }
+
+    function updateConnectionStatus(status) {
+      const indicator = document.getElementById('ws-status');
+      if (!indicator) return;
+
+      indicator.className = 'ws-status ' + status;
+      indicator.title = status === 'connected' ? 'Live updates active'
+        : status === 'disconnected' ? 'Disconnected - reconnecting...'
+        : 'Connection error';
+    }
+
+    function revertGhostState(ghostId) {
+      const node = nodeMap[ghostId];
+      if (!node) return;
+
+      // Revert styling
+      node.isPending = false;
+
+      // Unpin
+      node.fx = undefined;
+      node.fy = undefined;
+
+      // Revert edges
+      for (const link of data.links) {
+        const tgtId = typeof link.target === 'object' ? link.target.id : link.target;
+        if (tgtId === ghostId && link.type === 'pending_link') {
+          link.type = 'ghost_ref';
+        }
+      }
+
+      updateGraphVisibility();
+    }
+
+    // ========================================================================
+    // Create Panel UI
+    // ========================================================================
+
+    let createPanelTarget = null;
+
+    function showCreatePanel(ghostId, title, sourceNodeId) {
+      if (!wsConnected) {
+        showToast('Not connected to server', 'error');
+        return;
+      }
+
+      if (pendingCreates.has(ghostId)) {
+        showToast('Create already in progress', 'warning');
+        return;
+      }
+
+      createPanelTarget = { ghostId, title, sourceNodeId };
+
+      const panel = document.getElementById('create-panel');
+      const titleInput = document.getElementById('create-title');
+      const folderSelect = document.getElementById('create-folder');
+
+      titleInput.value = title;
+
+      // Populate folder dropdown (could be enhanced with actual folders)
+      folderSelect.innerHTML = '<option value="">Root</option>';
+
+      panel.classList.add('active');
+      titleInput.focus();
+      titleInput.select();
+    }
+
+    function hideCreatePanel() {
+      const panel = document.getElementById('create-panel');
+      panel.classList.remove('active');
+      createPanelTarget = null;
+    }
+
+    function submitCreate() {
+      if (!createPanelTarget || !wsConnected) return;
+
+      const titleInput = document.getElementById('create-title');
+      const folderSelect = document.getElementById('create-folder');
+
+      const title = titleInput.value.trim();
+      if (!title) {
+        showToast('Title is required', 'warning');
+        return;
+      }
+
+      const { ghostId, sourceNodeId } = createPanelTarget;
+
+      // Mark as pending
+      pendingCreates.add(ghostId);
+      const node = nodeMap[ghostId];
+      if (node) {
+        node.isPending = true;
+        // Pin at current position
+        node.fx = node.x;
+        node.fy = node.y;
+      }
+
+      // Update edge types to pending
+      for (const link of data.links) {
+        const tgtId = typeof link.target === 'object' ? link.target.id : link.target;
+        if (tgtId === ghostId && link.type === 'ghost_ref') {
+          link.type = 'pending_link';
+        }
+      }
+
+      updateGraphVisibility();
+      updateBacklogRow(ghostId);
+
+      // Send create request
+      ws.send(JSON.stringify({
+        type: 'create_from_ghost',
+        sessionNonce: wsSessionNonce,
+        ghostId: ghostId,
+        title: title,
+        sourceNodeId: sourceNodeId,
+        targetFolder: folderSelect.value || undefined,
+      }));
+
+      hideCreatePanel();
+    }
+
+    function showToast(message, type = 'info') {
+      const toast = document.createElement('div');
+      toast.className = 'toast toast-' + type;
+      toast.textContent = message;
+      document.body.appendChild(toast);
+
+      setTimeout(() => toast.classList.add('show'), 10);
+      setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 300);
+      }, 3000);
+    }
+
+    // ========================================================================
+    // Sidebar Backlog
+    // ========================================================================
+
+    let backlogExpanded = localStorage.getItem('backlogExpanded') !== 'false';
+    let backlogSort = localStorage.getItem('backlogSort') || 'importance';
+    let backlogSearch = '';
+
+    function initBacklog() {
+      const backlogPanel = document.getElementById('backlog-panel');
+      if (!backlogPanel) return;
+
+      // Restore state
+      if (backlogExpanded) {
+        backlogPanel.classList.add('expanded');
+      }
+
+      updateBacklog();
+    }
+
+    function toggleBacklog() {
+      const backlogPanel = document.getElementById('backlog-panel');
+      backlogExpanded = !backlogExpanded;
+      backlogPanel.classList.toggle('expanded', backlogExpanded);
+      localStorage.setItem('backlogExpanded', backlogExpanded);
+    }
+
+    function setBacklogSort(sort) {
+      backlogSort = sort;
+      localStorage.setItem('backlogSort', sort);
+      updateBacklog();
+    }
+
+    function filterBacklog(query) {
+      backlogSearch = query.toLowerCase();
+      updateBacklog();
+    }
+
+    function updateBacklog() {
+      const list = document.getElementById('backlog-list');
+      const countEl = document.getElementById('backlog-count');
+      if (!list) return;
+
+      // Get ghost nodes
+      let ghosts = data.nodes.filter(n => n.isGhost && !ghostIdMap[n.id]);
+
+      // Apply search filter
+      if (backlogSearch) {
+        ghosts = ghosts.filter(g => g.name.toLowerCase().includes(backlogSearch));
+      }
+
+      // Sort
+      ghosts = sortGhosts(ghosts, backlogSort);
+
+      // Update count
+      if (countEl) {
+        countEl.textContent = ghosts.length;
+      }
+
+      // Render list
+      list.innerHTML = ghosts.slice(0, 10).map(ghost => {
+        const isPending = pendingCreates.has(ghost.id);
+        const recency = formatRecency(ghost.mostRecentRef || ghost.metadata?.firstSeen);
+        const refCount = ghost.referenceCount || (ghost.sourceIds ? ghost.sourceIds.length : 0);
+
+        return \`
+          <div class="backlog-row \${isPending ? 'pending' : ''}" data-ghost-id="\${ghost.id}">
+            <div class="backlog-row-main" onclick="focusGhost('\${ghost.id}')">
+              <span class="backlog-title">\${escapeHtml(ghost.name)}</span>
+              <span class="backlog-badges">
+                <span class="backlog-ref-count">\${refCount}</span>
+                <span class="backlog-recency">\${recency}</span>
+              </span>
+            </div>
+            <button class="backlog-create-btn" onclick="event.stopPropagation(); showCreatePanelFromBacklog('\${ghost.id}')"
+                    \${isPending || !wsConnected ? 'disabled' : ''}>
+              \${isPending ? '...' : '+'}
+            </button>
+          </div>
+        \`;
+      }).join('');
+
+      if (ghosts.length > 10) {
+        list.innerHTML += \`<div class="backlog-more">and \${ghosts.length - 10} more...</div>\`;
+      }
+    }
+
+    function updateBacklogRow(ghostId) {
+      const row = document.querySelector(\`.backlog-row[data-ghost-id="\${ghostId}"]\`);
+      if (!row) return;
+
+      const isPending = pendingCreates.has(ghostId);
+      row.classList.toggle('pending', isPending);
+
+      const btn = row.querySelector('.backlog-create-btn');
+      if (btn) {
+        btn.disabled = isPending || !wsConnected;
+        btn.textContent = isPending ? '...' : '+';
+      }
+    }
+
+    function sortGhosts(ghosts, sortBy) {
+      switch (sortBy) {
+        case 'importance':
+          return ghosts.sort((a, b) => calculateImportance(b) - calculateImportance(a));
+        case 'refs':
+          return ghosts.sort((a, b) => (b.referenceCount || 0) - (a.referenceCount || 0));
+        case 'recent':
+          return ghosts.sort((a, b) => {
+            const aTime = a.mostRecentRef || a.metadata?.firstSeen || '';
+            const bTime = b.mostRecentRef || b.metadata?.firstSeen || '';
+            return bTime.localeCompare(aTime);
+          });
+        case 'alpha':
+          return ghosts.sort((a, b) => a.name.localeCompare(b.name));
+        default:
+          return ghosts;
+      }
+    }
+
+    function calculateImportance(ghost) {
+      const refCount = ghost.referenceCount || (ghost.sourceIds ? ghost.sourceIds.length : 0);
+      const refWeight = 2 * Math.log2(1 + refCount);
+      const recencyScore = getRecencyScore(ghost.mostRecentRef || ghost.metadata?.firstSeen);
+      return refWeight + recencyScore;
+    }
+
+    function getRecencyScore(timestamp) {
+      if (!timestamp) return 0;
+      const now = Date.now();
+      const then = new Date(timestamp).getTime();
+      const daysDiff = (now - then) / (1000 * 60 * 60 * 24);
+
+      if (daysDiff <= 7) return 1.0;
+      if (daysDiff <= 30) return 0.5;
+      if (daysDiff <= 90) return 0.25;
+      return 0.1;
+    }
+
+    function formatRecency(timestamp) {
+      if (!timestamp) return '';
+      const now = Date.now();
+      const then = new Date(timestamp).getTime();
+      const diff = now - then;
+
+      const minutes = Math.floor(diff / 60000);
+      const hours = Math.floor(diff / 3600000);
+      const days = Math.floor(diff / 86400000);
+      const weeks = Math.floor(days / 7);
+      const months = Math.floor(days / 30);
+
+      if (minutes < 60) return minutes + 'm';
+      if (hours < 24) return hours + 'h';
+      if (days < 7) return days + 'd';
+      if (weeks < 4) return weeks + 'w';
+      return months + 'mo';
+    }
+
+    function focusGhost(ghostId) {
+      const node = nodeMap[ghostId];
+      if (!node) return;
+
+      navigateToNode(ghostId);
+    }
+
+    function showCreatePanelFromBacklog(ghostId) {
+      const node = nodeMap[ghostId];
+      if (!node) return;
+
+      const sourceId = node.sourceIds && node.sourceIds[0] ? node.sourceIds[0] : '';
+      showCreatePanel(ghostId, node.name, sourceId);
+    }
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    // ========================================================================
+    // Centroid Anchoring for Ghost Nodes
+    // ========================================================================
+
+    function initGhostCentroids() {
+      // Set initial positions for ghost nodes at centroid of their referencers
+      for (const node of data.nodes) {
+        if (!node.isGhost) continue;
+
+        const refs = (node.sourceIds || [])
+          .map(id => nodeMap[id])
+          .filter(n => n && n.x != null);
+
+        if (refs.length > 0) {
+          node.x = refs.reduce((sum, n) => sum + n.x, 0) / refs.length;
+          node.y = refs.reduce((sum, n) => sum + n.y, 0) / refs.length;
+        }
+
+        // Cache referencer nodes
+        node._refNodes = refs;
+      }
+    }
+
+    function centroidTetherForce(strength = 0.03) {
+      let ghosts = [];
+
+      function force(alpha) {
+        const effectiveAlpha = Math.max(alpha, 0.1);
+
+        for (const ghost of ghosts) {
+          // Skip if pinned
+          if (ghost.fx != null || ghost.fy != null) continue;
+
+          // Use cached refs
+          const refs = ghost._refNodes;
+          if (!refs || refs.length === 0) continue;
+
+          // Calculate centroid
+          let cx = 0, cy = 0, validCount = 0;
+          for (const ref of refs) {
+            if (ref.x != null && ref.y != null) {
+              cx += ref.x;
+              cy += ref.y;
+              validCount++;
+            }
+          }
+          if (validCount === 0) continue;
+          cx /= validCount;
+          cy /= validCount;
+
+          // Clamp delta to prevent slingshots
+          const maxDelta = 50;
+          const dx = Math.max(-maxDelta, Math.min(maxDelta, cx - ghost.x));
+          const dy = Math.max(-maxDelta, Math.min(maxDelta, cy - ghost.y));
+
+          ghost.vx = (ghost.vx || 0) + dx * strength * effectiveAlpha;
+          ghost.vy = (ghost.vy || 0) + dy * strength * effectiveAlpha;
+        }
+      }
+
+      force.initialize = (nodes) => {
+        ghosts = nodes.filter(n => n.isGhost);
+        // Cache referencer node references
+        for (const ghost of ghosts) {
+          ghost._refNodes = (ghost.sourceIds || [])
+            .map(id => nodeMap[id])
+            .filter(n => n != null);
+        }
+      };
+
+      return force;
+    }
+
+    function refreshGhostRefCache() {
+      for (const node of data.nodes) {
+        if (!node.isGhost) continue;
+        node._refNodes = (node.sourceIds || [])
+          .map(id => nodeMap[id])
+          .filter(n => n != null);
+      }
+    }
 
     // Init Graph
     const Graph = ForceGraph()
@@ -10018,31 +12971,176 @@ function generateVisualizationHtml(graphData, nodeTypeColors) {
     Graph.d3Force('charge').strength(-150);
     Graph.d3Force('link').distance(70);
 
+    // Add centroid tether force for ghost nodes
+    Graph.d3Force('centroidTether', centroidTetherForce(0.03));
+
+    // Initialize ghost node positions at centroid before simulation starts
+    initGhostCentroids();
+
+    // Apply camera position from constellation after graph initializes
+    if (loadedConstellation && loadedConstellation.cameraX != null && loadedConstellation.cameraY != null) {
+      setTimeout(() => {
+        Graph.centerAt(loadedConstellation.cameraX, loadedConstellation.cameraY, 0);
+        if (loadedConstellation.cameraZoom) {
+          Graph.zoom(loadedConstellation.cameraZoom, 0);
+        }
+      }, 500);
+    }
+
+    // Initialize path panel if path data is available
+    setTimeout(() => {
+      initPathPanel();
+    }, 100);
+
+    // Initialize WebSocket connection if enabled
+    setTimeout(() => {
+      initWebSocket();
+      initBacklog();
+    }, 200);
+
     function updateGraphVisibility() {
+      const pathMode = pathNodes.size > 0;
+
       Graph.nodeCanvasObject((node, ctx, globalScale) => {
+        // Skip hidden types
         if (hiddenTypes.has(node.type)) return;
+        // Skip invisible ghost nodes
+        if (node.isGhost && !isGhostVisible(node)) return;
 
         const label = node.name;
         const fontSize = 12/globalScale;
         const isHighlighted = highlightNodes.size === 0 || highlightNodes.has(node);
         const isSelected = selectedNode && selectedNode.id === node.id;
-
-        // Node circle
+        const nodeOnPath = isOnPath(node.id);
         const radius = Math.sqrt(node.val) * 4;
+
+        // In path mode, fade non-path nodes
+        const pathFade = pathMode && !nodeOnPath;
+
+        // Ghost node rendering
+        if (node.isGhost) {
+          const isPending = node.isPending || pendingCreates.has(node.id);
+
+          // Pulse effect for pending state
+          let pulseScale = 1;
+          if (isPending) {
+            const pulse = (Date.now() % 1000) / 1000;
+            pulseScale = 1 + 0.1 * Math.sin(pulse * Math.PI * 2);
+          }
+
+          const effectiveRadius = radius * pulseScale;
+
+          // Dashed outline circle (or solid cyan for pending)
+          if (isPending) {
+            ctx.setLineDash([]);
+            ctx.strokeStyle = '#38bdf8';
+            ctx.lineWidth = 2 / globalScale;
+          } else {
+            ctx.setLineDash([4 / globalScale, 4 / globalScale]);
+            ctx.strokeStyle = pathFade ? 'rgba(100, 116, 139, 0.3)' : '#64748b';
+            ctx.lineWidth = 1.5 / globalScale;
+          }
+          ctx.beginPath();
+          ctx.arc(node.x, node.y, effectiveRadius, 0, 2 * Math.PI);
+          ctx.fillStyle = isPending
+            ? 'rgba(56, 189, 248, 0.15)'
+            : (pathFade
+              ? 'rgba(148, 163, 184, 0.05)'
+              : (isHighlighted ? 'rgba(148, 163, 184, 0.2)' : 'rgba(148, 163, 184, 0.1)'));
+          ctx.fill();
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          // Icon in center (spinner for pending, + for normal)
+          ctx.font = \`bold \${fontSize * 1.5}px Sans-Serif\`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          if (isPending) {
+            ctx.fillStyle = '#38bdf8';
+            ctx.fillText('...', node.x, node.y);
+          } else {
+            ctx.fillStyle = pathFade
+              ? 'rgba(148, 163, 184, 0.2)'
+              : (isHighlighted ? 'rgba(148, 163, 184, 0.8)' : 'rgba(148, 163, 184, 0.5)');
+            ctx.fillText('+', node.x, node.y);
+          }
+
+          // Selection ring
+          if (hoverNode === node || isSelected) {
+            ctx.setLineDash([]);
+            ctx.strokeStyle = isSelected ? '#38bdf8' : '#94a3b8';
+            ctx.lineWidth = (isSelected ? 3 : 2) / globalScale;
+            ctx.beginPath();
+            ctx.arc(node.x, node.y, effectiveRadius + 2 / globalScale, 0, 2 * Math.PI);
+            ctx.stroke();
+          }
+
+          // Label for ghost nodes
+          if (!pathFade && (globalScale > 2.5 || (isHighlighted && highlightNodes.size > 0))) {
+            ctx.font = \`\${fontSize}px Sans-Serif\`;
+            const textWidth = ctx.measureText(label).width;
+            const bckgDimensions = [textWidth, fontSize].map(n => n + fontSize * 0.2);
+
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.8)';
+            ctx.fillRect(node.x - bckgDimensions[0] / 2, node.y - bckgDimensions[1] - effectiveRadius - 2, bckgDimensions[0], bckgDimensions[1]);
+
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = isPending ? '#38bdf8' : (isHighlighted ? '#94a3b8' : 'rgba(148, 163, 184, 0.4)');
+            ctx.fillText(label, node.x, node.y - bckgDimensions[1]/2 - effectiveRadius - 2);
+          }
+          return;
+        }
+
+        // Regular node rendering
         ctx.beginPath();
         ctx.arc(node.x, node.y, radius, 0, 2 * Math.PI, false);
-        ctx.fillStyle = isHighlighted ? node.color : convertHexToRGBA(node.color, 0.2);
+
+        if (pathFade) {
+          ctx.fillStyle = convertHexToRGBA(node.color, 0.15);
+        } else if (nodeOnPath) {
+          ctx.fillStyle = node.color;
+        } else {
+          ctx.fillStyle = isHighlighted ? node.color : convertHexToRGBA(node.color, 0.2);
+        }
         ctx.fill();
 
-        // Ring for selected/hovered
+        // Gold outline for path nodes
+        if (nodeOnPath) {
+          ctx.strokeStyle = '#fbbf24';
+          ctx.lineWidth = 3 / globalScale;
+          ctx.stroke();
+        }
+
+        // Ring for selected/hovered (on top of path outline)
         if (hoverNode === node || isSelected) {
           ctx.strokeStyle = isSelected ? '#38bdf8' : '#fff';
           ctx.lineWidth = (isSelected ? 3 : 2) / globalScale;
           ctx.stroke();
         }
 
-        // Text Label (only if highlighted or zoomed in)
-        if (globalScale > 2.5 || (isHighlighted && highlightNodes.size > 0)) {
+        // Path order number
+        if (nodeOnPath && pathNodeOrder.has(node.id)) {
+          const orderNum = pathNodeOrder.get(node.id);
+          const numSize = fontSize * 0.8;
+          ctx.font = \`bold \${numSize}px Sans-Serif\`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+
+          // Circle background for number
+          const numRadius = numSize * 0.7;
+          ctx.beginPath();
+          ctx.arc(node.x + radius + numRadius, node.y - radius - numRadius, numRadius, 0, 2 * Math.PI);
+          ctx.fillStyle = '#fbbf24';
+          ctx.fill();
+
+          ctx.fillStyle = '#000';
+          ctx.fillText(orderNum, node.x + radius + numRadius, node.y - radius - numRadius);
+        }
+
+        // Text Label
+        const showLabel = !pathFade && (globalScale > 2.5 || nodeOnPath || (isHighlighted && highlightNodes.size > 0));
+        if (showLabel) {
           ctx.font = \`\${fontSize}px Sans-Serif\`;
           const textWidth = ctx.measureText(label).width;
           const bckgDimensions = [textWidth, fontSize].map(n => n + fontSize * 0.2);
@@ -10052,7 +13150,7 @@ function generateVisualizationHtml(graphData, nodeTypeColors) {
 
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.fillStyle = isHighlighted ? '#fff' : 'rgba(255,255,255,0.4)';
+          ctx.fillStyle = nodeOnPath ? '#fbbf24' : (isHighlighted ? '#fff' : 'rgba(255,255,255,0.4)');
           ctx.fillText(label, node.x, node.y - bckgDimensions[1]/2 - radius - 2);
         }
       });
@@ -10063,7 +13161,43 @@ function generateVisualizationHtml(graphData, nodeTypeColors) {
         if (!srcNode || !tgtNode) return false;
         if (hiddenTypes.has(srcNode.type) || hiddenTypes.has(tgtNode.type)) return false;
         if (hiddenEdgeTypes.has(link.type)) return false;
+        // Hide ghost reference edges when ghost is not visible
+        if (link.type === 'ghost_ref') {
+          const ghostNode = srcNode.isGhost ? srcNode : tgtNode;
+          if (!isGhostVisible(ghostNode)) return false;
+        }
         return true;
+      });
+
+      // Update link colors and widths for path mode
+      Graph.linkColor(link => {
+        if (hiddenEdgeTypes.has(link.type)) return 'rgba(0,0,0,0)';
+        if (highlightLinks.has(link)) return '#38bdf8';
+
+        const srcId = typeof link.source === 'object' ? link.source.id : link.source;
+        const tgtId = typeof link.target === 'object' ? link.target.id : link.target;
+
+        if (pathMode) {
+          if (isPathEdge(srcId, tgtId)) {
+            return '#fbbf24'; // Gold for path edges
+          }
+          return 'rgba(148, 163, 184, 0.1)'; // Faded for non-path edges
+        }
+
+        const style = edgeStyles[link.type];
+        return style ? style.color : 'rgba(148, 163, 184, 0.3)';
+      });
+
+      Graph.linkWidth(link => {
+        if (highlightLinks.has(link)) return 3;
+
+        const srcId = typeof link.source === 'object' ? link.source.id : link.source;
+        const tgtId = typeof link.target === 'object' ? link.target.id : link.target;
+
+        if (pathMode && isPathEdge(srcId, tgtId)) {
+          return 3;
+        }
+        return 1.5;
       });
     }
 
@@ -10136,11 +13270,63 @@ function generateVisualizationHtml(graphData, nodeTypeColors) {
       document.getElementById('sb-title').innerText = node.name;
 
       const typeEl = document.getElementById('sb-type');
-      typeEl.innerText = node.type;
+      typeEl.innerText = node.isGhost ? 'ghost (unresolved)' : node.type;
       typeEl.style.backgroundColor = node.color;
 
       const content = document.getElementById('sb-content');
-      let html = \`
+      let html = '';
+
+      // Ghost node sidebar
+      if (node.isGhost) {
+        const refCount = node.referenceCount || (node.sourceIds ? node.sourceIds.length : 0);
+        html = \`
+          <div class="meta-item">
+            <span class="meta-key">Status</span>
+            <span class="meta-val">Unresolved wikilink</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-key">References</span>
+            <span class="meta-val">\${refCount} note\${refCount === 1 ? '' : 's'} link to this</span>
+          </div>
+          <div class="ghost-action">
+            <button class="create-note-btn" onclick="createNoteFromGhost('\${node.name.replace(/'/g, "\\\\'")}')">
+              + Create Note
+            </button>
+            <div class="ghost-info">
+              Click to create a new note with this title. The link will be resolved automatically on the next index.
+            </div>
+          </div>\`;
+
+        content.innerHTML = html;
+
+        // Show which nodes reference this ghost
+        const connectionsEl = document.getElementById('sb-connections');
+        if (node.sourceIds && node.sourceIds.length > 0) {
+          let connHtml = '<div class="connections-title">Referenced By</div>';
+          connHtml += '<div class="connection-group">';
+          node.sourceIds.forEach(srcId => {
+            const srcNode = nodeMap[srcId];
+            if (srcNode) {
+              connHtml += \`
+                <div class="connected-node" onclick="navigateToNode('\${srcNode.id}')">
+                  <div class="connected-node-dot" style="background: \${srcNode.color}"></div>
+                  <span class="connected-node-name">\${srcNode.name}</span>
+                  <span class="connected-node-type">\${srcNode.type}</span>
+                </div>\`;
+            }
+          });
+          connHtml += '</div>';
+          connectionsEl.innerHTML = connHtml;
+        } else {
+          connectionsEl.innerHTML = '';
+        }
+
+        sb.classList.add('active');
+        return;
+      }
+
+      // Regular node sidebar
+      html = \`
         <div class="meta-item">
           <span class="meta-key">Location</span>
           <span class="meta-val"><code>\${node.path}</code></span>
@@ -10184,6 +13370,25 @@ function generateVisualizationHtml(graphData, nodeTypeColors) {
       connectionsEl.innerHTML = buildConnectionsUI(node);
 
       sb.classList.add('active');
+    }
+
+    // Ghost node creation handler
+    function createNoteFromGhost(ghostName) {
+      // Find the ghost node
+      const ghostNode = data.nodes.find(n => n.isGhost && n.name === ghostName);
+      if (!ghostNode) {
+        console.error('Ghost node not found:', ghostName);
+        return;
+      }
+
+      // If WebSocket connected, use live creation
+      if (wsConnected) {
+        const sourceId = ghostNode.sourceIds && ghostNode.sourceIds[0] ? ghostNode.sourceIds[0] : '';
+        showCreatePanel(ghostNode.id, ghostName, sourceId);
+      } else {
+        // Fallback to CLI command
+        alert('Note creation requested for: ' + ghostName + '\\n\\nTo create this note, run:\\n  zs create "' + ghostName + '"\\n\\nOr create the file manually in your vault.');
+      }
     }
 
     function searchNode(query) {
@@ -10240,49 +13445,207 @@ function generateVisualizationHtml(graphData, nodeTypeColors) {
 </html>
   `;
 }
-var visualizeCommand = new Command12("visualize").alias("viz").description("Visualize the knowledge graph in the browser").option("-o, --output <path>", "Custom output path for the HTML file").option("--no-open", "Do not open the browser automatically").action(async (options) => {
+var visualizeCommand = new Command12("visualize").alias("viz").description("Visualize the knowledge graph in the browser").option("-o, --output <path>", "Custom output path for the HTML file").option("--no-open", "Do not open the browser automatically").option("-l, --live", "Enable live updates via WebSocket (allows creating notes from ghosts)").option("-c, --constellation <name>", "Load a saved constellation view").option("--list-constellations", "List all saved constellations").option("--path-from <node>", "Starting node for path highlighting (title or path)").option("--path-to <node>", "Ending node for path highlighting (title or path)").option("--path-k <n>", "Number of paths to compute", "3").action(async (options) => {
   try {
     const ctx = await initContext();
+    if (options.listConstellations) {
+      const constellations2 = await ctx.constellationRepository.findAll();
+      if (constellations2.length === 0) {
+        console.log("No constellations saved yet.");
+        console.log('\nTo save one, open the visualizer and click "Save Current View".');
+      } else {
+        const rows = constellations2.map((c) => [
+          c.name,
+          c.description || "-",
+          new Date(c.updatedAt).toLocaleDateString()
+        ]);
+        printTable(["Name", "Description", "Updated"], rows);
+      }
+      ctx.connectionManager.close();
+      return;
+    }
+    let constellation = null;
+    if (options.constellation) {
+      constellation = await ctx.constellationRepository.findByName(options.constellation);
+      if (!constellation) {
+        console.error(`Constellation "${options.constellation}" not found.`);
+        console.log("\nAvailable constellations:");
+        const all = await ctx.constellationRepository.findAll();
+        if (all.length === 0) {
+          console.log("  (none)");
+        } else {
+          all.forEach((c) => console.log(`  - ${c.name}`));
+        }
+        ctx.connectionManager.close();
+        process2.exit(1);
+      }
+      console.log(`Loading constellation "${constellation.name}"...`);
+    }
     console.log("Generating graph data...");
     const nodes2 = await ctx.nodeRepository.findAll();
     const edges2 = await ctx.edgeRepository.findAll();
+    const ghostNodeData = await ctx.unresolvedLinkRepository.getGhostNodesWithRecency();
     const nodeWeights = /* @__PURE__ */ new Map();
     edges2.forEach((e) => {
       nodeWeights.set(e.sourceId, (nodeWeights.get(e.sourceId) || 0) + 1);
       nodeWeights.set(e.targetId, (nodeWeights.get(e.targetId) || 0) + 1);
     });
-    const graphData = {
-      nodes: nodes2.map((n) => ({
-        id: n.nodeId,
-        name: n.title,
-        type: n.type,
-        val: Math.max(1, Math.min(10, (nodeWeights.get(n.nodeId) || 0) / 2)),
-        color: typeColors[n.type] || "#94a3b8",
-        path: n.path,
-        metadata: n.metadata
-      })),
-      links: edges2.map((e) => ({
-        source: e.sourceId,
-        target: e.targetId,
-        type: e.edgeType,
-        strength: e.strength ?? 1,
-        provenance: e.provenance
-      }))
-    };
-    const htmlContent = generateVisualizationHtml(graphData, typeColors);
-    const outputDir = options.output ? path14.dirname(options.output) : getZettelScriptDir(ctx.vaultPath);
-    if (!fs11.existsSync(outputDir)) {
-      fs11.mkdirSync(outputDir, { recursive: true });
+    const graphNodes = nodes2.map((n) => ({
+      id: n.nodeId,
+      name: n.title,
+      type: n.type,
+      val: Math.max(1, Math.min(10, (nodeWeights.get(n.nodeId) || 0) / 2)),
+      color: typeColors[n.type] || "#94a3b8",
+      path: n.path,
+      metadata: n.metadata,
+      updatedAtMs: n.updatedAt ? new Date(n.updatedAt).getTime() : void 0
+    }));
+    const graphLinks = edges2.map((e) => ({
+      source: e.sourceId,
+      target: e.targetId,
+      type: e.edgeType,
+      strength: e.strength ?? 1,
+      provenance: e.provenance
+    }));
+    const nodeIdSet = new Set(nodes2.map((n) => n.nodeId));
+    for (const ghost of ghostNodeData) {
+      if (!ghost.targetText.trim()) continue;
+      const ghostId = `ghost:${ghost.targetText}`;
+      graphNodes.push({
+        id: ghostId,
+        name: ghost.targetText,
+        type: "ghost",
+        val: Math.max(1, Math.min(5, ghost.referenceCount)),
+        color: typeColors.ghost,
+        path: "",
+        metadata: {
+          referenceCount: ghost.referenceCount,
+          firstSeen: ghost.firstSeen
+        },
+        isGhost: true,
+        sourceIds: ghost.sourceIds.filter((id) => nodeIdSet.has(id)),
+        referenceCount: ghost.referenceCount,
+        mostRecentRef: ghost.mostRecentRef
+      });
+      for (const sourceId of ghost.sourceIds) {
+        if (nodeIdSet.has(sourceId)) {
+          graphLinks.push({
+            source: sourceId,
+            target: ghostId,
+            type: "ghost_ref",
+            strength: 0.3,
+            provenance: "unresolved_link"
+          });
+        }
+      }
     }
-    const outputPath = options.output || path14.join(outputDir, "graph.html");
-    fs11.writeFileSync(outputPath, htmlContent, "utf-8");
+    const graphData = {
+      nodes: graphNodes,
+      links: graphLinks
+    };
+    if (ghostNodeData.length > 0) {
+      console.log(`Found ${ghostNodeData.length} unresolved links (ghost nodes)`);
+    }
+    let computedPathData = null;
+    if (options.pathFrom && options.pathTo) {
+      console.log("Computing paths...");
+      let fromNode = await ctx.nodeRepository.findByPath(options.pathFrom);
+      if (!fromNode) {
+        const byTitle = await ctx.nodeRepository.findByTitle(options.pathFrom);
+        fromNode = byTitle[0] ?? null;
+      }
+      if (!fromNode) {
+        const byAlias = await ctx.nodeRepository.findByTitleOrAlias(options.pathFrom);
+        fromNode = byAlias[0] ?? null;
+      }
+      let toNode = await ctx.nodeRepository.findByPath(options.pathTo);
+      if (!toNode) {
+        const byTitle = await ctx.nodeRepository.findByTitle(options.pathTo);
+        toNode = byTitle[0] ?? null;
+      }
+      if (!toNode) {
+        const byAlias = await ctx.nodeRepository.findByTitleOrAlias(options.pathTo);
+        toNode = byAlias[0] ?? null;
+      }
+      if (fromNode && toNode) {
+        const k = parseInt(options.pathK || "3", 10);
+        const { paths } = await ctx.graphEngine.findKShortestPaths(
+          fromNode.nodeId,
+          toNode.nodeId,
+          { k, edgeTypes: ["explicit_link", "sequence", "causes", "semantic"] }
+        );
+        if (paths.length > 0) {
+          computedPathData = {
+            paths: paths.map((p) => ({
+              path: p.path,
+              edges: p.edges,
+              hopCount: p.hopCount,
+              score: p.score
+            })),
+            fromId: fromNode.nodeId,
+            toId: toNode.nodeId,
+            fromLabel: fromNode.title,
+            toLabel: toNode.title
+          };
+          console.log(`Found ${paths.length} path(s) from "${fromNode.title}" to "${toNode.title}"`);
+        } else {
+          console.log(`No paths found from "${fromNode.title}" to "${toNode.title}"`);
+        }
+      } else {
+        if (!fromNode) console.error(`Could not find node: "${options.pathFrom}"`);
+        if (!toNode) console.error(`Could not find node: "${options.pathTo}"`);
+      }
+    }
+    let wsConfig = null;
+    let wsServer = null;
+    if (options.live) {
+      console.log("Starting live update server...");
+      const { server, info } = await createVisualizeServer(ctx, {
+        onClose: () => {
+          console.log("\nBrowser disconnected. Server stopped.");
+          ctx.connectionManager.close();
+          process2.exit(0);
+        }
+      });
+      wsServer = server;
+      wsConfig = {
+        enabled: true,
+        port: info.port,
+        token: info.token,
+        protocolVersion: PROTOCOL_VERSION
+      };
+      console.log(`Live updates enabled on port ${info.port}`);
+    }
+    const htmlContent = generateVisualizationHtml(graphData, typeColors, constellation, computedPathData, wsConfig);
+    const outputDir = options.output ? path15.dirname(options.output) : getZettelScriptDir(ctx.vaultPath);
+    if (!fs12.existsSync(outputDir)) {
+      fs12.mkdirSync(outputDir, { recursive: true });
+    }
+    const outputPath = options.output || path15.join(outputDir, "graph.html");
+    fs12.writeFileSync(outputPath, htmlContent, "utf-8");
     console.log(`
 Graph visualization generated at: ${outputPath}`);
     if (options.open) {
       console.log("Opening in default browser...");
       await open(outputPath);
     }
-    ctx.connectionManager.close();
+    if (options.live && wsServer) {
+      console.log("\nLive mode active. Press Ctrl+C to stop.");
+      const shutdown = async () => {
+        console.log("\nShutting down...");
+        if (wsServer) {
+          await wsServer.stop();
+        }
+        ctx.connectionManager.close();
+        process2.exit(0);
+      };
+      process2.on("SIGINT", shutdown);
+      process2.on("SIGTERM", shutdown);
+      await new Promise(() => {
+      });
+    } else {
+      ctx.connectionManager.close();
+    }
   } catch (error) {
     console.error("Visualization failed:", error);
     process2.exit(1);
@@ -10291,17 +13654,17 @@ Graph visualization generated at: ${outputPath}`);
 
 // src/cli/commands/setup.ts
 import { Command as Command13 } from "commander";
-import * as fs12 from "fs";
-import * as path15 from "path";
+import * as fs13 from "fs";
+import * as path16 from "path";
 import process3 from "process";
-import { stringify as stringifyYaml6 } from "yaml";
+import { stringify as stringifyYaml7 } from "yaml";
 var setupCommand = new Command13("setup").alias("go").description("Initialize vault, index files, and generate visualization (0 to hero)").option("-f, --force", "Reinitialize even if already set up").option("--manuscript", "Enable manuscript mode with POV and timeline validation").option("--no-viz", "Skip visualization generation").option("-v, --verbose", "Show detailed output").action(async (options) => {
   const vaultPath = process3.cwd();
   const zettelDir = getZettelScriptDir(vaultPath);
   let needsInit = true;
   console.log("ZettelScript Setup");
   console.log("==================\n");
-  if (fs12.existsSync(zettelDir) && !options.force) {
+  if (fs13.existsSync(zettelDir) && !options.force) {
     const existingRoot = findVaultRoot(vaultPath);
     if (existingRoot) {
       console.log("Step 1: Initialize");
@@ -10312,8 +13675,8 @@ var setupCommand = new Command13("setup").alias("go").description("Initialize va
   if (needsInit) {
     console.log("Step 1: Initialize");
     try {
-      fs12.mkdirSync(zettelDir, { recursive: true });
-      console.log(`  Created ${path15.relative(vaultPath, zettelDir)}/`);
+      fs13.mkdirSync(zettelDir, { recursive: true });
+      console.log(`  Created ${path16.relative(vaultPath, zettelDir)}/`);
       const config = {
         ...DEFAULT_CONFIG,
         vault: {
@@ -10326,16 +13689,16 @@ var setupCommand = new Command13("setup").alias("go").description("Initialize va
         }
       };
       const configPath = getConfigPath(vaultPath);
-      fs12.writeFileSync(configPath, stringifyYaml6(config), "utf-8");
-      console.log(`  Created ${path15.relative(vaultPath, configPath)}`);
+      fs13.writeFileSync(configPath, stringifyYaml7(config), "utf-8");
+      console.log(`  Created ${path16.relative(vaultPath, configPath)}`);
       const dbPath = getDbPath(vaultPath);
       const manager = ConnectionManager.getInstance(dbPath);
       await manager.initialize();
       manager.close();
       ConnectionManager.resetInstance();
-      console.log(`  Created ${path15.relative(vaultPath, dbPath)}`);
-      const gitignorePath = path15.join(zettelDir, ".gitignore");
-      fs12.writeFileSync(gitignorePath, "# Ignore database (regenerated from files)\nzettelscript.db\nzettelscript.db-*\n", "utf-8");
+      console.log(`  Created ${path16.relative(vaultPath, dbPath)}`);
+      const gitignorePath = path16.join(zettelDir, ".gitignore");
+      fs13.writeFileSync(gitignorePath, "# Ignore database (regenerated from files)\nzettelscript.db\nzettelscript.db-*\n", "utf-8");
       console.log("  Done!\n");
     } catch (error) {
       console.error("  Failed to initialize:", error);
@@ -10406,9 +13769,9 @@ var setupCommand = new Command13("setup").alias("go").description("Initialize va
           }))
         };
         const htmlContent = generateVisualizationHtml(graphData, typeColors);
-        const outputPath = path15.join(getZettelScriptDir(ctx.vaultPath), "graph.html");
-        fs12.writeFileSync(outputPath, htmlContent, "utf-8");
-        console.log(`  Generated: ${path15.relative(vaultPath, outputPath)}`);
+        const outputPath = path16.join(getZettelScriptDir(ctx.vaultPath), "graph.html");
+        fs13.writeFileSync(outputPath, htmlContent, "utf-8");
+        console.log(`  Generated: ${path16.relative(vaultPath, outputPath)}`);
         console.log("  Done!\n");
       }
     }
@@ -10432,8 +13795,1152 @@ var setupCommand = new Command13("setup").alias("go").description("Initialize va
   }
 });
 
+// src/cli/commands/constellation.ts
+import { Command as Command14 } from "commander";
+var constellationCommand = new Command14("constellation").alias("const").description("Manage saved graph views (constellations)");
+constellationCommand.command("save <name>").description("Save a constellation from JSON state").option("-s, --state <json>", "State JSON from visualizer").option("-d, --description <text>", "Description for the constellation").action(async (name, options) => {
+  try {
+    const ctx = await initContext();
+    const existing = await ctx.constellationRepository.findByName(name);
+    if (existing) {
+      console.error(`Constellation "${name}" already exists. Use a different name or delete it first.`);
+      ctx.connectionManager.close();
+      process.exit(1);
+    }
+    let state = {};
+    if (options.state) {
+      try {
+        state = JSON.parse(options.state);
+      } catch (e) {
+        console.error("Invalid JSON state:", e);
+        ctx.connectionManager.close();
+        process.exit(1);
+      }
+    }
+    const constellation = await ctx.constellationRepository.create({
+      name,
+      description: options.description,
+      hiddenNodeTypes: state.hiddenNodeTypes ?? [],
+      hiddenEdgeTypes: state.hiddenEdgeTypes ?? [],
+      showGhosts: state.showGhosts ?? true,
+      ghostThreshold: state.ghostThreshold ?? 1,
+      cameraX: state.cameraX,
+      cameraY: state.cameraY,
+      cameraZoom: state.cameraZoom,
+      focusNodeIds: state.focusNodeIds
+    });
+    console.log(`Constellation "${constellation.name}" saved successfully.`);
+    console.log(`
+To load it, run: zs visualize --constellation "${name}"`);
+    ctx.connectionManager.close();
+  } catch (error) {
+    console.error("Failed to save constellation:", error);
+    process.exit(1);
+  }
+});
+constellationCommand.command("list").alias("ls").description("List all saved constellations").action(async () => {
+  try {
+    const ctx = await initContext();
+    const constellations2 = await ctx.constellationRepository.findAll();
+    if (constellations2.length === 0) {
+      console.log("No constellations saved yet.");
+      console.log('\nTo save one, open the visualizer and click "Save Current View".');
+      ctx.connectionManager.close();
+      return;
+    }
+    const rows = constellations2.map((c) => [
+      c.name,
+      c.description || "-",
+      c.hiddenNodeTypes.length > 0 ? `${c.hiddenNodeTypes.length} hidden` : "all",
+      c.hiddenEdgeTypes.length > 0 ? `${c.hiddenEdgeTypes.length} hidden` : "all",
+      c.showGhosts ? "yes" : "no",
+      new Date(c.updatedAt).toLocaleDateString()
+    ]);
+    printTable(
+      ["Name", "Description", "Node Types", "Edge Types", "Ghosts", "Updated"],
+      rows
+    );
+    ctx.connectionManager.close();
+  } catch (error) {
+    console.error("Failed to list constellations:", error);
+    process.exit(1);
+  }
+});
+constellationCommand.command("show <name>").description("Show details of a constellation").action(async (name) => {
+  try {
+    const ctx = await initContext();
+    const constellation = await ctx.constellationRepository.findByName(name);
+    if (!constellation) {
+      console.error(`Constellation "${name}" not found.`);
+      ctx.connectionManager.close();
+      process.exit(1);
+    }
+    console.log(`
+Constellation: ${constellation.name}`);
+    console.log("\u2500".repeat(40));
+    if (constellation.description) {
+      console.log(`Description: ${constellation.description}`);
+    }
+    console.log(`
+Filters:`);
+    console.log(`  Hidden node types: ${constellation.hiddenNodeTypes.length > 0 ? constellation.hiddenNodeTypes.join(", ") : "(none)"}`);
+    console.log(`  Hidden edge types: ${constellation.hiddenEdgeTypes.length > 0 ? constellation.hiddenEdgeTypes.join(", ") : "(none)"}`);
+    console.log(`
+Ghost Nodes:`);
+    console.log(`  Show ghosts: ${constellation.showGhosts ? "yes" : "no"}`);
+    console.log(`  Min references: ${constellation.ghostThreshold}`);
+    if (constellation.cameraX !== void 0 || constellation.cameraY !== void 0) {
+      console.log(`
+Camera:`);
+      console.log(`  Position: (${constellation.cameraX?.toFixed(2) ?? "auto"}, ${constellation.cameraY?.toFixed(2) ?? "auto"})`);
+      console.log(`  Zoom: ${constellation.cameraZoom?.toFixed(2) ?? "auto"}`);
+    }
+    if (constellation.focusNodeIds && constellation.focusNodeIds.length > 0) {
+      console.log(`
+Focus nodes: ${constellation.focusNodeIds.length}`);
+    }
+    console.log(`
+Created: ${new Date(constellation.createdAt).toLocaleString()}`);
+    console.log(`Updated: ${new Date(constellation.updatedAt).toLocaleString()}`);
+    ctx.connectionManager.close();
+  } catch (error) {
+    console.error("Failed to show constellation:", error);
+    process.exit(1);
+  }
+});
+constellationCommand.command("delete <name>").alias("rm").description("Delete a constellation").action(async (name) => {
+  try {
+    const ctx = await initContext();
+    const deleted = await ctx.constellationRepository.deleteByName(name);
+    if (!deleted) {
+      console.error(`Constellation "${name}" not found.`);
+      ctx.connectionManager.close();
+      process.exit(1);
+    }
+    console.log(`Constellation "${name}" deleted.`);
+    ctx.connectionManager.close();
+  } catch (error) {
+    console.error("Failed to delete constellation:", error);
+    process.exit(1);
+  }
+});
+constellationCommand.command("update <name>").description("Update an existing constellation").option("-s, --state <json>", "New state JSON").option("-d, --description <text>", "New description").option("-n, --new-name <name>", "Rename the constellation").action(async (name, options) => {
+  try {
+    const ctx = await initContext();
+    const existing = await ctx.constellationRepository.findByName(name);
+    if (!existing) {
+      console.error(`Constellation "${name}" not found.`);
+      ctx.connectionManager.close();
+      process.exit(1);
+    }
+    let stateUpdates = {};
+    if (options.state) {
+      try {
+        stateUpdates = JSON.parse(options.state);
+      } catch (e) {
+        console.error("Invalid JSON state:", e);
+        ctx.connectionManager.close();
+        process.exit(1);
+      }
+    }
+    const updates = {
+      ...stateUpdates,
+      ...options.description !== void 0 && { description: options.description },
+      ...options.newName !== void 0 && { name: options.newName }
+    };
+    await ctx.constellationRepository.update(existing.constellationId, updates);
+    const finalName = options.newName ?? name;
+    console.log(`Constellation "${finalName}" updated.`);
+    ctx.connectionManager.close();
+  } catch (error) {
+    console.error("Failed to update constellation:", error);
+    process.exit(1);
+  }
+});
+
+// src/cli/commands/embed.ts
+import { Command as Command15 } from "commander";
+import * as fs14 from "fs";
+import * as path17 from "path";
+
+// src/retrieval/embeddings/provider.ts
+var OpenAIEmbeddingProvider = class {
+  name = "openai";
+  dimensions;
+  apiKey;
+  model;
+  baseUrl;
+  constructor(options) {
+    this.apiKey = options.apiKey;
+    this.model = options.model || "text-embedding-3-small";
+    this.baseUrl = options.baseUrl || "https://api.openai.com/v1";
+    this.dimensions = this.model.includes("3-small") ? 1536 : 3072;
+  }
+  async embed(text2) {
+    const result = await this.embedBatch([text2]);
+    if (!result[0]) {
+      throw new EmbeddingError("Empty embedding result", this.name);
+    }
+    return result[0];
+  }
+  async embedBatch(texts) {
+    if (texts.length === 0) return [];
+    try {
+      const response = await fetch(`${this.baseUrl}/embeddings`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${this.apiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model: this.model,
+          input: texts
+        })
+      });
+      if (!response.ok) {
+        const error = await response.text();
+        throw new EmbeddingError(`OpenAI API error: ${error}`, this.name);
+      }
+      const data = await response.json();
+      const sorted = data.data.sort((a, b) => a.index - b.index);
+      return sorted.map((d) => d.embedding);
+    } catch (error) {
+      if (error instanceof EmbeddingError) throw error;
+      throw new EmbeddingError(`Failed to get embeddings: ${error}`, this.name);
+    }
+  }
+};
+var OllamaEmbeddingProvider = class {
+  name = "ollama";
+  dimensions;
+  model;
+  baseUrl;
+  constructor(options = {}) {
+    this.model = options.model || "nomic-embed-text";
+    this.baseUrl = options.baseUrl || "http://localhost:11434";
+    this.dimensions = this.model.includes("nomic") ? 768 : 1536;
+  }
+  async embed(text2) {
+    try {
+      const response = await fetch(`${this.baseUrl}/api/embeddings`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model: this.model,
+          prompt: text2
+        })
+      });
+      if (!response.ok) {
+        const error = await response.text();
+        throw new EmbeddingError(`Ollama API error: ${error}`, this.name);
+      }
+      const data = await response.json();
+      return data.embedding;
+    } catch (error) {
+      if (error instanceof EmbeddingError) throw error;
+      throw new EmbeddingError(`Failed to get embedding: ${error}`, this.name);
+    }
+  }
+  async embedBatch(texts) {
+    const results = [];
+    for (const text2 of texts) {
+      results.push(await this.embed(text2));
+    }
+    return results;
+  }
+};
+var MockEmbeddingProvider = class {
+  name = "mock";
+  dimensions = 384;
+  async embed(text2) {
+    const hash = this.hashString(text2);
+    const embedding = new Array(this.dimensions).fill(0);
+    for (let i = 0; i < this.dimensions; i++) {
+      embedding[i] = Math.sin(hash * (i + 1)) * 0.5;
+    }
+    return embedding;
+  }
+  async embedBatch(texts) {
+    return Promise.all(texts.map((t) => this.embed(t)));
+  }
+  hashString(str) {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = (hash << 5) - hash + char;
+      hash = hash & hash;
+    }
+    return hash;
+  }
+};
+function createEmbeddingProvider(config) {
+  switch (config.provider) {
+    case "openai":
+      if (!config.apiKey) {
+        throw new EmbeddingError("OpenAI API key required", "openai");
+      }
+      return new OpenAIEmbeddingProvider({
+        apiKey: config.apiKey,
+        ...config.model != null && { model: config.model },
+        ...config.baseUrl != null && { baseUrl: config.baseUrl }
+      });
+    case "ollama":
+      return new OllamaEmbeddingProvider({
+        ...config.model != null && { model: config.model },
+        ...config.baseUrl != null && { baseUrl: config.baseUrl }
+      });
+    case "mock":
+      return new MockEmbeddingProvider();
+    default:
+      throw new EmbeddingError(`Unknown provider: ${config.provider}`, "unknown");
+  }
+}
+
+// src/cli/commands/embed.ts
+var embedCommand = new Command15("embed").description("Manage node embeddings for semantic wormholes");
+embedCommand.command("compute").description("Compute embeddings for nodes that need them").option("-p, --provider <name>", "Embedding provider (openai|ollama|mock)", "openai").option("-m, --model <name>", "Model name (provider-specific)").option("--force", "Recompute all embeddings, not just dirty nodes").option("--batch-size <n>", "Batch size for API calls", "10").action(async (options) => {
+  try {
+    const ctx = await initContext();
+    const batchSize = parseInt(options.batchSize, 10);
+    let nodeIds;
+    if (options.force) {
+      const nodes3 = await ctx.nodeRepository.findAll();
+      nodeIds = nodes3.map((n) => n.nodeId);
+      console.log(`Force mode: will compute embeddings for all ${nodeIds.length} nodes`);
+    } else {
+      nodeIds = await ctx.embeddingRepository.findDirtyNodeIds();
+      if (nodeIds.length === 0) {
+        console.log("All nodes have up-to-date embeddings.");
+        ctx.connectionManager.close();
+        return;
+      }
+      console.log(`Found ${nodeIds.length} nodes needing embeddings`);
+    }
+    const providerConfig = {
+      provider: options.provider
+    };
+    if (options.provider === "openai") {
+      providerConfig.apiKey = process.env.OPENAI_API_KEY || ctx.config.embeddings.apiKey;
+      if (!providerConfig.apiKey) {
+        console.error("Error: OPENAI_API_KEY environment variable or config.embeddings.apiKey required");
+        ctx.connectionManager.close();
+        process.exit(1);
+      }
+    }
+    if (options.model) {
+      providerConfig.model = options.model;
+    } else if (ctx.config.embeddings.model) {
+      providerConfig.model = ctx.config.embeddings.model;
+    }
+    if (ctx.config.embeddings.baseUrl) {
+      providerConfig.baseUrl = ctx.config.embeddings.baseUrl;
+    }
+    const provider = createEmbeddingProvider(providerConfig);
+    const modelName = `${options.provider}:${providerConfig.model || provider.name}`;
+    console.log(`Using provider: ${modelName} (${provider.dimensions} dimensions)`);
+    const nodes2 = await ctx.nodeRepository.findByIds(nodeIds);
+    const nodeMap = new Map(nodes2.map((n) => [n.nodeId, n]));
+    const spinner = new Spinner("Computing embeddings...");
+    spinner.start();
+    let processed = 0;
+    let errors = 0;
+    for (let i = 0; i < nodeIds.length; i += batchSize) {
+      const batch = nodeIds.slice(i, i + batchSize);
+      const batchNodes = batch.map((id) => nodeMap.get(id)).filter(Boolean);
+      try {
+        const texts = [];
+        for (const node of batchNodes) {
+          const chunks2 = await ctx.chunkRepository.findByNodeId(node.nodeId);
+          if (chunks2.length > 0) {
+            texts.push(chunks2.map((c) => c.text).join("\n"));
+          } else {
+            const filePath = path17.join(ctx.vaultPath, node.path);
+            if (fs14.existsSync(filePath)) {
+              const content = fs14.readFileSync(filePath, "utf-8");
+              texts.push(content);
+            } else {
+              texts.push(node.title);
+            }
+          }
+        }
+        const embeddings = await provider.embedBatch(texts);
+        for (let j = 0; j < batchNodes.length; j++) {
+          const node = batchNodes[j];
+          const embedding = embeddings[j];
+          await ctx.embeddingRepository.upsert({
+            nodeId: node.nodeId,
+            embedding,
+            model: modelName,
+            dimensions: provider.dimensions,
+            contentHash: node.contentHash || ""
+          });
+        }
+        processed += batchNodes.length;
+        spinner.update(`Computing embeddings... ${processed}/${nodeIds.length}`);
+      } catch (error) {
+        errors += batchNodes.length;
+        console.error(`
+Error processing batch: ${error}`);
+      }
+    }
+    spinner.stop(`Computed embeddings for ${processed} nodes${errors > 0 ? ` (${errors} errors)` : ""}`);
+    ctx.connectionManager.close();
+  } catch (error) {
+    console.error("Embedding computation failed:", error);
+    process.exit(1);
+  }
+});
+embedCommand.command("stats").description("Show embedding statistics").action(async () => {
+  try {
+    const ctx = await initContext();
+    const totalNodes = await ctx.nodeRepository.count();
+    const embeddingCount = await ctx.embeddingRepository.count();
+    const dirtyCount = (await ctx.embeddingRepository.findDirtyNodeIds()).length;
+    const byModel = await ctx.embeddingRepository.countByModel();
+    console.log("\n=== Embedding Statistics ===\n");
+    console.log(`Total nodes: ${totalNodes}`);
+    console.log(`Embedded nodes: ${embeddingCount}`);
+    console.log(`Coverage: ${(embeddingCount / totalNodes * 100).toFixed(1)}%`);
+    console.log(`Nodes needing update: ${dirtyCount}`);
+    if (Object.keys(byModel).length > 0) {
+      console.log("\nBy model:");
+      for (const [model, count] of Object.entries(byModel)) {
+        console.log(`  ${model}: ${count}`);
+      }
+    }
+    ctx.connectionManager.close();
+  } catch (error) {
+    console.error("Failed to get stats:", error);
+    process.exit(1);
+  }
+});
+embedCommand.command("clear").description("Clear all embeddings").option("-m, --model <name>", "Only clear embeddings for a specific model").action(async (options) => {
+  try {
+    const ctx = await initContext();
+    let count;
+    if (options.model) {
+      count = await ctx.embeddingRepository.deleteByModel(options.model);
+      console.log(`Cleared ${count} embeddings for model: ${options.model}`);
+    } else {
+      const embeddings = await ctx.embeddingRepository.findAll();
+      for (const emb of embeddings) {
+        await ctx.embeddingRepository.delete(emb.embeddingId);
+      }
+      count = embeddings.length;
+      console.log(`Cleared all ${count} embeddings`);
+    }
+    ctx.connectionManager.close();
+  } catch (error) {
+    console.error("Failed to clear embeddings:", error);
+    process.exit(1);
+  }
+});
+
+// src/cli/commands/wormhole.ts
+import { Command as Command16 } from "commander";
+
+// src/retrieval/similarity/similarity.ts
+function cosineSimilarity(a, b) {
+  if (a.length !== b.length) {
+    throw new Error(`Vector dimension mismatch: ${a.length} vs ${b.length}`);
+  }
+  let dotProduct = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dotProduct += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+  const magnitude = Math.sqrt(normA) * Math.sqrt(normB);
+  if (magnitude === 0) return 0;
+  return dotProduct / magnitude;
+}
+var DEFAULT_WORMHOLE_OPTIONS = {
+  similarityThreshold: 0.75,
+  maxWormholesPerNode: 5,
+  excludeLinkedNodes: true
+};
+
+// src/retrieval/similarity/wormhole-detector.ts
+var WormholeDetector = class {
+  constructor(embeddingRepo, edgeRepo, wormholeRepo, nodeRepo, options = {}) {
+    this.embeddingRepo = embeddingRepo;
+    this.edgeRepo = edgeRepo;
+    this.wormholeRepo = wormholeRepo;
+    this.nodeRepo = nodeRepo;
+    this.options = { ...DEFAULT_WORMHOLE_OPTIONS, ...options };
+  }
+  options;
+  /**
+   * Detect all wormhole candidates based on embedding similarity
+   */
+  async detectWormholes() {
+    const embeddings = await this.embeddingRepo.findAll();
+    if (embeddings.length < 2) {
+      return [];
+    }
+    const existingEdges = /* @__PURE__ */ new Set();
+    if (this.options.excludeLinkedNodes) {
+      const allEdges = await this.edgeRepo.findAll();
+      for (const edge of allEdges) {
+        existingEdges.add(`${edge.sourceId}:${edge.targetId}`);
+        existingEdges.add(`${edge.targetId}:${edge.sourceId}`);
+      }
+    }
+    const nodeHashes = /* @__PURE__ */ new Map();
+    const nodes2 = await this.nodeRepo.findAll();
+    for (const node of nodes2) {
+      if (node.contentHash) {
+        nodeHashes.set(node.nodeId, node.contentHash);
+      }
+    }
+    const nodeWormholeCounts = /* @__PURE__ */ new Map();
+    const candidates = [];
+    for (let i = 0; i < embeddings.length; i++) {
+      const embA = embeddings[i];
+      for (let j = i + 1; j < embeddings.length; j++) {
+        const embB = embeddings[j];
+        if (existingEdges.has(`${embA.nodeId}:${embB.nodeId}`)) {
+          continue;
+        }
+        const similarity = cosineSimilarity(embA.embedding, embB.embedding);
+        if (similarity < this.options.similarityThreshold) {
+          continue;
+        }
+        const sourceHash = nodeHashes.get(embA.nodeId) || "";
+        const targetHash = nodeHashes.get(embB.nodeId) || "";
+        const isRejected = await this.wormholeRepo.isRejected(
+          embA.nodeId,
+          embB.nodeId,
+          sourceHash,
+          targetHash
+        );
+        if (isRejected) {
+          continue;
+        }
+        candidates.push({
+          sourceId: embA.nodeId,
+          targetId: embB.nodeId,
+          similarity
+        });
+      }
+    }
+    candidates.sort((a, b) => b.similarity - a.similarity);
+    const filteredCandidates = [];
+    for (const candidate of candidates) {
+      const sourceCount = nodeWormholeCounts.get(candidate.sourceId) || 0;
+      const targetCount = nodeWormholeCounts.get(candidate.targetId) || 0;
+      if (sourceCount < this.options.maxWormholesPerNode && targetCount < this.options.maxWormholesPerNode) {
+        filteredCandidates.push(candidate);
+        nodeWormholeCounts.set(candidate.sourceId, sourceCount + 1);
+        nodeWormholeCounts.set(candidate.targetId, targetCount + 1);
+      }
+    }
+    return filteredCandidates;
+  }
+  /**
+   * Create semantic_suggestion edges from wormhole candidates
+   * Returns the number of edges created
+   */
+  async createSemanticEdges(candidates, model) {
+    let created = 0;
+    for (const candidate of candidates) {
+      const existing = await this.edgeRepo.findBySourceTargetType(
+        candidate.sourceId,
+        candidate.targetId,
+        "semantic_suggestion"
+      );
+      if (existing) {
+        await this.edgeRepo.update(existing.edgeId, {
+          strength: candidate.similarity,
+          attributes: {
+            similarity: candidate.similarity,
+            model,
+            detectedAt: (/* @__PURE__ */ new Date()).toISOString()
+          }
+        });
+      } else {
+        await this.edgeRepo.create({
+          sourceId: candidate.sourceId,
+          targetId: candidate.targetId,
+          edgeType: "semantic_suggestion",
+          strength: candidate.similarity,
+          provenance: "computed",
+          attributes: {
+            similarity: candidate.similarity,
+            model,
+            detectedAt: (/* @__PURE__ */ new Date()).toISOString()
+          }
+        });
+        created++;
+      }
+    }
+    return created;
+  }
+  /**
+   * Remove all semantic_suggestion edges
+   */
+  async clearSemanticEdges() {
+    const edges2 = await this.edgeRepo.findByType("semantic_suggestion");
+    for (const edge of edges2) {
+      await this.edgeRepo.delete(edge.edgeId);
+    }
+    return edges2.length;
+  }
+  /**
+   * Accept a wormhole - convert semantic_suggestion to semantic edge
+   */
+  async acceptWormhole(edgeId) {
+    const edge = await this.edgeRepo.findById(edgeId);
+    if (!edge || edge.edgeType !== "semantic_suggestion") {
+      return false;
+    }
+    await this.edgeRepo.update(edgeId, {
+      edgeType: "semantic",
+      provenance: "user_approved",
+      attributes: {
+        ...edge.attributes,
+        acceptedAt: (/* @__PURE__ */ new Date()).toISOString()
+      }
+    });
+    return true;
+  }
+  /**
+   * Reject a wormhole - delete the edge and record rejection
+   */
+  async rejectWormhole(edgeId) {
+    const edge = await this.edgeRepo.findById(edgeId);
+    if (!edge || edge.edgeType !== "semantic_suggestion") {
+      return false;
+    }
+    const sourceNode = await this.nodeRepo.findById(edge.sourceId);
+    const targetNode = await this.nodeRepo.findById(edge.targetId);
+    if (!sourceNode || !targetNode) {
+      return false;
+    }
+    await this.wormholeRepo.createRejection({
+      sourceId: edge.sourceId,
+      targetId: edge.targetId,
+      sourceContentHash: sourceNode.contentHash || "",
+      targetContentHash: targetNode.contentHash || ""
+    });
+    await this.edgeRepo.delete(edgeId);
+    return true;
+  }
+  /**
+   * Get statistics about current wormholes
+   */
+  async getStats() {
+    const suggestions = await this.edgeRepo.findByType("semantic_suggestion");
+    const accepted = await this.edgeRepo.findByType("semantic");
+    const rejectionCount = await this.wormholeRepo.count();
+    const embeddingCount = await this.embeddingRepo.count();
+    const totalNodeCount = await this.nodeRepo.count();
+    return {
+      suggestionCount: suggestions.length,
+      acceptedCount: accepted.filter((e) => e.provenance === "user_approved").length,
+      rejectionCount,
+      embeddingCount,
+      embeddedNodeCount: embeddingCount,
+      // Same as embeddingCount since 1:1
+      totalNodeCount
+    };
+  }
+};
+
+// src/cli/commands/wormhole.ts
+var wormholeCommand = new Command16("wormhole").description("Detect and manage semantic wormholes (similar but unlinked nodes)");
+wormholeCommand.command("detect").description("Detect semantic wormholes and create suggestion edges").option("-t, --threshold <number>", "Similarity threshold (0-1)", "0.75").option("-k, --max-per-node <number>", "Maximum wormholes per node", "5").option("--dry-run", "Preview without creating edges").action(async (options) => {
+  try {
+    const ctx = await initContext();
+    const threshold = parseFloat(options.threshold);
+    const maxPerNode = parseInt(options.maxPerNode, 10);
+    const embeddingCount = await ctx.embeddingRepository.count();
+    const nodeCount = await ctx.nodeRepository.count();
+    if (embeddingCount === 0) {
+      console.log('No embeddings found. Run "zs embed compute" first to generate embeddings.');
+      ctx.connectionManager.close();
+      return;
+    }
+    const coverage = embeddingCount / nodeCount * 100;
+    console.log(`Embedding coverage: ${embeddingCount}/${nodeCount} nodes (${coverage.toFixed(1)}%)`);
+    if (coverage < 50) {
+      console.log("Warning: Low embedding coverage may result in missing wormholes.");
+    }
+    const embeddings = await ctx.embeddingRepository.findAll();
+    const model = embeddings[0]?.model || "unknown";
+    console.log(`
+Detecting wormholes (threshold: ${threshold}, max per node: ${maxPerNode})...`);
+    const detector = new WormholeDetector(
+      ctx.embeddingRepository,
+      ctx.edgeRepository,
+      ctx.wormholeRepository,
+      ctx.nodeRepository,
+      {
+        similarityThreshold: threshold,
+        maxWormholesPerNode: maxPerNode,
+        excludeLinkedNodes: true
+      }
+    );
+    const spinner = new Spinner("Analyzing embeddings...");
+    spinner.start();
+    const candidates = await detector.detectWormholes();
+    spinner.stop(`Found ${candidates.length} wormhole candidates`);
+    if (candidates.length === 0) {
+      console.log("\nNo wormholes detected above threshold.");
+      ctx.connectionManager.close();
+      return;
+    }
+    const nodeIds = /* @__PURE__ */ new Set();
+    candidates.forEach((c) => {
+      nodeIds.add(c.sourceId);
+      nodeIds.add(c.targetId);
+    });
+    const nodes2 = await ctx.nodeRepository.findByIds(Array.from(nodeIds));
+    const nodeMap = new Map(nodes2.map((n) => [n.nodeId, n]));
+    console.log("\nTop wormhole candidates:");
+    const displayCount = Math.min(10, candidates.length);
+    const rows = candidates.slice(0, displayCount).map((c, i) => {
+      const source = nodeMap.get(c.sourceId);
+      const target = nodeMap.get(c.targetId);
+      return [
+        String(i + 1),
+        truncate(source?.title || c.sourceId, 25),
+        truncate(target?.title || c.targetId, 25),
+        (c.similarity * 100).toFixed(1) + "%"
+      ];
+    });
+    printTable(["#", "Source", "Target", "Similarity"], rows);
+    if (candidates.length > displayCount) {
+      console.log(`  ... and ${candidates.length - displayCount} more`);
+    }
+    if (options.dryRun) {
+      console.log("\nDry run - no edges created.");
+    } else {
+      const created = await detector.createSemanticEdges(candidates, model);
+      console.log(`
+Created ${created} semantic_suggestion edges.`);
+      console.log('Run "zs visualize" to see wormholes in the graph.');
+    }
+    ctx.connectionManager.close();
+  } catch (error) {
+    console.error("Wormhole detection failed:", error);
+    process.exit(1);
+  }
+});
+wormholeCommand.command("stats").description("Show wormhole statistics").action(async () => {
+  try {
+    const ctx = await initContext();
+    const detector = new WormholeDetector(
+      ctx.embeddingRepository,
+      ctx.edgeRepository,
+      ctx.wormholeRepository,
+      ctx.nodeRepository
+    );
+    const stats = await detector.getStats();
+    console.log("\n=== Wormhole Statistics ===\n");
+    console.log(`Embedding coverage: ${stats.embeddedNodeCount}/${stats.totalNodeCount} nodes`);
+    console.log(`Pending suggestions: ${stats.suggestionCount}`);
+    console.log(`Accepted wormholes: ${stats.acceptedCount}`);
+    console.log(`Rejected pairs: ${stats.rejectionCount}`);
+    ctx.connectionManager.close();
+  } catch (error) {
+    console.error("Failed to get stats:", error);
+    process.exit(1);
+  }
+});
+wormholeCommand.command("list").description("List pending wormhole suggestions").action(async () => {
+  try {
+    const ctx = await initContext();
+    const suggestions = await ctx.edgeRepository.findByType("semantic_suggestion");
+    if (suggestions.length === 0) {
+      console.log("No pending wormhole suggestions.");
+      console.log('Run "zs wormhole detect" to find semantic similarities.');
+      ctx.connectionManager.close();
+      return;
+    }
+    const nodeIds = /* @__PURE__ */ new Set();
+    suggestions.forEach((s) => {
+      nodeIds.add(s.sourceId);
+      nodeIds.add(s.targetId);
+    });
+    const nodes2 = await ctx.nodeRepository.findByIds(Array.from(nodeIds));
+    const nodeMap = new Map(nodes2.map((n) => [n.nodeId, n]));
+    console.log(`
+Pending wormhole suggestions (${suggestions.length}):
+`);
+    const rows = suggestions.map((s) => {
+      const source = nodeMap.get(s.sourceId);
+      const target = nodeMap.get(s.targetId);
+      const similarity = s.strength || 0;
+      const attrs = s.attributes;
+      return [
+        s.edgeId.slice(0, 8),
+        truncate(source?.title || s.sourceId, 20),
+        truncate(target?.title || s.targetId, 20),
+        (similarity * 100).toFixed(1) + "%",
+        attrs?.model?.split(":")[0] || "-"
+      ];
+    });
+    printTable(["ID", "Source", "Target", "Similarity", "Model"], rows);
+    console.log("\nTo accept: zs wormhole accept <id>");
+    console.log("To reject: zs wormhole reject <id>");
+    ctx.connectionManager.close();
+  } catch (error) {
+    console.error("Failed to list wormholes:", error);
+    process.exit(1);
+  }
+});
+wormholeCommand.command("accept <id>").description("Accept a wormhole suggestion (convert to permanent semantic edge)").action(async (id) => {
+  try {
+    const ctx = await initContext();
+    const suggestions = await ctx.edgeRepository.findByType("semantic_suggestion");
+    const edge = suggestions.find((s) => s.edgeId.startsWith(id));
+    if (!edge) {
+      console.error(`Wormhole suggestion not found: ${id}`);
+      console.log('Run "zs wormhole list" to see available suggestions.');
+      ctx.connectionManager.close();
+      process.exit(1);
+    }
+    const detector = new WormholeDetector(
+      ctx.embeddingRepository,
+      ctx.edgeRepository,
+      ctx.wormholeRepository,
+      ctx.nodeRepository
+    );
+    const success = await detector.acceptWormhole(edge.edgeId);
+    if (success) {
+      const source = await ctx.nodeRepository.findById(edge.sourceId);
+      const target = await ctx.nodeRepository.findById(edge.targetId);
+      console.log(`Accepted wormhole: "${source?.title}" <-> "${target?.title}"`);
+      console.log("Edge converted to permanent semantic link.");
+    } else {
+      console.error("Failed to accept wormhole.");
+    }
+    ctx.connectionManager.close();
+  } catch (error) {
+    console.error("Failed to accept wormhole:", error);
+    process.exit(1);
+  }
+});
+wormholeCommand.command("reject <id>").description("Reject a wormhole suggestion (will not resurface unless content changes)").action(async (id) => {
+  try {
+    const ctx = await initContext();
+    const suggestions = await ctx.edgeRepository.findByType("semantic_suggestion");
+    const edge = suggestions.find((s) => s.edgeId.startsWith(id));
+    if (!edge) {
+      console.error(`Wormhole suggestion not found: ${id}`);
+      console.log('Run "zs wormhole list" to see available suggestions.');
+      ctx.connectionManager.close();
+      process.exit(1);
+    }
+    const detector = new WormholeDetector(
+      ctx.embeddingRepository,
+      ctx.edgeRepository,
+      ctx.wormholeRepository,
+      ctx.nodeRepository
+    );
+    const success = await detector.rejectWormhole(edge.edgeId);
+    if (success) {
+      const source = await ctx.nodeRepository.findById(edge.sourceId);
+      const target = await ctx.nodeRepository.findById(edge.targetId);
+      console.log(`Rejected wormhole: "${source?.title}" <-> "${target?.title}"`);
+      console.log("This pair will not be suggested again unless content changes.");
+    } else {
+      console.error("Failed to reject wormhole.");
+    }
+    ctx.connectionManager.close();
+  } catch (error) {
+    console.error("Failed to reject wormhole:", error);
+    process.exit(1);
+  }
+});
+wormholeCommand.command("clear").description("Remove all wormhole suggestions").option("--include-rejections", "Also clear rejection history").action(async (options) => {
+  try {
+    const ctx = await initContext();
+    const detector = new WormholeDetector(
+      ctx.embeddingRepository,
+      ctx.edgeRepository,
+      ctx.wormholeRepository,
+      ctx.nodeRepository
+    );
+    const cleared = await detector.clearSemanticEdges();
+    console.log(`Cleared ${cleared} wormhole suggestions.`);
+    if (options.includeRejections) {
+      const rejections = await ctx.wormholeRepository.clearAll();
+      console.log(`Cleared ${rejections} rejection records.`);
+    }
+    ctx.connectionManager.close();
+  } catch (error) {
+    console.error("Failed to clear wormholes:", error);
+    process.exit(1);
+  }
+});
+function truncate(str, maxLen) {
+  if (str.length <= maxLen) return str;
+  return str.slice(0, maxLen - 1) + "\u2026";
+}
+
+// src/cli/commands/path.ts
+import { Command as Command17 } from "commander";
+import * as fs15 from "fs";
+import process4 from "process";
+var DEFAULT_EDGE_TYPES = ["explicit_link", "sequence", "causes", "semantic"];
+var DEFAULT_EXCLUDED = ["semantic_suggestion", "backlink", "mention", "hierarchy"];
+var ALL_EDGE_TYPES = [
+  "explicit_link",
+  "backlink",
+  "sequence",
+  "hierarchy",
+  "participation",
+  "pov_visible_to",
+  "causes",
+  "setup_payoff",
+  "semantic",
+  "semantic_suggestion",
+  "mention",
+  "alias"
+];
+async function resolveNode(identifier, ctx) {
+  let node = await ctx.nodeRepository.findByPath(identifier);
+  if (node) return node;
+  const byTitle = await ctx.nodeRepository.findByTitle(identifier);
+  if (byTitle.length === 1) return byTitle[0];
+  if (byTitle.length > 1) {
+    console.error(`Ambiguous title "${identifier}". Found ${byTitle.length} matches:`);
+    byTitle.slice(0, 5).forEach((n) => console.error(`  - ${n.title} (${n.path})`));
+    if (byTitle.length > 5) console.error(`  ... and ${byTitle.length - 5} more`);
+    return null;
+  }
+  const byAlias = await ctx.nodeRepository.findByTitleOrAlias(identifier);
+  if (byAlias.length === 1) return byAlias[0];
+  if (byAlias.length > 1) {
+    console.error(`Ambiguous identifier "${identifier}". Found ${byAlias.length} matches:`);
+    byAlias.slice(0, 5).forEach((n) => console.error(`  - ${n.title} (${n.path})`));
+    if (byAlias.length > 5) console.error(`  ... and ${byAlias.length - 5} more`);
+    return null;
+  }
+  return null;
+}
+function parseEdgeTypes(input) {
+  return input.split(",").map((s) => s.trim()).filter((s) => ALL_EDGE_TYPES.includes(s));
+}
+function formatTable(fromNode, toNode, paths, nodeMap, options, effectiveEdgeTypes, reason, k) {
+  console.log(`
+Paths from "${fromNode.title}" to "${toNode.title}":
+`);
+  if (paths.length === 0) {
+    console.log("No paths found.\n");
+    return;
+  }
+  const rows = paths.map((p, i) => {
+    const route = p.path.map((id) => {
+      const node = nodeMap.get(id);
+      const name = node?.title || id;
+      return options.ids ? `${name} [${id.slice(0, 8)}]` : name;
+    }).join(" \u2192 ");
+    const maxRouteLen = 80;
+    const displayRoute = route.length > maxRouteLen ? route.slice(0, maxRouteLen - 3) + "..." : route;
+    return [
+      String(i + 1),
+      String(p.hopCount),
+      p.score.toFixed(1),
+      displayRoute
+    ];
+  });
+  printTable(["#", "Hops", "Score", "Route"], rows);
+  console.log();
+  if (paths.length < k) {
+    const reasonText = reason === "diversity_filter" ? "diversity filter rejected remaining candidates" : reason === "exhausted_candidates" ? "no more unique paths exist" : reason;
+    console.log(`Found ${paths.length} path${paths.length !== 1 ? "s" : ""} (requested ${k}). Reason: ${reasonText}.`);
+  } else {
+    console.log(`Found ${paths.length} path${paths.length !== 1 ? "s" : ""}.`);
+  }
+  console.log(`Constraints: maxDepth=${options.maxDepth}, maxExtra=${options.maxExtra}, overlap\u22640.7, edges=[${effectiveEdgeTypes.join(",")}]`);
+}
+function formatVerbose(fromNode, toNode, paths, nodeMap, options) {
+  console.log(`
+Paths from "${fromNode.title}" to "${toNode.title}":
+`);
+  if (paths.length === 0) {
+    console.log("No paths found.\n");
+    return;
+  }
+  for (let i = 0; i < paths.length; i++) {
+    const p = paths[i];
+    console.log(`Path ${i + 1} (${p.hopCount} hops, score ${p.score.toFixed(1)}):`);
+    let line = "  ";
+    for (let j = 0; j < p.path.length; j++) {
+      const id = p.path[j];
+      const node = nodeMap.get(id);
+      const name = node?.title || id;
+      const display = options.ids ? `${name} [${id.slice(0, 8)}]` : name;
+      line += display;
+      if (j < p.edges.length) {
+        line += ` \u2500[${p.edges[j]}]\u2192 `;
+      }
+    }
+    console.log(line);
+    console.log();
+  }
+}
+function formatMarkdown(fromNode, toNode, paths, nodeMap) {
+  const lines = [];
+  lines.push(`# Reading Path: ${fromNode.title} \u2192 ${toNode.title}`);
+  lines.push("");
+  if (paths.length === 0) {
+    lines.push("No paths found between these nodes.");
+    lines.push("");
+  } else {
+    for (let i = 0; i < paths.length; i++) {
+      const p = paths[i];
+      lines.push(`## Path ${i + 1} (${p.hopCount} hops)`);
+      lines.push("");
+      for (let j = 0; j < p.path.length; j++) {
+        const id = p.path[j];
+        const node = nodeMap.get(id);
+        const name = node?.title || id;
+        const nodePath = node?.path || "";
+        lines.push(`${j + 1}. [${name}](${nodePath})`);
+      }
+      lines.push("");
+    }
+  }
+  lines.push("---");
+  lines.push("_Generated by ZettelScript Pathfinder_");
+  return lines.join("\n");
+}
+function formatJson(fromNode, toNode, paths, options, effectiveEdgeTypes, reason, k) {
+  const output = {
+    version: 1,
+    computedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    fromId: fromNode.nodeId,
+    fromLabel: fromNode.title,
+    toId: toNode.nodeId,
+    toLabel: toNode.title,
+    options: {
+      k,
+      maxDepth: parseInt(options.maxDepth, 10),
+      maxExtra: parseInt(options.maxExtra, 10),
+      overlapThreshold: 0.7,
+      edgeTypes: effectiveEdgeTypes
+    },
+    returnedCount: paths.length,
+    reason: paths.length < k ? reason : "found_all",
+    paths: paths.map((p) => ({
+      hopCount: p.hopCount,
+      score: p.score,
+      nodes: p.path,
+      edges: p.edges
+    }))
+  };
+  return JSON.stringify(output, null, 2);
+}
+var pathCommand = new Command17("path").description("Find narrative paths between two nodes").argument("<from>", "Starting node (title or path)").argument("<to>", "Ending node (title or path)").option("-k, --max-paths <n>", "Maximum paths to return", "3").option("--max-depth <n>", "Maximum hops to search", "15").option("--max-extra <n>", "Max extra hops beyond shortest", "2").option("--format <type>", "Output format: table|verbose|md|json", "table").option("-o, --output <file>", "Write output to file").option("--edge-types <types>", "Comma-separated edge types to include").option("--exclude-edges <types>", "Comma-separated edge types to exclude").option("--ids", "Show node IDs in output").action(async (from, to, options) => {
+  const spinner = new Spinner("Finding paths...");
+  try {
+    const ctx = await initContext();
+    spinner.start();
+    spinner.update("Resolving nodes...");
+    const fromNode = await resolveNode(from, ctx);
+    if (!fromNode) {
+      spinner.stop();
+      console.error(`Could not find node: "${from}"`);
+      ctx.connectionManager.close();
+      process4.exit(1);
+    }
+    const toNode = await resolveNode(to, ctx);
+    if (!toNode) {
+      spinner.stop();
+      console.error(`Could not find node: "${to}"`);
+      ctx.connectionManager.close();
+      process4.exit(1);
+    }
+    let effectiveEdgeTypes;
+    if (options.edgeTypes) {
+      effectiveEdgeTypes = parseEdgeTypes(options.edgeTypes);
+    } else {
+      effectiveEdgeTypes = [...DEFAULT_EDGE_TYPES];
+    }
+    if (options.excludeEdges) {
+      const excluded = new Set(parseEdgeTypes(options.excludeEdges));
+      effectiveEdgeTypes = effectiveEdgeTypes.filter((t) => !excluded.has(t));
+    } else if (!options.edgeTypes) {
+      const defaultExcluded = new Set(DEFAULT_EXCLUDED);
+      effectiveEdgeTypes = effectiveEdgeTypes.filter((t) => !defaultExcluded.has(t));
+    }
+    if (effectiveEdgeTypes.length === 0) {
+      spinner.stop();
+      console.error("No edge types selected. Check your --edge-types and --exclude-edges options.");
+      ctx.connectionManager.close();
+      process4.exit(1);
+    }
+    spinner.update("Searching for paths...");
+    const k = parseInt(options.maxPaths, 10);
+    const maxDepth = parseInt(options.maxDepth, 10);
+    const maxExtra = parseInt(options.maxExtra, 10);
+    const { paths, reason } = await ctx.graphEngine.findKShortestPaths(
+      fromNode.nodeId,
+      toNode.nodeId,
+      {
+        k,
+        maxDepth,
+        maxExtraHops: maxExtra,
+        edgeTypes: effectiveEdgeTypes,
+        overlapThreshold: 0.7,
+        maxCandidates: 100
+      }
+    );
+    const allNodeIds = /* @__PURE__ */ new Set();
+    for (const p of paths) {
+      for (const id of p.path) {
+        allNodeIds.add(id);
+      }
+    }
+    const nodes2 = await ctx.nodeRepository.findByIds([...allNodeIds]);
+    const nodeMap = new Map(nodes2.map((n) => [n.nodeId, n]));
+    spinner.stop();
+    let output;
+    switch (options.format) {
+      case "verbose":
+        formatVerbose(fromNode, toNode, paths, nodeMap, options);
+        break;
+      case "md":
+        output = formatMarkdown(fromNode, toNode, paths, nodeMap);
+        if (options.output) {
+          fs15.writeFileSync(options.output, output, "utf-8");
+          console.log(`Markdown written to: ${options.output}`);
+        } else {
+          console.log(output);
+        }
+        break;
+      case "json":
+        output = formatJson(fromNode, toNode, paths, options, effectiveEdgeTypes, reason, k);
+        if (options.output) {
+          fs15.writeFileSync(options.output, output, "utf-8");
+          console.log(`JSON written to: ${options.output}`);
+        } else {
+          console.log(output);
+        }
+        break;
+      case "table":
+      default:
+        formatTable(fromNode, toNode, paths, nodeMap, options, effectiveEdgeTypes, reason, k);
+        break;
+    }
+    ctx.connectionManager.close();
+  } catch (error) {
+    spinner.stop();
+    console.error("Path finding failed:", error);
+    process4.exit(1);
+  }
+});
+
 // src/cli/index.ts
-var program = new Command14();
+var program = new Command18();
 program.name("zettel").description("ZettelScript - Graph-first knowledge management system").version("0.1.0");
 program.addCommand(initCommand);
 program.addCommand(indexCommand);
@@ -10448,5 +14955,9 @@ program.addCommand(generateCommand);
 program.addCommand(injectLinksCommand);
 program.addCommand(visualizeCommand);
 program.addCommand(setupCommand);
+program.addCommand(constellationCommand);
+program.addCommand(embedCommand);
+program.addCommand(wormholeCommand);
+program.addCommand(pathCommand);
 program.parse();
 //# sourceMappingURL=index.js.map

@@ -9,6 +9,13 @@ import type {
 } from '../types/index.js';
 import { DEFAULT_CONFIG } from '../types/index.js';
 import { NodeRepository, EdgeRepository } from '../../storage/database/repositories/index.js';
+import {
+  type PathResult,
+  type KShortestPathsOptions,
+  findKShortestPaths as findKShortestPathsImpl,
+  buildAdjacencyLists,
+  simpleBFS,
+} from './pathfinder.js';
 
 export interface GraphEngineOptions {
   nodeRepository: NodeRepository;
@@ -275,7 +282,7 @@ export class GraphEngine {
   // ============================================================================
 
   /**
-   * Find shortest path between two nodes (BFS)
+   * Find shortest path between two nodes using optimized BFS
    */
   async findShortestPath(
     startId: string,
@@ -284,33 +291,34 @@ export class GraphEngine {
   ): Promise<string[] | null> {
     if (startId === endId) return [startId];
 
-    const visited = new Set<string>([startId]);
-    const queue: Array<{ nodeId: string; path: string[] }> = [
-      { nodeId: startId, path: [startId] },
-    ];
+    // Fetch all relevant edges and build adjacency list in memory
+    const edges = await this.edgeRepo.findAll(edgeTypes);
+    const { forward } = buildAdjacencyLists(edges, edgeTypes);
 
-    while (queue.length > 0) {
-      const current = queue.shift();
-      if (!current) break;
+    return simpleBFS(startId, endId, forward, this.config.graph.defaultMaxDepth * 5);
+  }
 
-      const edges = await this.edgeRepo.findOutgoing(current.nodeId, edgeTypes);
+  /**
+   * Find K shortest diverse paths between two nodes
+   *
+   * Uses Yen's algorithm with Jaccard diversity filtering.
+   *
+   * @param startId - Starting node ID
+   * @param endId - Ending node ID
+   * @param options - Search options
+   * @returns Array of path results and reason for stopping
+   */
+  async findKShortestPaths(
+    startId: string,
+    endId: string,
+    options?: KShortestPathsOptions
+  ): Promise<{ paths: PathResult[]; reason: string }> {
+    const edgeTypes = options?.edgeTypes ?? ['explicit_link', 'sequence', 'causes', 'semantic'] as EdgeType[];
 
-      for (const edge of edges) {
-        if (edge.targetId === endId) {
-          return [...current.path, endId];
-        }
+    // Fetch all relevant edges
+    const edges = await this.edgeRepo.findAll(edgeTypes);
 
-        if (!visited.has(edge.targetId)) {
-          visited.add(edge.targetId);
-          queue.push({
-            nodeId: edge.targetId,
-            path: [...current.path, edge.targetId],
-          });
-        }
-      }
-    }
-
-    return null;
+    return findKShortestPathsImpl(startId, endId, edges, options);
   }
 
   /**

@@ -17,7 +17,7 @@ declare const NodeSchema: _sinclair_typebox.TObject<{
     metadata: _sinclair_typebox.TOptional<_sinclair_typebox.TRecord<_sinclair_typebox.TString, _sinclair_typebox.TUnknown>>;
 }>;
 type Node = Static<typeof NodeSchema>;
-declare const EdgeTypeSchema: _sinclair_typebox.TUnion<[_sinclair_typebox.TLiteral<"explicit_link">, _sinclair_typebox.TLiteral<"backlink">, _sinclair_typebox.TLiteral<"sequence">, _sinclair_typebox.TLiteral<"hierarchy">, _sinclair_typebox.TLiteral<"participation">, _sinclair_typebox.TLiteral<"pov_visible_to">, _sinclair_typebox.TLiteral<"causes">, _sinclair_typebox.TLiteral<"setup_payoff">, _sinclair_typebox.TLiteral<"semantic">, _sinclair_typebox.TLiteral<"mention">, _sinclair_typebox.TLiteral<"alias">]>;
+declare const EdgeTypeSchema: _sinclair_typebox.TUnion<[_sinclair_typebox.TLiteral<"explicit_link">, _sinclair_typebox.TLiteral<"backlink">, _sinclair_typebox.TLiteral<"sequence">, _sinclair_typebox.TLiteral<"hierarchy">, _sinclair_typebox.TLiteral<"participation">, _sinclair_typebox.TLiteral<"pov_visible_to">, _sinclair_typebox.TLiteral<"causes">, _sinclair_typebox.TLiteral<"setup_payoff">, _sinclair_typebox.TLiteral<"semantic">, _sinclair_typebox.TLiteral<"semantic_suggestion">, _sinclair_typebox.TLiteral<"mention">, _sinclair_typebox.TLiteral<"alias">]>;
 type EdgeType = Static<typeof EdgeTypeSchema>;
 declare const EdgeProvenanceSchema: _sinclair_typebox.TUnion<[_sinclair_typebox.TLiteral<"explicit">, _sinclair_typebox.TLiteral<"inferred">, _sinclair_typebox.TLiteral<"computed">, _sinclair_typebox.TLiteral<"user_approved">]>;
 type EdgeProvenance = Static<typeof EdgeProvenanceSchema>;
@@ -25,7 +25,7 @@ declare const EdgeSchema: _sinclair_typebox.TObject<{
     edgeId: _sinclair_typebox.TString;
     sourceId: _sinclair_typebox.TString;
     targetId: _sinclair_typebox.TString;
-    edgeType: _sinclair_typebox.TUnion<[_sinclair_typebox.TLiteral<"explicit_link">, _sinclair_typebox.TLiteral<"backlink">, _sinclair_typebox.TLiteral<"sequence">, _sinclair_typebox.TLiteral<"hierarchy">, _sinclair_typebox.TLiteral<"participation">, _sinclair_typebox.TLiteral<"pov_visible_to">, _sinclair_typebox.TLiteral<"causes">, _sinclair_typebox.TLiteral<"setup_payoff">, _sinclair_typebox.TLiteral<"semantic">, _sinclair_typebox.TLiteral<"mention">, _sinclair_typebox.TLiteral<"alias">]>;
+    edgeType: _sinclair_typebox.TUnion<[_sinclair_typebox.TLiteral<"explicit_link">, _sinclair_typebox.TLiteral<"backlink">, _sinclair_typebox.TLiteral<"sequence">, _sinclair_typebox.TLiteral<"hierarchy">, _sinclair_typebox.TLiteral<"participation">, _sinclair_typebox.TLiteral<"pov_visible_to">, _sinclair_typebox.TLiteral<"causes">, _sinclair_typebox.TLiteral<"setup_payoff">, _sinclair_typebox.TLiteral<"semantic">, _sinclair_typebox.TLiteral<"semantic_suggestion">, _sinclair_typebox.TLiteral<"mention">, _sinclair_typebox.TLiteral<"alias">]>;
     strength: _sinclair_typebox.TOptional<_sinclair_typebox.TNumber>;
     provenance: _sinclair_typebox.TUnion<[_sinclair_typebox.TLiteral<"explicit">, _sinclair_typebox.TLiteral<"inferred">, _sinclair_typebox.TLiteral<"computed">, _sinclair_typebox.TLiteral<"user_approved">]>;
     createdAt: _sinclair_typebox.TString;
@@ -485,9 +485,9 @@ declare class EdgeRepository {
      */
     findByType(edgeType: EdgeType): Promise<Edge[]>;
     /**
-     * Get all edges
+     * Get all edges, optionally filtered by edge types
      */
-    findAll(): Promise<Edge[]>;
+    findAll(edgeTypes?: EdgeType[]): Promise<Edge[]>;
     /**
      * Find backlinks (explicit_link edges targeting a node)
      */
@@ -674,6 +674,27 @@ declare class ChunkRepository {
     private rowToChunk;
 }
 
+/**
+ * Result of a path search
+ */
+interface PathResult {
+    path: string[];
+    edges: EdgeType[];
+    hopCount: number;
+    score: number;
+}
+/**
+ * Options for K-shortest paths search
+ */
+interface KShortestPathsOptions {
+    k?: number;
+    edgeTypes?: EdgeType[];
+    maxDepth?: number;
+    overlapThreshold?: number;
+    maxCandidates?: number;
+    maxExtraHops?: number;
+}
+
 interface GraphEngineOptions {
     nodeRepository: NodeRepository;
     edgeRepository: EdgeRepository;
@@ -740,9 +761,23 @@ declare class GraphEngine {
         includeIncoming?: boolean;
     }): Promise<TraversalResult[]>;
     /**
-     * Find shortest path between two nodes (BFS)
+     * Find shortest path between two nodes using optimized BFS
      */
     findShortestPath(startId: string, endId: string, edgeTypes?: EdgeType[]): Promise<string[] | null>;
+    /**
+     * Find K shortest diverse paths between two nodes
+     *
+     * Uses Yen's algorithm with Jaccard diversity filtering.
+     *
+     * @param startId - Starting node ID
+     * @param endId - Ending node ID
+     * @param options - Search options
+     * @returns Array of path results and reason for stopping
+     */
+    findKShortestPaths(startId: string, endId: string, options?: KShortestPathsOptions): Promise<{
+        paths: PathResult[];
+        reason: string;
+    }>;
     /**
      * Check if two nodes are connected
      */
@@ -1276,4 +1311,4 @@ declare class ContextAssembler {
     private buildProvenance;
 }
 
-export { type BacklinkResult, type BatchIndexingResult, type CharacterKnowledge, type Chunk, ChunkSchema, ConfigError, ConnectionManager, ContextAssembler, type ContextAssemblerOptions, ContinuityError, type ContinuityIssue, DEFAULT_CONFIG, DatabaseError, type DrizzleDB, type Edge, type EdgeProvenance, EdgeProvenanceSchema, EdgeSchema, type EdgeType, EdgeTypeSchema, EmbeddingError, FileSystemError, type Frontmatter, FrontmatterSchema, GraphEngine, type GraphEngineOptions, GraphError, type GraphMetrics, GraphMetricsSchema, type ImpactAnalysis, InMemoryLinkResolver, type IndexerOptions, IndexingPipeline, type IndexingResult, LinkResolver, type LinkResolverOptions, type MentionCandidate, MentionCandidateSchema, type MentionStatus, MentionStatusSchema, type NeighborResult, type Node, NodeSchema, type NodeType, NodeTypeSchema, ParseError, type ParsedDocument, type ParsedMarkdown, type Proposal, ProposalError, ProposalSchema, type ProposalStatus, ProposalStatusSchema, type ProposalType, ProposalTypeSchema, ResolutionError, type ResolutionResult, type ResolvedLink, RetrievalError, type RetrievalQuery, type RetrievalResult, type SceneInfo, type TraversalResult, ValidationError, type Version, VersionSchema, type WikiLink, type WikiLinkParseResult, type ZettelScriptConfig, ZettelScriptError, createLinkResolver, createWikilink, extractAliases, extractLinkTargets, extractNodeType, extractPlainText, extractTitle, extractWikilinks, getDatabase, getRawSqlite, getUniqueTargets, getWikilinkContext, hasWikilinks, insertWikilink, normalizeTarget, parseFrontmatter, parseMarkdown, parseWikilinkString, serializeFrontmatter, splitIntoParagraphs, splitIntoSections, stringifyMarkdown, targetsMatch, updateFrontmatter, validateFrontmatter };
+export { type BacklinkResult, type BatchIndexingResult, type CharacterKnowledge, type Chunk, ChunkSchema, ConfigError, ConnectionManager, ContextAssembler, type ContextAssemblerOptions, ContinuityError, type ContinuityIssue, DEFAULT_CONFIG, DatabaseError, type DrizzleDB, type Edge, type EdgeProvenance, EdgeProvenanceSchema, EdgeSchema, type EdgeType, EdgeTypeSchema, EmbeddingError, FileSystemError, type Frontmatter, FrontmatterSchema, GraphEngine, type GraphEngineOptions, GraphError, type GraphMetrics, GraphMetricsSchema, type ImpactAnalysis, InMemoryLinkResolver, type IndexerOptions, IndexingPipeline, type IndexingResult, type KShortestPathsOptions, LinkResolver, type LinkResolverOptions, type MentionCandidate, MentionCandidateSchema, type MentionStatus, MentionStatusSchema, type NeighborResult, type Node, NodeSchema, type NodeType, NodeTypeSchema, ParseError, type ParsedDocument, type ParsedMarkdown, type PathResult, type Proposal, ProposalError, ProposalSchema, type ProposalStatus, ProposalStatusSchema, type ProposalType, ProposalTypeSchema, ResolutionError, type ResolutionResult, type ResolvedLink, RetrievalError, type RetrievalQuery, type RetrievalResult, type SceneInfo, type TraversalResult, ValidationError, type Version, VersionSchema, type WikiLink, type WikiLinkParseResult, type ZettelScriptConfig, ZettelScriptError, createLinkResolver, createWikilink, extractAliases, extractLinkTargets, extractNodeType, extractPlainText, extractTitle, extractWikilinks, getDatabase, getRawSqlite, getUniqueTargets, getWikilinkContext, hasWikilinks, insertWikilink, normalizeTarget, parseFrontmatter, parseMarkdown, parseWikilinkString, serializeFrontmatter, splitIntoParagraphs, splitIntoSections, stringifyMarkdown, targetsMatch, updateFrontmatter, validateFrontmatter };

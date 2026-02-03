@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { ConnectionManager } from '../storage/database/connection.js';
-import { NodeRepository, EdgeRepository, VersionRepository, ChunkRepository, MentionRepository } from '../storage/database/repositories/index.js';
+import { NodeRepository, EdgeRepository, VersionRepository, ChunkRepository, MentionRepository, UnresolvedLinkRepository, ConstellationRepository, EmbeddingRepository, WormholeRepository } from '../storage/database/repositories/index.js';
 import { IndexingPipeline } from '../indexer/pipeline.js';
 import { GraphEngine } from '../core/graph/engine.js';
 import type { ZettelScriptConfig } from '../core/types/index.js';
@@ -109,6 +109,10 @@ export interface CLIContext {
   versionRepository: VersionRepository;
   chunkRepository: ChunkRepository;
   mentionRepository: MentionRepository;
+  unresolvedLinkRepository: UnresolvedLinkRepository;
+  constellationRepository: ConstellationRepository;
+  embeddingRepository: EmbeddingRepository;
+  wormholeRepository: WormholeRepository;
   pipeline: IndexingPipeline;
   graphEngine: GraphEngine;
 }
@@ -143,6 +147,10 @@ export async function initContext(vaultPath?: string): Promise<CLIContext> {
   const versionRepository = new VersionRepository(db);
   const chunkRepository = new ChunkRepository(db, sqlite);
   const mentionRepository = new MentionRepository(db);
+  const unresolvedLinkRepository = new UnresolvedLinkRepository(db);
+  const constellationRepository = new ConstellationRepository(db);
+  const embeddingRepository = new EmbeddingRepository(db);
+  const wormholeRepository = new WormholeRepository(db);
 
   // Initialize pipeline
   const pipeline = new IndexingPipeline({
@@ -166,6 +174,10 @@ export async function initContext(vaultPath?: string): Promise<CLIContext> {
     versionRepository,
     chunkRepository,
     mentionRepository,
+    unresolvedLinkRepository,
+    constellationRepository,
+    embeddingRepository,
+    wormholeRepository,
     pipeline,
     graphEngine,
   };
