@@ -171,7 +171,7 @@ Note: The `semantic` edge type and styling already exist - this feature would po
 | 2 | Constellations | **COMPLETE** |
 | 3 | Semantic Wormholes | **COMPLETE** |
 | 4 | Narrative Pathfinder | **COMPLETE** |
-| 5 | Heat Vision | Pending |
+| 5 | Heat Vision | **COMPLETE** |
 | 6 | Time Scrubber | Pending |
 | 7 | Cluster Auto-Naming | Pending |
 | 8 | Gravity Mode | Pending |
