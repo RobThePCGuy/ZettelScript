@@ -7,7 +7,7 @@
     "node": ">=20.0.0"
   },
   "bin": {
-    "zettel": "./dist/cli/index.js"
+    "zettel": "dist/cli/index.js"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
