@@ -11295,6 +11295,36 @@ function generateVisualizationHtml(graphData, nodeTypeColors, constellation, pat
       margin-top: 4px;
     }
 
+    /* Heat Vision controls */
+    .heat-controls {
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+    }
+    .heat-legend {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 12px;
+      padding: 8px;
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 6px;
+    }
+    .heat-legend-bar {
+      flex: 1;
+      height: 8px;
+      border-radius: 4px;
+      background: linear-gradient(to right, #3b82f6, #fbbf24, #ef4444);
+    }
+    .heat-legend-label {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      min-width: 40px;
+    }
+    .heat-legend-label:last-child {
+      text-align: right;
+    }
+
     /* Ghost sidebar action */
     .ghost-action {
       margin-top: 16px;
@@ -11767,6 +11797,29 @@ function generateVisualizationHtml(graphData, nodeTypeColors, constellation, pat
       <div class="ghost-count" id="ghost-count"></div>
     </div>
 
+    <div class="heat-controls" id="heat-controls">
+      <div class="legend-title">Heat Vision</div>
+      <label class="toggle-item">
+        <input type="checkbox" id="heat-toggle" onchange="toggleHeat()">
+        <span>Show recency</span>
+      </label>
+      <div class="threshold-control">
+        <span>Window:</span>
+        <input type="range" id="heat-window-slider" min="7" max="180" value="30"
+               oninput="updateHeatWindow(this.value)">
+        <span class="threshold-val" id="heat-window-val">30 days</span>
+      </div>
+      <label class="toggle-item" id="heat-auto-label">
+        <input type="checkbox" id="heat-auto" checked onchange="toggleHeatAuto()">
+        <span>Auto (vault activity)</span>
+      </label>
+      <div class="heat-legend" id="heat-legend" style="display: none;">
+        <span class="heat-legend-label" id="heat-legend-cold">>= 30d</span>
+        <div class="heat-legend-bar"></div>
+        <span class="heat-legend-label">now</span>
+      </div>
+    </div>
+
     <div class="constellation-section">
       <div class="legend-title">Constellations</div>
       <button class="save-constellation-btn" onclick="showSaveConstellationDialog()">
@@ -11896,6 +11949,172 @@ function generateVisualizationHtml(graphData, nodeTypeColors, constellation, pat
     const wsMaxReconnectAttempts = 10;
     let wsPatchSeq = 0;
     const pendingCreates = new Set();
+
+    // ========================================================================
+    // Heat Vision State & Functions
+    // ========================================================================
+
+    const MS_PER_DAY = 86400000;
+    const HEAT_STORAGE_KEYS = {
+      enabled: 'zs-heat-enabled',
+      autoMode: 'zs-heat-auto',
+      manualWindow: 'zs-heat-window',
+    };
+
+    let heatEnabled = false;
+    let heatAutoMode = true;
+    let heatManualWindowDays = 30;
+    let computedWindowDays = 30;
+
+    function loadHeatSettings() {
+      heatEnabled = localStorage.getItem(HEAT_STORAGE_KEYS.enabled) === 'true';
+      heatAutoMode = localStorage.getItem(HEAT_STORAGE_KEYS.autoMode) !== 'false';
+
+      const parsed = parseInt(localStorage.getItem(HEAT_STORAGE_KEYS.manualWindow) || '', 10);
+      heatManualWindowDays = (Number.isNaN(parsed) || parsed < 7 || parsed > 180) ? 30 : parsed;
+    }
+
+    function saveHeatSettings() {
+      localStorage.setItem(HEAT_STORAGE_KEYS.enabled, String(heatEnabled));
+      localStorage.setItem(HEAT_STORAGE_KEYS.autoMode, String(heatAutoMode));
+      localStorage.setItem(HEAT_STORAGE_KEYS.manualWindow, String(heatManualWindowDays));
+    }
+
+    function getEffectiveWindow() {
+      return heatAutoMode ? computedWindowDays : heatManualWindowDays;
+    }
+
+    function computeAutoWindow(nodes) {
+      const now = Date.now();
+      const ages = nodes
+        .filter(n => n.updatedAtMs && !n.isGhost)
+        .map(n => Math.max(0, (now - n.updatedAtMs) / MS_PER_DAY))
+        .sort((a, b) => a - b);
+
+      if (ages.length < 10) return 30;
+
+      const idx = Math.floor((ages.length - 1) * 0.85);
+      const p85Value = ages[idx];
+
+      return Math.round(Math.min(Math.max(p85Value, 7), 180));
+    }
+
+    function computeHeat(nodes, windowDays) {
+      const now = Date.now();
+
+      for (const node of nodes) {
+        if (!node.updatedAtMs || node.isGhost) {
+          node.heat = 0;
+          continue;
+        }
+        const ageDays = Math.max(0, (now - node.updatedAtMs) / MS_PER_DAY);
+        node.heat = 1 - Math.min(Math.max(ageDays / windowDays, 0), 1);
+      }
+    }
+
+    function recomputeHeatAndRedraw() {
+      if (heatEnabled) {
+        computeHeat(data.nodes, getEffectiveWindow());
+      }
+      if (Graph) Graph.refresh();
+    }
+
+    function initHeatVision() {
+      loadHeatSettings();
+
+      // Compute auto window on load (for UI display), even if heat is disabled
+      if (heatAutoMode) {
+        computedWindowDays = computeAutoWindow(data.nodes);
+      }
+
+      // Only compute heat values if enabled
+      if (heatEnabled) {
+        computeHeat(data.nodes, getEffectiveWindow());
+      }
+
+      updateHeatUI();
+    }
+
+    function toggleHeat() {
+      heatEnabled = document.getElementById('heat-toggle').checked;
+      saveHeatSettings();
+
+      if (heatEnabled && !data.nodes.some(n => n.heat !== undefined && n.heat > 0)) {
+        computeHeat(data.nodes, getEffectiveWindow());
+      }
+
+      updateHeatUI();
+      recomputeHeatAndRedraw();
+    }
+
+    function updateHeatWindow(val) {
+      heatManualWindowDays = parseInt(val, 10);
+      document.getElementById('heat-window-val').innerText = val + ' days';
+      saveHeatSettings();
+      recomputeHeatAndRedraw();
+    }
+
+    function toggleHeatAuto() {
+      heatAutoMode = document.getElementById('heat-auto').checked;
+
+      if (heatAutoMode) {
+        computedWindowDays = computeAutoWindow(data.nodes);
+        document.getElementById('heat-window-slider').value = computedWindowDays;
+        document.getElementById('heat-window-val').innerText = computedWindowDays + ' days';
+      } else {
+        document.getElementById('heat-window-slider').value = heatManualWindowDays;
+        document.getElementById('heat-window-val').innerText = heatManualWindowDays + ' days';
+      }
+
+      saveHeatSettings();
+      updateHeatUI();
+      recomputeHeatAndRedraw();
+    }
+
+    function updateHeatUI() {
+      const toggle = document.getElementById('heat-toggle');
+      const slider = document.getElementById('heat-window-slider');
+      const autoCheckbox = document.getElementById('heat-auto');
+      const autoLabel = document.getElementById('heat-auto-label');
+      const sliderVal = document.getElementById('heat-window-val');
+
+      if (toggle) toggle.checked = heatEnabled;
+      if (autoCheckbox) autoCheckbox.checked = heatAutoMode;
+
+      const effectiveWindow = getEffectiveWindow();
+      if (slider) {
+        slider.disabled = !heatEnabled || heatAutoMode;
+        slider.value = effectiveWindow;
+      }
+      if (sliderVal) {
+        sliderVal.innerText = effectiveWindow + ' days';
+      }
+      if (autoCheckbox) {
+        autoCheckbox.disabled = !heatEnabled;
+      }
+      if (autoLabel) {
+        autoLabel.style.opacity = heatEnabled ? '1' : '0.5';
+      }
+
+      // Update legend
+      updateHeatLegend();
+    }
+
+    function updateHeatLegend() {
+      const legend = document.getElementById('heat-legend');
+      if (!legend) return;
+
+      if (!heatEnabled) {
+        legend.style.display = 'none';
+        return;
+      }
+
+      legend.style.display = 'flex';
+      const windowLabel = document.getElementById('heat-legend-cold');
+      if (windowLabel) {
+        windowLabel.innerText = '>= ' + getEffectiveWindow() + 'd';
+      }
+    }
 
     // Ghost node functions
     function toggleGhosts() {
@@ -12431,6 +12650,16 @@ function generateVisualizationHtml(graphData, nodeTypeColors, constellation, pat
       delete ghostNode.sourceIds;
       delete ghostNode.referenceCount;
       delete ghostNode.mostRecentRef;
+
+      // Set updatedAtMs for heat vision (newly created nodes are "hot")
+      ghostNode.updatedAtMs = op.updatedAt ? new Date(op.updatedAt).getTime() : Date.now();
+
+      // Compute heat for this node if heat vision is enabled
+      if (heatEnabled) {
+        const ageDays = Math.max(0, (Date.now() - ghostNode.updatedAtMs) / MS_PER_DAY);
+        const windowDays = getEffectiveWindow();
+        ghostNode.heat = 1 - Math.min(Math.max(ageDays / windowDays, 0), 1);
+      }
 
       // Preserve position
       ghostNode.x = x;
@@ -12996,6 +13225,7 @@ function generateVisualizationHtml(graphData, nodeTypeColors, constellation, pat
     setTimeout(() => {
       initWebSocket();
       initBacklog();
+      initHeatVision();
     }, 200);
 
     function updateGraphVisibility() {
@@ -13090,6 +13320,26 @@ function generateVisualizationHtml(graphData, nodeTypeColors, constellation, pat
             ctx.fillText(label, node.x, node.y - bckgDimensions[1]/2 - effectiveRadius - 2);
           }
           return;
+        }
+
+        // Heat glow (drawn BEFORE node fill so it appears as halo behind)
+        // Skip if: heat disabled, node is highlighted (path/selection takes precedence), heat below threshold
+        const shouldShowHeat = heatEnabled && node.heat > 0.05 && !nodeOnPath && !isSelected && !(hoverNode === node);
+        if (shouldShowHeat) {
+          const glowRadius = radius + (node.heat * 8);
+          const glowAlpha = node.heat * 0.4;
+
+          const gradient = ctx.createRadialGradient(
+            node.x, node.y, radius,
+            node.x, node.y, glowRadius
+          );
+          gradient.addColorStop(0, \`rgba(255, 100, 50, \${glowAlpha})\`);
+          gradient.addColorStop(1, 'rgba(255, 100, 50, 0)');
+
+          ctx.fillStyle = gradient;
+          ctx.beginPath();
+          ctx.arc(node.x, node.y, glowRadius, 0, 2 * Math.PI);
+          ctx.fill();
         }
 
         // Regular node rendering
@@ -13331,6 +13581,32 @@ function generateVisualizationHtml(graphData, nodeTypeColors, constellation, pat
           <span class="meta-key">Location</span>
           <span class="meta-val"><code>\${node.path}</code></span>
         </div>\`;
+
+      // Add "Last updated" when heat vision is enabled
+      if (heatEnabled && node.updatedAtMs) {
+        const ageDays = Math.max(0, (Date.now() - node.updatedAtMs) / MS_PER_DAY);
+        const updatedDate = new Date(node.updatedAtMs);
+        const dateStr = updatedDate.toISOString().split('T')[0];
+        let relativeStr;
+        if (ageDays < 1) {
+          relativeStr = 'today';
+        } else if (ageDays < 2) {
+          relativeStr = '1 day ago';
+        } else if (ageDays < 30) {
+          relativeStr = Math.floor(ageDays) + ' days ago';
+        } else if (ageDays < 60) {
+          relativeStr = '1 month ago';
+        } else if (ageDays < 365) {
+          relativeStr = Math.floor(ageDays / 30) + ' months ago';
+        } else {
+          relativeStr = Math.floor(ageDays / 365) + ' year' + (ageDays >= 730 ? 's' : '') + ' ago';
+        }
+        html += \`
+          <div class="meta-item">
+            <span class="meta-key">Last updated</span>
+            <span class="meta-val">\${relativeStr} (\${dateStr})</span>
+          </div>\`;
+      }
 
       if (node.metadata) {
         const priority = ['id', 'tags', 'aliases', 'role'];
