@@ -124,7 +124,8 @@ export class DriftDetector {
     // Check for burst of changes
     const recentVersions = versions.slice(-5);
     if (recentVersions.length === 5) {
-      const recentInterval = new Date(recentVersions[4]?.createdAt ?? 0).getTime() -
+      const recentInterval =
+        new Date(recentVersions[4]?.createdAt ?? 0).getTime() -
         new Date(recentVersions[0]?.createdAt ?? 0).getTime();
 
       if (recentInterval < avgInterval / 10) {
@@ -198,7 +199,7 @@ export class DriftDetector {
       const headings = content.match(/^#{1,6}\s+.+$/gm) || [];
 
       // Check for unusually deep nesting
-      const maxDepth = Math.max(...headings.map(h => h.match(/^#+/)?.[0].length ?? 0), 0);
+      const maxDepth = Math.max(...headings.map((h) => h.match(/^#+/)?.[0].length ?? 0), 0);
       if (maxDepth > 4) {
         return {
           nodeId: node.nodeId,
@@ -239,7 +240,7 @@ export class DriftDetector {
     issuesBySeverity: Record<string, number>;
   }> {
     const issues = await this.detectAll();
-    const nodesWithIssues = new Set(issues.map(i => i.nodeId)).size;
+    const nodesWithIssues = new Set(issues.map((i) => i.nodeId)).size;
 
     const issuesByType: Record<string, number> = {};
     const issuesBySeverity: Record<string, number> = {};

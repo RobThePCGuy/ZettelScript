@@ -3,12 +3,7 @@
  * Creates timeline event notes from KB data
  */
 
-import type {
-  GeneratorOptions,
-  GeneratorResult,
-  KBTimelineEvent,
-  KBData,
-} from './types.js';
+import type { GeneratorOptions, GeneratorResult, KBTimelineEvent, KBData } from './types.js';
 import {
   parseKBJson,
   buildNote,
@@ -128,7 +123,9 @@ function buildEventContent(
   parts.push('```dataview\n');
   parts.push('TABLE chapter as "Chapter", description as "Event"\n');
   parts.push('FROM #timeline\n');
-  parts.push(`WHERE chapter >= ${Math.max(1, event.chapter - 1)} AND chapter <= ${event.chapter + 1}\n`);
+  parts.push(
+    `WHERE chapter >= ${Math.max(1, event.chapter - 1)} AND chapter <= ${event.chapter + 1}\n`
+  );
   parts.push('SORT chapter ASC\n');
   parts.push('```\n\n');
 
@@ -147,9 +144,7 @@ function getEventFilename(event: KBTimelineEvent): string {
 /**
  * Generate timeline event notes from KB data
  */
-export async function generateTimeline(
-  options: GeneratorOptions
-): Promise<GeneratorResult> {
+export async function generateTimeline(options: GeneratorOptions): Promise<GeneratorResult> {
   const result: GeneratorResult = {
     created: [],
     skipped: [],
@@ -233,9 +228,7 @@ export async function generateTimeline(
 /**
  * Generate a timeline index MOC
  */
-export async function generateTimelineIndex(
-  options: GeneratorOptions
-): Promise<string | null> {
+export async function generateTimelineIndex(options: GeneratorOptions): Promise<string | null> {
   // Load KB data
   let kb: KBData;
   try {

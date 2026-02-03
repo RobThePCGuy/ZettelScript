@@ -35,163 +35,205 @@ __export(schema_exports, {
   wormholeRejections: () => wormholeRejections
 });
 import { sqliteTable, text, real, integer, index } from "drizzle-orm/sqlite-core";
-var nodes = sqliteTable("nodes", {
-  nodeId: text("node_id").primaryKey(),
-  type: text("type").notNull(),
-  title: text("title").notNull(),
-  path: text("path").notNull().unique(),
-  createdAt: text("created_at").notNull(),
-  updatedAt: text("updated_at").notNull(),
-  contentHash: text("content_hash"),
-  metadata: text("metadata", { mode: "json" })
-}, (table) => [
-  index("idx_nodes_title").on(table.title),
-  index("idx_nodes_type").on(table.type),
-  index("idx_nodes_path").on(table.path)
-]);
-var edges = sqliteTable("edges", {
-  edgeId: text("edge_id").primaryKey(),
-  sourceId: text("source_id").notNull().references(() => nodes.nodeId, { onDelete: "cascade" }),
-  targetId: text("target_id").notNull().references(() => nodes.nodeId, { onDelete: "cascade" }),
-  edgeType: text("edge_type").notNull(),
-  strength: real("strength"),
-  provenance: text("provenance").notNull(),
-  createdAt: text("created_at").notNull(),
-  versionStart: text("version_start"),
-  versionEnd: text("version_end"),
-  attributes: text("attributes", { mode: "json" })
-}, (table) => [
-  index("idx_edges_source").on(table.sourceId),
-  index("idx_edges_target").on(table.targetId),
-  index("idx_edges_type").on(table.edgeType),
-  index("idx_edges_source_target").on(table.sourceId, table.targetId)
-]);
-var versions = sqliteTable("versions", {
-  versionId: text("version_id").primaryKey(),
-  nodeId: text("node_id").notNull().references(() => nodes.nodeId, { onDelete: "cascade" }),
-  contentHash: text("content_hash").notNull(),
-  parentVersionId: text("parent_version_id"),
-  createdAt: text("created_at").notNull(),
-  summary: text("summary")
-}, (table) => [
-  index("idx_versions_node").on(table.nodeId),
-  index("idx_versions_parent").on(table.parentVersionId)
-]);
-var mentionCandidates = sqliteTable("mention_candidates", {
-  candidateId: text("candidate_id").primaryKey(),
-  sourceId: text("source_id").notNull().references(() => nodes.nodeId, { onDelete: "cascade" }),
-  targetId: text("target_id").notNull().references(() => nodes.nodeId, { onDelete: "cascade" }),
-  surfaceText: text("surface_text").notNull(),
-  spanStart: integer("span_start"),
-  spanEnd: integer("span_end"),
-  confidence: real("confidence").notNull(),
-  reasons: text("reasons", { mode: "json" }),
-  status: text("status").default("new")
-}, (table) => [
-  index("idx_mentions_source").on(table.sourceId),
-  index("idx_mentions_target").on(table.targetId),
-  index("idx_mentions_status").on(table.status)
-]);
-var chunks = sqliteTable("chunks", {
-  chunkId: text("chunk_id").primaryKey(),
-  nodeId: text("node_id").notNull().references(() => nodes.nodeId, { onDelete: "cascade" }),
-  text: text("text").notNull(),
-  offsetStart: integer("offset_start").notNull(),
-  offsetEnd: integer("offset_end").notNull(),
-  versionId: text("version_id").notNull(),
-  tokenCount: integer("token_count")
-}, (table) => [
-  index("idx_chunks_node").on(table.nodeId),
-  index("idx_chunks_version").on(table.versionId)
-]);
-var aliases = sqliteTable("aliases", {
-  aliasId: text("alias_id").primaryKey(),
-  nodeId: text("node_id").notNull().references(() => nodes.nodeId, { onDelete: "cascade" }),
-  alias: text("alias").notNull()
-}, (table) => [
-  index("idx_aliases_node").on(table.nodeId),
-  index("idx_aliases_alias").on(table.alias)
-]);
+var nodes = sqliteTable(
+  "nodes",
+  {
+    nodeId: text("node_id").primaryKey(),
+    type: text("type").notNull(),
+    title: text("title").notNull(),
+    path: text("path").notNull().unique(),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+    contentHash: text("content_hash"),
+    metadata: text("metadata", { mode: "json" })
+  },
+  (table) => [
+    index("idx_nodes_title").on(table.title),
+    index("idx_nodes_type").on(table.type),
+    index("idx_nodes_path").on(table.path)
+  ]
+);
+var edges = sqliteTable(
+  "edges",
+  {
+    edgeId: text("edge_id").primaryKey(),
+    sourceId: text("source_id").notNull().references(() => nodes.nodeId, { onDelete: "cascade" }),
+    targetId: text("target_id").notNull().references(() => nodes.nodeId, { onDelete: "cascade" }),
+    edgeType: text("edge_type").notNull(),
+    strength: real("strength"),
+    provenance: text("provenance").notNull(),
+    createdAt: text("created_at").notNull(),
+    versionStart: text("version_start"),
+    versionEnd: text("version_end"),
+    attributes: text("attributes", { mode: "json" })
+  },
+  (table) => [
+    index("idx_edges_source").on(table.sourceId),
+    index("idx_edges_target").on(table.targetId),
+    index("idx_edges_type").on(table.edgeType),
+    index("idx_edges_source_target").on(table.sourceId, table.targetId)
+  ]
+);
+var versions = sqliteTable(
+  "versions",
+  {
+    versionId: text("version_id").primaryKey(),
+    nodeId: text("node_id").notNull().references(() => nodes.nodeId, { onDelete: "cascade" }),
+    contentHash: text("content_hash").notNull(),
+    parentVersionId: text("parent_version_id"),
+    createdAt: text("created_at").notNull(),
+    summary: text("summary")
+  },
+  (table) => [
+    index("idx_versions_node").on(table.nodeId),
+    index("idx_versions_parent").on(table.parentVersionId)
+  ]
+);
+var mentionCandidates = sqliteTable(
+  "mention_candidates",
+  {
+    candidateId: text("candidate_id").primaryKey(),
+    sourceId: text("source_id").notNull().references(() => nodes.nodeId, { onDelete: "cascade" }),
+    targetId: text("target_id").notNull().references(() => nodes.nodeId, { onDelete: "cascade" }),
+    surfaceText: text("surface_text").notNull(),
+    spanStart: integer("span_start"),
+    spanEnd: integer("span_end"),
+    confidence: real("confidence").notNull(),
+    reasons: text("reasons", { mode: "json" }),
+    status: text("status").default("new")
+  },
+  (table) => [
+    index("idx_mentions_source").on(table.sourceId),
+    index("idx_mentions_target").on(table.targetId),
+    index("idx_mentions_status").on(table.status)
+  ]
+);
+var chunks = sqliteTable(
+  "chunks",
+  {
+    chunkId: text("chunk_id").primaryKey(),
+    nodeId: text("node_id").notNull().references(() => nodes.nodeId, { onDelete: "cascade" }),
+    text: text("text").notNull(),
+    offsetStart: integer("offset_start").notNull(),
+    offsetEnd: integer("offset_end").notNull(),
+    versionId: text("version_id").notNull(),
+    tokenCount: integer("token_count")
+  },
+  (table) => [
+    index("idx_chunks_node").on(table.nodeId),
+    index("idx_chunks_version").on(table.versionId)
+  ]
+);
+var aliases = sqliteTable(
+  "aliases",
+  {
+    aliasId: text("alias_id").primaryKey(),
+    nodeId: text("node_id").notNull().references(() => nodes.nodeId, { onDelete: "cascade" }),
+    alias: text("alias").notNull()
+  },
+  (table) => [
+    index("idx_aliases_node").on(table.nodeId),
+    index("idx_aliases_alias").on(table.alias)
+  ]
+);
 var graphMetrics = sqliteTable("graph_metrics", {
   nodeId: text("node_id").primaryKey().references(() => nodes.nodeId, { onDelete: "cascade" }),
   centralityPagerank: real("centrality_pagerank"),
   clusterId: text("cluster_id"),
   computedAt: text("computed_at").notNull()
 });
-var proposals = sqliteTable("proposals", {
-  proposalId: text("proposal_id").primaryKey(),
-  type: text("type").notNull(),
-  nodeId: text("node_id").notNull().references(() => nodes.nodeId, { onDelete: "cascade" }),
-  description: text("description").notNull(),
-  diff: text("diff", { mode: "json" }).notNull(),
-  status: text("status").default("pending"),
-  createdAt: text("created_at").notNull(),
-  appliedAt: text("applied_at"),
-  metadata: text("metadata", { mode: "json" })
-}, (table) => [
-  index("idx_proposals_node").on(table.nodeId),
-  index("idx_proposals_status").on(table.status)
-]);
-var unresolvedLinks = sqliteTable("unresolved_links", {
-  linkId: text("link_id").primaryKey(),
-  sourceId: text("source_id").notNull().references(() => nodes.nodeId, { onDelete: "cascade" }),
-  targetText: text("target_text").notNull(),
-  spanStart: integer("span_start"),
-  spanEnd: integer("span_end"),
-  createdAt: text("created_at").notNull()
-}, (table) => [
-  index("idx_unresolved_source").on(table.sourceId),
-  index("idx_unresolved_target").on(table.targetText)
-]);
-var constellations = sqliteTable("constellations", {
-  constellationId: text("constellation_id").primaryKey(),
-  name: text("name").notNull().unique(),
-  description: text("description"),
-  // Filter state (JSON arrays)
-  hiddenNodeTypes: text("hidden_node_types", { mode: "json" }),
-  hiddenEdgeTypes: text("hidden_edge_types", { mode: "json" }),
-  // Ghost node config
-  showGhosts: integer("show_ghosts").notNull().default(1),
-  ghostThreshold: integer("ghost_threshold").notNull().default(1),
-  // Camera state
-  cameraX: real("camera_x"),
-  cameraY: real("camera_y"),
-  cameraZoom: real("camera_zoom"),
-  // Focus nodes (seed nodes for the view)
-  focusNodeIds: text("focus_node_ids", { mode: "json" }),
-  // Timestamps
-  createdAt: text("created_at").notNull(),
-  updatedAt: text("updated_at").notNull()
-}, (table) => [
-  index("idx_constellations_name").on(table.name)
-]);
-var nodeEmbeddings = sqliteTable("node_embeddings", {
-  embeddingId: text("embedding_id").primaryKey(),
-  nodeId: text("node_id").notNull().unique().references(() => nodes.nodeId, { onDelete: "cascade" }),
-  embedding: text("embedding", { mode: "json" }).notNull(),
-  // Float array as JSON
-  model: text("model").notNull(),
-  // e.g., 'openai:text-embedding-3-small'
-  dimensions: integer("dimensions").notNull(),
-  contentHash: text("content_hash").notNull(),
-  // To detect when recompute is needed
-  computedAt: text("computed_at").notNull()
-}, (table) => [
-  index("idx_embeddings_node").on(table.nodeId),
-  index("idx_embeddings_model").on(table.model)
-]);
-var wormholeRejections = sqliteTable("wormhole_rejections", {
-  rejectionId: text("rejection_id").primaryKey(),
-  sourceId: text("source_id").notNull().references(() => nodes.nodeId, { onDelete: "cascade" }),
-  targetId: text("target_id").notNull().references(() => nodes.nodeId, { onDelete: "cascade" }),
-  sourceContentHash: text("source_content_hash").notNull(),
-  targetContentHash: text("target_content_hash").notNull(),
-  rejectedAt: text("rejected_at").notNull()
-}, (table) => [
-  index("idx_rejections_source").on(table.sourceId),
-  index("idx_rejections_target").on(table.targetId),
-  index("idx_rejections_pair").on(table.sourceId, table.targetId)
-]);
+var proposals = sqliteTable(
+  "proposals",
+  {
+    proposalId: text("proposal_id").primaryKey(),
+    type: text("type").notNull(),
+    nodeId: text("node_id").notNull().references(() => nodes.nodeId, { onDelete: "cascade" }),
+    description: text("description").notNull(),
+    diff: text("diff", { mode: "json" }).notNull(),
+    status: text("status").default("pending"),
+    createdAt: text("created_at").notNull(),
+    appliedAt: text("applied_at"),
+    metadata: text("metadata", { mode: "json" })
+  },
+  (table) => [
+    index("idx_proposals_node").on(table.nodeId),
+    index("idx_proposals_status").on(table.status)
+  ]
+);
+var unresolvedLinks = sqliteTable(
+  "unresolved_links",
+  {
+    linkId: text("link_id").primaryKey(),
+    sourceId: text("source_id").notNull().references(() => nodes.nodeId, { onDelete: "cascade" }),
+    targetText: text("target_text").notNull(),
+    spanStart: integer("span_start"),
+    spanEnd: integer("span_end"),
+    createdAt: text("created_at").notNull()
+  },
+  (table) => [
+    index("idx_unresolved_source").on(table.sourceId),
+    index("idx_unresolved_target").on(table.targetText)
+  ]
+);
+var constellations = sqliteTable(
+  "constellations",
+  {
+    constellationId: text("constellation_id").primaryKey(),
+    name: text("name").notNull().unique(),
+    description: text("description"),
+    // Filter state (JSON arrays)
+    hiddenNodeTypes: text("hidden_node_types", { mode: "json" }),
+    hiddenEdgeTypes: text("hidden_edge_types", { mode: "json" }),
+    // Ghost node config
+    showGhosts: integer("show_ghosts").notNull().default(1),
+    ghostThreshold: integer("ghost_threshold").notNull().default(1),
+    // Camera state
+    cameraX: real("camera_x"),
+    cameraY: real("camera_y"),
+    cameraZoom: real("camera_zoom"),
+    // Focus nodes (seed nodes for the view)
+    focusNodeIds: text("focus_node_ids", { mode: "json" }),
+    // Timestamps
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull()
+  },
+  (table) => [index("idx_constellations_name").on(table.name)]
+);
+var nodeEmbeddings = sqliteTable(
+  "node_embeddings",
+  {
+    embeddingId: text("embedding_id").primaryKey(),
+    nodeId: text("node_id").notNull().unique().references(() => nodes.nodeId, { onDelete: "cascade" }),
+    embedding: text("embedding", { mode: "json" }).notNull(),
+    // Float array as JSON
+    model: text("model").notNull(),
+    // e.g., 'openai:text-embedding-3-small'
+    dimensions: integer("dimensions").notNull(),
+    contentHash: text("content_hash").notNull(),
+    // To detect when recompute is needed
+    computedAt: text("computed_at").notNull()
+  },
+  (table) => [
+    index("idx_embeddings_node").on(table.nodeId),
+    index("idx_embeddings_model").on(table.model)
+  ]
+);
+var wormholeRejections = sqliteTable(
+  "wormhole_rejections",
+  {
+    rejectionId: text("rejection_id").primaryKey(),
+    sourceId: text("source_id").notNull().references(() => nodes.nodeId, { onDelete: "cascade" }),
+    targetId: text("target_id").notNull().references(() => nodes.nodeId, { onDelete: "cascade" }),
+    sourceContentHash: text("source_content_hash").notNull(),
+    targetContentHash: text("target_content_hash").notNull(),
+    rejectedAt: text("rejected_at").notNull()
+  },
+  (table) => [
+    index("idx_rejections_source").on(table.sourceId),
+    index("idx_rejections_target").on(table.targetId),
+    index("idx_rejections_pair").on(table.sourceId, table.targetId)
+  ]
+);
 
 // src/core/errors.ts
 var ZettelScriptError = class extends Error {
@@ -693,22 +735,25 @@ var GraphMetricsSchema = Type.Object({
   clusterId: Type.Optional(Type.String()),
   computedAt: Type.String({ format: "date-time" })
 });
-var FrontmatterSchema = Type.Object({
-  id: Type.Optional(Type.String()),
-  title: Type.Optional(Type.String()),
-  type: Type.Optional(NodeTypeSchema),
-  aliases: Type.Optional(Type.Array(Type.String())),
-  tags: Type.Optional(Type.Array(Type.String())),
-  created: Type.Optional(Type.String()),
-  updated: Type.Optional(Type.String()),
-  // Manuscript-specific fields
-  pov: Type.Optional(Type.String()),
-  scene_order: Type.Optional(Type.Number()),
-  timeline_position: Type.Optional(Type.String()),
-  characters: Type.Optional(Type.Array(Type.String())),
-  locations: Type.Optional(Type.Array(Type.String()))
-  // Allow additional fields
-}, { additionalProperties: true });
+var FrontmatterSchema = Type.Object(
+  {
+    id: Type.Optional(Type.String()),
+    title: Type.Optional(Type.String()),
+    type: Type.Optional(NodeTypeSchema),
+    aliases: Type.Optional(Type.Array(Type.String())),
+    tags: Type.Optional(Type.Array(Type.String())),
+    created: Type.Optional(Type.String()),
+    updated: Type.Optional(Type.String()),
+    // Manuscript-specific fields
+    pov: Type.Optional(Type.String()),
+    scene_order: Type.Optional(Type.Number()),
+    timeline_position: Type.Optional(Type.String()),
+    characters: Type.Optional(Type.Array(Type.String())),
+    locations: Type.Optional(Type.Array(Type.String()))
+    // Allow additional fields
+  },
+  { additionalProperties: true }
+);
 var DEFAULT_CONFIG = {
   vault: {
     path: ".",
@@ -985,10 +1030,7 @@ var NodeRepository = class {
    * Remove an alias
    */
   async removeAlias(nodeId, alias) {
-    await this.db.delete(aliases).where(and(
-      eq(aliases.nodeId, nodeId),
-      sql`${aliases.alias} COLLATE NOCASE = ${alias}`
-    ));
+    await this.db.delete(aliases).where(and(eq(aliases.nodeId, nodeId), sql`${aliases.alias} COLLATE NOCASE = ${alias}`));
   }
   /**
    * Get aliases for a node
@@ -1061,11 +1103,7 @@ var EdgeRepository = class {
    * Create or update an edge
    */
   async upsert(data) {
-    const existing = await this.findBySourceTargetType(
-      data.sourceId,
-      data.targetId,
-      data.edgeType
-    );
+    const existing = await this.findBySourceTargetType(data.sourceId, data.targetId, data.edgeType);
     if (existing) {
       return this.update(existing.edgeId, data);
     }
@@ -1082,11 +1120,13 @@ var EdgeRepository = class {
    * Find edge by source, target, and type
    */
   async findBySourceTargetType(sourceId, targetId, edgeType) {
-    const result = await this.db.select().from(edges).where(and2(
-      eq2(edges.sourceId, sourceId),
-      eq2(edges.targetId, targetId),
-      eq2(edges.edgeType, edgeType)
-    )).limit(1);
+    const result = await this.db.select().from(edges).where(
+      and2(
+        eq2(edges.sourceId, sourceId),
+        eq2(edges.targetId, targetId),
+        eq2(edges.edgeType, edgeType)
+      )
+    ).limit(1);
     return result[0] ? this.rowToEdge(result[0]) : null;
   }
   /**
@@ -1095,10 +1135,7 @@ var EdgeRepository = class {
   async findOutgoing(nodeId, edgeTypes) {
     let query = this.db.select().from(edges).where(eq2(edges.sourceId, nodeId));
     if (edgeTypes && edgeTypes.length > 0) {
-      query = this.db.select().from(edges).where(and2(
-        eq2(edges.sourceId, nodeId),
-        inArray2(edges.edgeType, edgeTypes)
-      ));
+      query = this.db.select().from(edges).where(and2(eq2(edges.sourceId, nodeId), inArray2(edges.edgeType, edgeTypes)));
     }
     const result = await query;
     return result.map(this.rowToEdge);
@@ -1109,10 +1146,7 @@ var EdgeRepository = class {
   async findIncoming(nodeId, edgeTypes) {
     let query = this.db.select().from(edges).where(eq2(edges.targetId, nodeId));
     if (edgeTypes && edgeTypes.length > 0) {
-      query = this.db.select().from(edges).where(and2(
-        eq2(edges.targetId, nodeId),
-        inArray2(edges.edgeType, edgeTypes)
-      ));
+      query = this.db.select().from(edges).where(and2(eq2(edges.targetId, nodeId), inArray2(edges.edgeType, edgeTypes)));
     }
     const result = await query;
     return result.map(this.rowToEdge);
@@ -1121,10 +1155,7 @@ var EdgeRepository = class {
    * Find all edges connected to a node (both directions)
    */
   async findConnected(nodeId, edgeTypes) {
-    const condition = or(
-      eq2(edges.sourceId, nodeId),
-      eq2(edges.targetId, nodeId)
-    );
+    const condition = or(eq2(edges.sourceId, nodeId), eq2(edges.targetId, nodeId));
     let result;
     if (edgeTypes && edgeTypes.length > 0) {
       result = await this.db.select().from(edges).where(and2(condition, inArray2(edges.edgeType, edgeTypes)));
@@ -1155,10 +1186,7 @@ var EdgeRepository = class {
    * Find backlinks (explicit_link edges targeting a node)
    */
   async findBacklinks(nodeId) {
-    const result = await this.db.select().from(edges).where(and2(
-      eq2(edges.targetId, nodeId),
-      eq2(edges.edgeType, "explicit_link")
-    ));
+    const result = await this.db.select().from(edges).where(and2(eq2(edges.targetId, nodeId), eq2(edges.edgeType, "explicit_link")));
     return result.map(this.rowToEdge);
   }
   /**
@@ -1191,20 +1219,14 @@ var EdgeRepository = class {
    * Delete all edges for a node
    */
   async deleteForNode(nodeId) {
-    const result = await this.db.delete(edges).where(or(
-      eq2(edges.sourceId, nodeId),
-      eq2(edges.targetId, nodeId)
-    ));
+    const result = await this.db.delete(edges).where(or(eq2(edges.sourceId, nodeId), eq2(edges.targetId, nodeId)));
     return result.changes;
   }
   /**
    * Delete edges by source and type
    */
   async deleteBySourceAndType(sourceId, edgeType) {
-    const result = await this.db.delete(edges).where(and2(
-      eq2(edges.sourceId, sourceId),
-      eq2(edges.edgeType, edgeType)
-    ));
+    const result = await this.db.delete(edges).where(and2(eq2(edges.sourceId, sourceId), eq2(edges.edgeType, edgeType)));
     return result.changes;
   }
   /**
@@ -1337,10 +1359,7 @@ var VersionRepository = class {
    * Find version by content hash
    */
   async findByContentHash(nodeId, contentHash) {
-    const result = await this.db.select().from(versions).where(and3(
-      eq3(versions.nodeId, nodeId),
-      eq3(versions.contentHash, contentHash)
-    )).limit(1);
+    const result = await this.db.select().from(versions).where(and3(eq3(versions.nodeId, nodeId), eq3(versions.contentHash, contentHash))).limit(1);
     return result[0] ? this.rowToVersion(result[0]) : null;
   }
   /**
@@ -1674,22 +1693,21 @@ var MentionRepository = class {
    * Find new (pending review) mentions for a source
    */
   async findNewForSource(sourceId) {
-    const result = await this.db.select().from(mentionCandidates).where(and4(
-      eq5(mentionCandidates.sourceId, sourceId),
-      eq5(mentionCandidates.status, "new")
-    ));
+    const result = await this.db.select().from(mentionCandidates).where(and4(eq5(mentionCandidates.sourceId, sourceId), eq5(mentionCandidates.status, "new")));
     return result.map(this.rowToMention);
   }
   /**
    * Check if a mention already exists
    */
   async exists(sourceId, targetId, spanStart, spanEnd) {
-    const result = await this.db.select({ count: sql5`count(*)` }).from(mentionCandidates).where(and4(
-      eq5(mentionCandidates.sourceId, sourceId),
-      eq5(mentionCandidates.targetId, targetId),
-      eq5(mentionCandidates.spanStart, spanStart),
-      eq5(mentionCandidates.spanEnd, spanEnd)
-    ));
+    const result = await this.db.select({ count: sql5`count(*)` }).from(mentionCandidates).where(
+      and4(
+        eq5(mentionCandidates.sourceId, sourceId),
+        eq5(mentionCandidates.targetId, targetId),
+        eq5(mentionCandidates.spanStart, spanStart),
+        eq5(mentionCandidates.spanEnd, spanEnd)
+      )
+    );
     return (result[0]?.count ?? 0) > 0;
   }
   /**
@@ -1883,13 +1901,15 @@ var UnresolvedLinkRepository = class {
         if (sourceIds.length > 0) {
           const referencerResult = await this.db.select({
             maxUpdatedAt: sql6`MAX(${nodes.updatedAt})`
-          }).from(nodes).where(sql6`${nodes.nodeId} IN (${sql6.join(sourceIds.map((id) => sql6`${id}`), sql6`, `)})`);
+          }).from(nodes).where(
+            sql6`${nodes.nodeId} IN (${sql6.join(
+              sourceIds.map((id) => sql6`${id}`),
+              sql6`, `
+            )})`
+          );
           mostRecentReferencerUpdate = referencerResult[0]?.maxUpdatedAt ?? null;
         }
-        const mostRecentRef = [
-          row.mostRecentLinkCreated,
-          mostRecentReferencerUpdate
-        ].filter((t) => t !== null).sort().reverse()[0];
+        const mostRecentRef = [row.mostRecentLinkCreated, mostRecentReferencerUpdate].filter((t) => t !== null).sort().reverse()[0];
         return {
           targetText: row.targetText,
           sourceIds,
@@ -2227,12 +2247,14 @@ var WormholeRepository = class {
    */
   async isRejected(sourceId, targetId, sourceContentHash, targetContentHash) {
     const [normalizedSourceId, normalizedTargetId, normalizedSourceHash, normalizedTargetHash] = sourceId < targetId ? [sourceId, targetId, sourceContentHash, targetContentHash] : [targetId, sourceId, targetContentHash, sourceContentHash];
-    const result = await this.db.select().from(wormholeRejections).where(and5(
-      eq8(wormholeRejections.sourceId, normalizedSourceId),
-      eq8(wormholeRejections.targetId, normalizedTargetId),
-      eq8(wormholeRejections.sourceContentHash, normalizedSourceHash),
-      eq8(wormholeRejections.targetContentHash, normalizedTargetHash)
-    )).limit(1);
+    const result = await this.db.select().from(wormholeRejections).where(
+      and5(
+        eq8(wormholeRejections.sourceId, normalizedSourceId),
+        eq8(wormholeRejections.targetId, normalizedTargetId),
+        eq8(wormholeRejections.sourceContentHash, normalizedSourceHash),
+        eq8(wormholeRejections.targetContentHash, normalizedTargetHash)
+      )
+    ).limit(1);
     return result.length > 0;
   }
   /**
@@ -2240,10 +2262,12 @@ var WormholeRepository = class {
    */
   async hasAnyRejection(sourceId, targetId) {
     const [normalizedSourceId, normalizedTargetId] = sourceId < targetId ? [sourceId, targetId] : [targetId, sourceId];
-    const result = await this.db.select().from(wormholeRejections).where(and5(
-      eq8(wormholeRejections.sourceId, normalizedSourceId),
-      eq8(wormholeRejections.targetId, normalizedTargetId)
-    )).limit(1);
+    const result = await this.db.select().from(wormholeRejections).where(
+      and5(
+        eq8(wormholeRejections.sourceId, normalizedSourceId),
+        eq8(wormholeRejections.targetId, normalizedTargetId)
+      )
+    ).limit(1);
     return result.length > 0;
   }
   /**
@@ -2257,10 +2281,7 @@ var WormholeRepository = class {
    * Find rejections for a specific node
    */
   async findByNodeId(nodeId) {
-    const result = await this.db.select().from(wormholeRejections).where(or2(
-      eq8(wormholeRejections.sourceId, nodeId),
-      eq8(wormholeRejections.targetId, nodeId)
-    ));
+    const result = await this.db.select().from(wormholeRejections).where(or2(eq8(wormholeRejections.sourceId, nodeId), eq8(wormholeRejections.targetId, nodeId)));
     return result.map((row) => this.rowToRejection(row));
   }
   /**
@@ -2274,19 +2295,18 @@ var WormholeRepository = class {
    */
   async deleteForPair(sourceId, targetId) {
     const [normalizedSourceId, normalizedTargetId] = sourceId < targetId ? [sourceId, targetId] : [targetId, sourceId];
-    await this.db.delete(wormholeRejections).where(and5(
-      eq8(wormholeRejections.sourceId, normalizedSourceId),
-      eq8(wormholeRejections.targetId, normalizedTargetId)
-    ));
+    await this.db.delete(wormholeRejections).where(
+      and5(
+        eq8(wormholeRejections.sourceId, normalizedSourceId),
+        eq8(wormholeRejections.targetId, normalizedTargetId)
+      )
+    );
   }
   /**
    * Delete all rejections for a node
    */
   async deleteForNode(nodeId) {
-    const result = await this.db.delete(wormholeRejections).where(or2(
-      eq8(wormholeRejections.sourceId, nodeId),
-      eq8(wormholeRejections.targetId, nodeId)
-    ));
+    const result = await this.db.delete(wormholeRejections).where(or2(eq8(wormholeRejections.sourceId, nodeId), eq8(wormholeRejections.targetId, nodeId)));
     return result.changes;
   }
   /**
@@ -2353,13 +2373,9 @@ function parseFrontmatter(source, filePath) {
       contentStartOffset: fullMatch.length
     };
   } catch (error) {
-    throw new ParseError(
-      `Invalid YAML frontmatter: ${error}`,
-      filePath,
-      void 0,
-      void 0,
-      { yaml: yamlContent }
-    );
+    throw new ParseError(`Invalid YAML frontmatter: ${error}`, filePath, void 0, void 0, {
+      yaml: yamlContent
+    });
   }
 }
 function extractTitle(frontmatter, content, filePath) {
@@ -2558,7 +2574,10 @@ function extractWikilinks(content, contentStartOffset = 0) {
       end
     });
   }
-  const links = filterExcludedMatches(rawLinks, exclusionZones.filter((z) => z.type !== "existing_link"));
+  const links = filterExcludedMatches(
+    rawLinks,
+    exclusionZones.filter((z) => z.type !== "existing_link")
+  );
   return { links, exclusionZones };
 }
 function normalizeTarget(target) {
@@ -2680,9 +2699,7 @@ var LinkResolver = class {
         candidates: [candidates[0]?.nodeId ?? ""]
       };
     }
-    const exactMatch = candidates.find(
-      (c) => targetsMatch(c.title, normalizedTarget)
-    );
+    const exactMatch = candidates.find((c) => targetsMatch(c.title, normalizedTarget));
     if (exactMatch) {
       return {
         ...link,
@@ -2777,10 +2794,7 @@ var IndexingPipeline = class {
     const node = await this.upsertNode(file, parsed);
     await this.createVersionIfNeeded(node, file.contentHash);
     await this.nodeRepo.setAliases(node.nodeId, parsed.aliases);
-    const { links, edges: edges2, unresolved, ambiguous } = await this.processLinks(
-      node,
-      parsed.links
-    );
+    const { links, edges: edges2, unresolved, ambiguous } = await this.processLinks(node, parsed.links);
     return { node, links, edges: edges2, unresolved, ambiguous };
   }
   /**
@@ -2884,10 +2898,7 @@ var IndexingPipeline = class {
     for (const { node, parsed, file } of nodeMap.values()) {
       try {
         await this.createVersionIfNeeded(node, file.contentHash);
-        const { links, edges: edges2, unresolved, ambiguous } = await this.processLinks(
-          node,
-          parsed.links
-        );
+        const { links, edges: edges2, unresolved, ambiguous } = await this.processLinks(node, parsed.links);
         indexed.push({ node, links, edges: edges2, unresolved, ambiguous });
         totalEdges += edges2.length;
         totalUnresolved += unresolved.length;
@@ -3137,12 +3148,14 @@ function findKShortestPaths(startId, endId, edges2, options = {}) {
   }
   const shortestHopCount = firstResult.path.length - 1;
   const maxAllowedHops = shortestHopCount + maxExtraHops;
-  const results = [{
-    path: firstResult.path,
-    edges: firstResult.edges,
-    hopCount: shortestHopCount,
-    score: calculatePathScore(firstResult.edges)
-  }];
+  const results = [
+    {
+      path: firstResult.path,
+      edges: firstResult.edges,
+      hopCount: shortestHopCount,
+      score: calculatePathScore(firstResult.edges)
+    }
+  ];
   const candidates = [];
   const seenPaths = /* @__PURE__ */ new Set([firstResult.path.join("|")]);
   for (let i = 0; i < results.length && results.length < k; i++) {
@@ -3696,9 +3709,7 @@ function loadConfig(vaultPath) {
 async function initContext(vaultPath) {
   const resolvedPath = vaultPath ? path2.resolve(vaultPath) : findVaultRoot();
   if (!resolvedPath) {
-    throw new Error(
-      'Not in a ZettelScript vault. Run "zettel init" to create one.'
-    );
+    throw new Error('Not in a ZettelScript vault. Run "zettel init" to create one.');
   }
   const config = loadConfig(resolvedPath);
   const dbPath = getDbPath(resolvedPath);
@@ -3833,7 +3844,11 @@ var initCommand = new Command("init").description("Initialize a ZettelScript vau
     ConnectionManager.resetInstance();
     console.log(`  Created ${path3.relative(vaultPath, dbPath)}`);
     const gitignorePath = path3.join(zettelDir, ".gitignore");
-    fs3.writeFileSync(gitignorePath, "# Ignore database (regenerated from files)\nzettelscript.db\nzettelscript.db-*\n", "utf-8");
+    fs3.writeFileSync(
+      gitignorePath,
+      "# Ignore database (regenerated from files)\nzettelscript.db\nzettelscript.db-*\n",
+      "utf-8"
+    );
     console.log("\nZettelScript vault initialized!");
     console.log("\nNext steps:");
     console.log("  zettel index    Index all markdown files");
@@ -3933,14 +3948,7 @@ function getLogger() {
 
 // src/storage/filesystem/reader.ts
 var DEFAULT_EXTENSIONS = [".md", ".markdown"];
-var DEFAULT_EXCLUDE = [
-  "node_modules",
-  ".git",
-  ".zettelscript",
-  ".obsidian",
-  ".vscode",
-  ".idea"
-];
+var DEFAULT_EXCLUDE = ["node_modules", ".git", ".zettelscript", ".obsidian", ".vscode", ".idea"];
 function hashContent(content) {
   return createHash("sha256").update(content).digest("hex");
 }
@@ -3968,9 +3976,7 @@ async function readFile(filePath, basePath) {
 function shouldExclude(relativePath, excludePatterns) {
   for (const pattern of excludePatterns) {
     if (pattern.includes("*")) {
-      const regex = new RegExp(
-        "^" + pattern.replace(/\*/g, ".*").replace(/\?/g, ".") + "$"
-      );
+      const regex = new RegExp("^" + pattern.replace(/\*/g, ".*").replace(/\?/g, ".") + "$");
       if (regex.test(relativePath)) return true;
     } else {
       if (relativePath === pattern || relativePath.startsWith(pattern + "/") || relativePath.startsWith(pattern + "\\")) {
@@ -4433,11 +4439,7 @@ queryCommand.command("backlinks <node>").description("Show incoming links to a n
     if (backlinks.length === 0) {
       console.log("No backlinks found.");
     } else {
-      const rows = backlinks.slice(0, limit).map((bl) => [
-        bl.sourceNode.title,
-        bl.sourceNode.type,
-        bl.sourceNode.path
-      ]);
+      const rows = backlinks.slice(0, limit).map((bl) => [bl.sourceNode.title, bl.sourceNode.type, bl.sourceNode.path]);
       printTable(["Title", "Type", "Path"], rows);
       if (backlinks.length > limit) {
         console.log(`
@@ -4585,11 +4587,7 @@ queryCommand.command("orphans").description("Find nodes with no links").option("
     } else {
       console.log(`Orphan nodes (${isolated.length}):
 `);
-      const rows = isolated.slice(0, limit).map((n) => [
-        n.title,
-        n.type,
-        n.path
-      ]);
+      const rows = isolated.slice(0, limit).map((n) => [n.title, n.type, n.path]);
       printTable(["Title", "Type", "Path"], rows);
       if (isolated.length > limit) {
         console.log(`
@@ -4613,11 +4611,7 @@ queryCommand.command("hubs").description("Find highly-connected nodes").option("
     } else {
       console.log(`Hub nodes (${hubs.length}):
 `);
-      const rows = hubs.slice(0, limit).map((h) => [
-        h.node.title,
-        h.node.type,
-        h.inDegree.toString()
-      ]);
+      const rows = hubs.slice(0, limit).map((h) => [h.node.title, h.node.type, h.inDegree.toString()]);
       printTable(["Title", "Type", "Incoming Links"], rows);
       if (hubs.length > limit) {
         console.log(`
@@ -4774,40 +4768,51 @@ var LinkValidator = class {
 // src/validation/schema-validator.ts
 import Ajv from "ajv";
 import { Type as Type2 } from "@sinclair/typebox";
-var BaseFrontmatterSchema = Type2.Object({
-  id: Type2.Optional(Type2.String()),
-  title: Type2.Optional(Type2.String()),
-  type: Type2.Optional(Type2.Union([
-    Type2.Literal("note"),
-    Type2.Literal("scene"),
-    Type2.Literal("character"),
-    Type2.Literal("location"),
-    Type2.Literal("object"),
-    Type2.Literal("event"),
-    Type2.Literal("concept"),
-    Type2.Literal("moc"),
-    Type2.Literal("timeline"),
-    Type2.Literal("draft")
-  ])),
-  aliases: Type2.Optional(Type2.Array(Type2.String())),
-  tags: Type2.Optional(Type2.Array(Type2.String())),
-  created: Type2.Optional(Type2.String()),
-  updated: Type2.Optional(Type2.String())
-}, { additionalProperties: true });
-var SceneFrontmatterSchema = Type2.Object({
-  type: Type2.Literal("scene"),
-  pov: Type2.Optional(Type2.String()),
-  scene_order: Type2.Optional(Type2.Number()),
-  timeline_position: Type2.Optional(Type2.String()),
-  characters: Type2.Optional(Type2.Array(Type2.String())),
-  locations: Type2.Optional(Type2.Array(Type2.String()))
-}, { additionalProperties: true });
-var CharacterFrontmatterSchema = Type2.Object({
-  type: Type2.Literal("character"),
-  aliases: Type2.Optional(Type2.Array(Type2.String())),
-  description: Type2.Optional(Type2.String()),
-  traits: Type2.Optional(Type2.Array(Type2.String()))
-}, { additionalProperties: true });
+var BaseFrontmatterSchema = Type2.Object(
+  {
+    id: Type2.Optional(Type2.String()),
+    title: Type2.Optional(Type2.String()),
+    type: Type2.Optional(
+      Type2.Union([
+        Type2.Literal("note"),
+        Type2.Literal("scene"),
+        Type2.Literal("character"),
+        Type2.Literal("location"),
+        Type2.Literal("object"),
+        Type2.Literal("event"),
+        Type2.Literal("concept"),
+        Type2.Literal("moc"),
+        Type2.Literal("timeline"),
+        Type2.Literal("draft")
+      ])
+    ),
+    aliases: Type2.Optional(Type2.Array(Type2.String())),
+    tags: Type2.Optional(Type2.Array(Type2.String())),
+    created: Type2.Optional(Type2.String()),
+    updated: Type2.Optional(Type2.String())
+  },
+  { additionalProperties: true }
+);
+var SceneFrontmatterSchema = Type2.Object(
+  {
+    type: Type2.Literal("scene"),
+    pov: Type2.Optional(Type2.String()),
+    scene_order: Type2.Optional(Type2.Number()),
+    timeline_position: Type2.Optional(Type2.String()),
+    characters: Type2.Optional(Type2.Array(Type2.String())),
+    locations: Type2.Optional(Type2.Array(Type2.String()))
+  },
+  { additionalProperties: true }
+);
+var CharacterFrontmatterSchema = Type2.Object(
+  {
+    type: Type2.Literal("character"),
+    aliases: Type2.Optional(Type2.Array(Type2.String())),
+    description: Type2.Optional(Type2.String()),
+    traits: Type2.Optional(Type2.Array(Type2.String()))
+  },
+  { additionalProperties: true }
+);
 var SchemaValidator = class {
   nodeRepo;
   ajv;
@@ -4992,7 +4997,9 @@ var ContinuityChecker = class {
         scenesChecked: scenes.length,
         povIssues: issues.filter((i) => i.type === "pov_leakage").length,
         timelineIssues: issues.filter((i) => i.type === "timeline_inconsistency").length,
-        setupPayoffIssues: issues.filter((i) => i.type === "missing_setup" || i.type === "orphaned_payoff").length,
+        setupPayoffIssues: issues.filter(
+          (i) => i.type === "missing_setup" || i.type === "orphaned_payoff"
+        ).length,
         knowledgeIssues: issues.filter((i) => i.type === "character_knowledge").length
       }
     };
@@ -5209,7 +5216,9 @@ var validateCommand = new Command5("validate").description("Validate the vault")
           console.log(`  ! Ambiguous links: ${linkResult.ambiguous.length}`);
           if (options.verbose) {
             for (const a of linkResult.ambiguous.slice(0, 10)) {
-              console.log(`    ${a.sourcePath}: [[${a.targetText}]] \u2192 ${a.candidates.length} matches`);
+              console.log(
+                `    ${a.sourcePath}: [[${a.targetText}]] \u2192 ${a.candidates.length} matches`
+              );
             }
           }
         }
@@ -5932,7 +5941,9 @@ ${title} (${path18}):`);
             sourceNodeId: nodeId
           });
           if (!approver.isTTY()) {
-            console.warn("\nNot running in interactive mode (non-TTY). Use --batch flag for non-interactive approval.");
+            console.warn(
+              "\nNot running in interactive mode (non-TTY). Use --batch flag for non-interactive approval."
+            );
           } else {
             console.log("\nInteractive approval mode:");
             const results = await approver.approveAll(display);
@@ -5940,8 +5951,10 @@ ${title} (${path18}):`);
             const rejected = results.filter((r) => r.action === "reject").length;
             const deferred = results.filter((r) => r.action === "defer").length;
             if (approved > 0 || rejected > 0 || deferred > 0) {
-              console.log(`
-Approved: ${approved}, Rejected: ${rejected}, Deferred: ${deferred}`);
+              console.log(
+                `
+Approved: ${approved}, Rejected: ${rejected}, Deferred: ${deferred}`
+              );
             }
             if (results.some((r) => r.action === "quit")) {
               console.log("Approval cancelled.");
@@ -6203,7 +6216,11 @@ var ContextAssembler = class {
     const expansionOptions = {
       maxDepth: query.expansion?.maxDepth ?? this.config.expansionMaxDepth,
       budget: query.expansion?.budget ?? this.config.expansionBudget,
-      edgeTypes: query.expansion?.edgeTypes ?? ["explicit_link", "sequence", "hierarchy"],
+      edgeTypes: query.expansion?.edgeTypes ?? [
+        "explicit_link",
+        "sequence",
+        "hierarchy"
+      ],
       decayFactor: query.expansion?.decayFactor ?? 0.7,
       includeIncoming: true
     };
@@ -6613,7 +6630,9 @@ var ImpactAnalyzer = class {
       recommendations.push("Check timeline continuity with adjacent scenes");
     }
     if (impact.characterImpact.length > 0) {
-      recommendations.push(`Verify character knowledge for: ${impact.characterImpact.slice(0, 3).join(", ")}`);
+      recommendations.push(
+        `Verify character knowledge for: ${impact.characterImpact.slice(0, 3).join(", ")}`
+      );
     }
     if (impact.transitiveImpact.length > 10) {
       recommendations.push("Large transitive impact - consider breaking change into smaller edits");
@@ -6770,10 +6789,14 @@ var RewriteOrchestrator = class {
   buildConstraints(sceneMetadata) {
     const constraints = [];
     if (sceneMetadata?.pov) {
-      constraints.push(`Maintain POV: ${sceneMetadata.pov} - only reveal information they would know`);
+      constraints.push(
+        `Maintain POV: ${sceneMetadata.pov} - only reveal information they would know`
+      );
     }
     if (sceneMetadata?.scene_order !== void 0) {
-      constraints.push(`Timeline position: Scene ${sceneMetadata.scene_order} - maintain continuity with adjacent scenes`);
+      constraints.push(
+        `Timeline position: Scene ${sceneMetadata.scene_order} - maintain continuity with adjacent scenes`
+      );
     }
     if (sceneMetadata?.locations?.length) {
       constraints.push(`Location: ${sceneMetadata.locations.join(", ")}`);
@@ -6800,31 +6823,25 @@ ${context.goal}`);
 ${context.constraints.map((c) => `- ${c}`).join("\n")}`);
     }
     if (context.characterContext.length > 0) {
-      const charSection = context.characterContext.map(
-        (c) => `### ${c.name} (${c.role})
+      const charSection = context.characterContext.map((c) => `### ${c.name} (${c.role})
 
-${c.description}`
-      ).join("\n\n");
+${c.description}`).join("\n\n");
       sections.push(`## Characters
 
 ${charSection}`);
     }
     if (context.timelineContext.length > 0) {
-      const timelineSection = context.timelineContext.map(
-        (t) => `### Scene ${t.order}: ${t.title}
+      const timelineSection = context.timelineContext.map((t) => `### Scene ${t.order}: ${t.title}
 
-${t.summary}`
-      ).join("\n\n");
+${t.summary}`).join("\n\n");
       sections.push(`## Timeline Context
 
 ${timelineSection}`);
     }
     if (context.relatedContent.length > 0) {
-      const relatedSection = context.relatedContent.map(
-        (r) => `### ${r.title} (${r.type})
+      const relatedSection = context.relatedContent.map((r) => `### ${r.title} (${r.type})
 
-${r.excerpt}`
-      ).join("\n\n");
+${r.excerpt}`).join("\n\n");
       sections.push(`## Related Content
 
 ${relatedSection}`);
@@ -6849,6 +6866,7 @@ ${context.sceneContent}`);
 };
 
 // src/llm/provider.ts
+import { TextDecoder } from "util";
 var OpenAILLMProvider = class {
   name = "openai";
   apiKey;
@@ -6873,13 +6891,11 @@ var OpenAILLMProvider = class {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${this.apiKey}`
+        Authorization: `Bearer ${this.apiKey}`
       },
       body: JSON.stringify({
         model: this.model,
-        messages: [
-          { role: "user", content: prompt }
-        ],
+        messages: [{ role: "user", content: prompt }],
         max_tokens: maxTokens,
         temperature
       })
@@ -6892,6 +6908,73 @@ var OpenAILLMProvider = class {
     return data.choices?.[0]?.message?.content ?? "";
   }
 };
+async function checkOllamaRunning(baseUrl = "http://localhost:11434") {
+  try {
+    const response = await fetch(`${baseUrl}/api/tags`, { method: "GET" });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+async function listOllamaModels(baseUrl = "http://localhost:11434") {
+  try {
+    const response = await fetch(`${baseUrl}/api/tags`, { method: "GET" });
+    if (!response.ok) return [];
+    const data = await response.json();
+    return data.models?.map((m) => m.name) ?? [];
+  } catch {
+    return [];
+  }
+}
+async function checkOllamaModelExists(model, baseUrl = "http://localhost:11434") {
+  const models = await listOllamaModels(baseUrl);
+  const normalizedModel = model.toLowerCase();
+  return models.some((m) => {
+    const normalizedM = m.toLowerCase();
+    const modelBase = normalizedM.split(":")[0] ?? normalizedM;
+    return normalizedM === normalizedModel || normalizedM.startsWith(normalizedModel + "-") || normalizedModel.startsWith(modelBase);
+  });
+}
+async function* pullOllamaModel(model, baseUrl = "http://localhost:11434") {
+  const response = await fetch(`${baseUrl}/api/pull`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: model, stream: true })
+  });
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Failed to pull model: ${error}`);
+  }
+  if (!response.body) {
+    throw new Error("No response body from Ollama");
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines) {
+      if (line.trim()) {
+        try {
+          const data = JSON.parse(line);
+          yield data;
+        } catch {
+        }
+      }
+    }
+  }
+  if (buffer.trim()) {
+    try {
+      const data = JSON.parse(buffer);
+      yield data;
+    } catch {
+    }
+  }
+}
 async function getOllamaModelInfo(model, baseUrl = "http://localhost:11434") {
   try {
     const response = await fetch(`${baseUrl}/api/show`, {
@@ -7044,7 +7127,9 @@ function buildRewritePrompt(context) {
     }
   }
   parts.push("## Instructions");
-  parts.push("Based on the context above, provide specific suggestions for how to rewrite this scene to achieve the stated goal.");
+  parts.push(
+    "Based on the context above, provide specific suggestions for how to rewrite this scene to achieve the stated goal."
+  );
   parts.push("");
   parts.push("Please provide:");
   parts.push("1. A brief analysis of how the current scene could be improved");
@@ -7198,6 +7283,7 @@ Rewrite goal: ${options.goal}
 import { Command as Command9 } from "commander";
 import * as fs7 from "fs";
 import * as path8 from "path";
+import * as readline2 from "readline";
 
 // src/extraction/entity-extractor.ts
 var EXTRACTION_PROMPT = `You are an entity extractor for fiction manuscripts. Analyze the following text and extract all named entities.
@@ -7233,10 +7319,12 @@ var EntityExtractor = class {
   llm;
   chunkSize;
   overlapSize;
+  maxTokens;
   constructor(options) {
     this.llm = options.llmProvider;
     this.chunkSize = options.chunkSize ?? 8e3;
     this.overlapSize = options.overlapSize ?? 500;
+    this.maxTokens = options.maxTokens ?? 4096;
   }
   /**
    * Extract entities from a full manuscript
@@ -7296,7 +7384,10 @@ var EntityExtractor = class {
   async extractEntitiesFromChunk(text2) {
     const prompt = EXTRACTION_PROMPT + text2;
     try {
-      const response = await this.llm.complete(prompt, { temperature: 0.1 });
+      const response = await this.llm.complete(prompt, {
+        temperature: 0.1,
+        maxTokens: this.maxTokens
+      });
       const parsed = this.parseJSON(response);
       const entities = [];
       if (Array.isArray(parsed.characters)) {
@@ -7359,7 +7450,7 @@ var EntityExtractor = class {
   }
   async extractScenes(_fullText, chunks2) {
     const scenes = [];
-    const chapterRegex = /^#+\s*(Chapter|Scene|Part)\s*\d*[:\s]*.*/gmi;
+    const chapterRegex = /^#+\s*(Chapter|Scene|Part)\s*\d*[:\s]*.*/gim;
     for (const chunk of chunks2) {
       const matches = chunk.text.matchAll(chapterRegex);
       for (const match of matches) {
@@ -7405,6 +7496,24 @@ var EntityExtractor = class {
 // src/cli/commands/extract.ts
 import { nanoid as nanoid8 } from "nanoid";
 import { stringify as stringifyYaml4 } from "yaml";
+async function promptYesNo(question) {
+  const rl = readline2.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+  return new Promise((resolve4) => {
+    rl.question(`${question} (y/n) `, (answer) => {
+      rl.close();
+      resolve4(answer.toLowerCase().startsWith("y"));
+    });
+  });
+}
+function formatBytes(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
 var extractCommand = new Command9("extract").description("Extract entities (characters, locations, etc.) from prose").option("-f, --file <path>", "Extract from specific file").option("--all", "Extract from all markdown files").option("-m, --model <model>", "Ollama model to use", "qwen2.5:7b").option("--dry-run", "Show what would be extracted without creating files").option("-o, --output <dir>", "Output directory for entity files").option("-v, --verbose", "Show detailed output").action(async (options) => {
   try {
     const ctx = await initContext();
@@ -7452,6 +7561,97 @@ var extractCommand = new Command9("extract").description("Extract entities (char
     }
     console.log(`Processing ${filesToProcess.length} file(s)...
 `);
+    const ollamaRunning = await checkOllamaRunning();
+    if (!ollamaRunning) {
+      console.error("Error: Ollama is not running.");
+      console.error("\nTo start Ollama:");
+      console.error("  1. Install from https://ollama.ai");
+      console.error("  2. Run: ollama serve");
+      ctx.connectionManager.close();
+      process.exit(1);
+    }
+    const modelExists = await checkOllamaModelExists(options.model);
+    if (!modelExists) {
+      console.log(`Model '${options.model}' is not installed.`);
+      const availableModels = await listOllamaModels();
+      if (availableModels.length > 0) {
+        console.log("\nInstalled models:");
+        for (const m of availableModels.slice(0, 10)) {
+          console.log(`  - ${m}`);
+        }
+        if (availableModels.length > 10) {
+          console.log(`  ... and ${availableModels.length - 10} more`);
+        }
+      }
+      console.log("");
+      const shouldDownload = await promptYesNo(`Download '${options.model}' now?`);
+      if (shouldDownload) {
+        console.log(`
+Downloading ${options.model}...`);
+        let lastStatus = "";
+        try {
+          for await (const progress of pullOllamaModel(options.model)) {
+            if (progress.status !== lastStatus) {
+              if (progress.completed !== void 0 && progress.total !== void 0) {
+                const percent = (progress.completed / progress.total * 100).toFixed(1);
+                const completed = formatBytes(progress.completed);
+                const total = formatBytes(progress.total);
+                process.stdout.write(
+                  `\r${progress.status}: ${completed} / ${total} (${percent}%)    `
+                );
+              } else {
+                process.stdout.write(`\r${progress.status}...    `);
+              }
+              lastStatus = progress.status;
+            } else if (progress.completed !== void 0 && progress.total !== void 0) {
+              const percent = (progress.completed / progress.total * 100).toFixed(1);
+              const completed = formatBytes(progress.completed);
+              const total = formatBytes(progress.total);
+              process.stdout.write(
+                `\r${progress.status}: ${completed} / ${total} (${percent}%)    `
+              );
+            }
+          }
+          console.log("\nDownload complete!\n");
+        } catch (err) {
+          console.error(
+            `
+Failed to download model: ${err instanceof Error ? err.message : err}`
+          );
+          ctx.connectionManager.close();
+          process.exit(1);
+        }
+      } else {
+        console.log("\n--- Recommended models for entity extraction ---");
+        console.log("");
+        console.log("  Good context + speed:");
+        console.log("    qwen2.5:7b        (~4.7 GB) - Default, good balance");
+        console.log("    llama3.1:8b       (~4.7 GB) - Strong general purpose");
+        console.log("    mistral:7b        (~4.1 GB) - Fast, good for structured output");
+        console.log("");
+        console.log("  Larger context (for big documents):");
+        console.log("    qwen2.5:14b       (~9.0 GB) - Better accuracy, slower");
+        console.log("    llama3.1:70b      (~40 GB)  - Best quality, needs GPU");
+        console.log("");
+        console.log("  Smaller/faster (less accurate):");
+        console.log("    qwen2.5:3b        (~2.0 GB) - Quick, limited context");
+        console.log("    phi3:mini         (~2.2 GB) - Lightweight option");
+        if (availableModels.length > 0) {
+          console.log("");
+          console.log("--- Or use one of your installed models ---");
+          console.log("");
+          for (const m of availableModels.slice(0, 5)) {
+            console.log(`  zettel extract --model ${m} --all`);
+          }
+        }
+        console.log("");
+        console.log("To download a model:");
+        console.log(`  ollama pull <model-name>`);
+        console.log("");
+        ctx.connectionManager.close();
+        return;
+      }
+    }
     const llmProvider = new OllamaLLMProvider({
       provider: "ollama",
       model: options.model,
@@ -7462,7 +7662,9 @@ var extractCommand = new Command9("extract").description("Extract entities (char
       if (modelInfo) {
         console.log(`Model: ${options.model}`);
         console.log(`  Context length: ${modelInfo.contextLength}`);
-        console.log(`  Max output tokens: ${Math.min(Math.floor(modelInfo.contextLength / 4), 8192)}`);
+        console.log(
+          `  Max output tokens: ${Math.min(Math.floor(modelInfo.contextLength / 4), 8192)}`
+        );
         if (modelInfo.parameterSize) console.log(`  Parameters: ${modelInfo.parameterSize}`);
       }
     }
@@ -7515,7 +7717,9 @@ Extracting from: ${relativePath}`);
         }
       }
     }
-    const sortedEntities = Array.from(allEntities.values()).sort((a, b) => b.mentions - a.mentions);
+    const sortedEntities = Array.from(allEntities.values()).sort(
+      (a, b) => b.mentions - a.mentions
+    );
     console.log("\n" + "=".repeat(50));
     console.log("Extracted Entities");
     console.log("=".repeat(50) + "\n");
@@ -9390,8 +9594,10 @@ function buildEventContent(event, relationshipEngine, includeRelated) {
   parts.push("```dataview\n");
   parts.push('TABLE chapter as "Chapter", description as "Event"\n');
   parts.push("FROM #timeline\n");
-  parts.push(`WHERE chapter >= ${Math.max(1, event.chapter - 1)} AND chapter <= ${event.chapter + 1}
-`);
+  parts.push(
+    `WHERE chapter >= ${Math.max(1, event.chapter - 1)} AND chapter <= ${event.chapter + 1}
+`
+  );
   parts.push("SORT chapter ASC\n");
   parts.push("```\n\n");
   return parts.join("");
@@ -9532,8 +9738,10 @@ function buildThreadContent(thread) {
   parts.push(section("Related Notes"));
   parts.push("```dataview\n");
   parts.push("LIST FROM #arc\n");
-  parts.push(`WHERE contains(file.outlinks, this.file.link) OR contains(tags, "${thread.thread_id}")
-`);
+  parts.push(
+    `WHERE contains(file.outlinks, this.file.link) OR contains(tags, "${thread.thread_id}")
+`
+  );
   parts.push("```\n\n");
   return parts.join("");
 }
@@ -9900,9 +10108,7 @@ function injectLinksInFile(content, entities) {
       for (const match of aliasMatches) {
         const posKey = `${match.start}-${match.end}`;
         if (!linkedPositions.has(posKey)) {
-          const overlaps = allReplacements.some(
-            (r) => match.start < r.end && match.end > r.start
-          );
+          const overlaps = allReplacements.some((r) => match.start < r.end && match.end > r.start);
           if (!overlaps) {
             match.replacement = `[[${canonical}|${match.original}]]`;
             allReplacements.push(match);
@@ -10090,7 +10296,10 @@ async function previewLinkInjection(options) {
       }
     }
     if (filePreview.length > 0) {
-      previews.set(file, filePreview.sort((a, b) => a.position - b.position));
+      previews.set(
+        file,
+        filePreview.sort((a, b) => a.position - b.position)
+      );
     }
   }
   return previews;
@@ -10124,12 +10333,15 @@ ${result.summary}`);
     }
   }
 }
-var generateCommand = new Command10("generate").description("Generate vault notes from knowledge base data").addHelpText("after", `
+var generateCommand = new Command10("generate").description("Generate vault notes from knowledge base data").addHelpText(
+  "after",
+  `
 Examples:
   zettel generate characters         Generate character notes
   zettel generate all                Generate all note types
   zettel generate chapters -m book.md  Split manuscript into chapters
-`);
+`
+);
 generateCommand.command("characters").description("Generate character notes from KB data").option("-o, --output <dir>", "Output directory").option("-k, --kb <path>", "Path to kb.json file").option("-f, --force", "Overwrite existing files").option("-n, --dry-run", "Show what would be created without writing files").option("-v, --verbose", "Show detailed output").action(async (options) => {
   const spinner = new Spinner("Generating character notes...");
   spinner.start();
@@ -10205,7 +10417,9 @@ generateCommand.command("lore").description("Generate lore/world rules notes fro
   try {
     const opts = resolveOptions(options);
     if (!opts.kbPath && !opts.worldRulesPath) {
-      spinner.stop("Error: No KB or world-rules file found. Specify with --kb or --world-rules option.");
+      spinner.stop(
+        "Error: No KB or world-rules file found. Specify with --kb or --world-rules option."
+      );
       process.exit(1);
     }
     const result = await generateLore(opts);
@@ -10299,14 +10513,17 @@ Total errors: ${totalErrors}`);
 // src/cli/commands/inject-links.ts
 import { Command as Command11 } from "commander";
 import * as path13 from "path";
-var injectLinksCommand = new Command11("inject-links").description("Add wikilinks to notes based on entity names from KB").option("-p, --path <dir>", "Vault path (default: current vault)").option("-g, --pattern <glob>", "File pattern to process (default: **/*.md)").option("-e, --entities <names...>", "Specific entity names to link").option("-n, --dry-run", "Show changes without modifying files").option("--preview", "Show detailed preview of all changes").option("-v, --verbose", "Show detailed output").addHelpText("after", `
+var injectLinksCommand = new Command11("inject-links").description("Add wikilinks to notes based on entity names from KB").option("-p, --path <dir>", "Vault path (default: current vault)").option("-g, --pattern <glob>", "File pattern to process (default: **/*.md)").option("-e, --entities <names...>", "Specific entity names to link").option("-n, --dry-run", "Show changes without modifying files").option("--preview", "Show detailed preview of all changes").option("-v, --verbose", "Show detailed output").addHelpText(
+  "after",
+  `
 Examples:
   zettel inject-links                    # Process all .md files using KB entities
   zettel inject-links -n                 # Dry run to see what would change
   zettel inject-links --preview          # Show detailed preview of all changes
   zettel inject-links -e "Ryan" "Kevin"  # Only link specific entities
   zettel inject-links -g "Chapters/*.md" # Only process chapter files
-`).action(async (options) => {
+`
+).action(async (options) => {
   try {
     const vaultPath = options.path ? path13.resolve(options.path) : findVaultRoot() || process.cwd();
     const opts = {
@@ -10334,8 +10551,10 @@ ${relativePath} (${changes.length} links):`);
           console.log(`  ... and ${changes.length - 10} more`);
         }
       }
-      console.log(`
-Total: ${previews.size} files, ${Array.from(previews.values()).reduce((sum, c) => sum + c.length, 0)} links`);
+      console.log(
+        `
+Total: ${previews.size} files, ${Array.from(previews.values()).reduce((sum, c) => sum + c.length, 0)} links`
+      );
       console.log("\nRun without --preview to apply changes.");
       return;
     }
@@ -10390,6 +10609,7 @@ import * as path14 from "path";
 import { stringify as stringifyYaml6 } from "yaml";
 
 // src/cli/server/ws-protocol.ts
+import { randomBytes } from "crypto";
 var PROTOCOL_VERSION = "1.0.0";
 function parseClientMessage(data) {
   try {
@@ -10419,14 +10639,10 @@ function isValidPath(targetFolder) {
   return true;
 }
 function generateToken() {
-  const array = new Uint8Array(32);
-  crypto.getRandomValues(array);
-  return Array.from(array, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return randomBytes(32).toString("hex");
 }
 function generateSessionNonce() {
-  const array = new Uint8Array(16);
-  crypto.getRandomValues(array);
-  return Array.from(array, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return randomBytes(16).toString("hex");
 }
 
 // src/cli/server/visualize-server.ts
@@ -10443,7 +10659,9 @@ var VisualizeServer = class {
   onClose;
   constructor(options) {
     this.ctx = options.ctx;
-    this.onClose = options.onClose;
+    if (options.onClose !== void 0) {
+      this.onClose = options.onClose;
+    }
     this.token = generateToken();
     this.tokenExpiry = Date.now() + TOKEN_VALIDITY_MS;
     this.server = createServer();
@@ -10471,9 +10689,7 @@ var VisualizeServer = class {
         "https://localhost",
         "https://127.0.0.1"
       ];
-      const originValid = validOrigins.some(
-        (v) => origin === v || origin.startsWith(v + ":")
-      );
+      const originValid = validOrigins.some((v) => origin === v || origin.startsWith(v + ":"));
       if (!originValid) {
         console.error(`[WS] Rejected connection from origin: ${origin}`);
         return false;
@@ -10817,14 +11033,12 @@ ${stringifyYaml6(frontmatter)}---
       sourceIds: g.sourceIds,
       firstSeen: g.firstSeen
     }));
-    const recentCreations = Array.from(this.recentCreations.entries()).map(
-      ([ghostId, info]) => ({
-        ghostId,
-        newNodeId: info.newNodeId,
-        title: info.title,
-        createdAt: info.createdAt
-      })
-    );
+    const recentCreations = Array.from(this.recentCreations.entries()).map(([ghostId, info]) => ({
+      ghostId,
+      newNodeId: info.newNodeId,
+      title: info.title,
+      createdAt: info.createdAt
+    }));
     this.send(session, {
       type: "sync_response",
       unresolvedList,
@@ -10849,11 +11063,14 @@ ${stringifyYaml6(frontmatter)}---
    * Send an error message
    */
   sendError(session, message, ghostId) {
-    this.send(session, {
+    const errorMsg = {
       type: "error",
-      message,
-      ghostId
-    });
+      message
+    };
+    if (ghostId !== void 0) {
+      errorMsg.ghostId = ghostId;
+    }
+    this.send(session, errorMsg);
   }
   /**
    * Broadcast a message to all authenticated sessions
@@ -13721,523 +13938,231 @@ function generateVisualizationHtml(graphData, nodeTypeColors, constellation, pat
 </html>
   `;
 }
-var visualizeCommand = new Command12("visualize").alias("viz").description("Visualize the knowledge graph in the browser").option("-o, --output <path>", "Custom output path for the HTML file").option("--no-open", "Do not open the browser automatically").option("-l, --live", "Enable live updates via WebSocket (allows creating notes from ghosts)").option("-c, --constellation <name>", "Load a saved constellation view").option("--list-constellations", "List all saved constellations").option("--path-from <node>", "Starting node for path highlighting (title or path)").option("--path-to <node>", "Ending node for path highlighting (title or path)").option("--path-k <n>", "Number of paths to compute", "3").action(async (options) => {
-  try {
-    const ctx = await initContext();
-    if (options.listConstellations) {
-      const constellations2 = await ctx.constellationRepository.findAll();
-      if (constellations2.length === 0) {
-        console.log("No constellations saved yet.");
-        console.log('\nTo save one, open the visualizer and click "Save Current View".');
-      } else {
-        const rows = constellations2.map((c) => [
-          c.name,
-          c.description || "-",
-          new Date(c.updatedAt).toLocaleDateString()
-        ]);
-        printTable(["Name", "Description", "Updated"], rows);
-      }
-      ctx.connectionManager.close();
-      return;
-    }
-    let constellation = null;
-    if (options.constellation) {
-      constellation = await ctx.constellationRepository.findByName(options.constellation);
-      if (!constellation) {
-        console.error(`Constellation "${options.constellation}" not found.`);
-        console.log("\nAvailable constellations:");
-        const all = await ctx.constellationRepository.findAll();
-        if (all.length === 0) {
-          console.log("  (none)");
+var visualizeCommand = new Command12("visualize").alias("viz").description("Visualize the knowledge graph in the browser").option("-o, --output <path>", "Custom output path for the HTML file").option("--no-open", "Do not open the browser automatically").option("-l, --live", "Enable live updates via WebSocket (allows creating notes from ghosts)").option("-c, --constellation <name>", "Load a saved constellation view").option("--list-constellations", "List all saved constellations").option("--path-from <node>", "Starting node for path highlighting (title or path)").option("--path-to <node>", "Ending node for path highlighting (title or path)").option("--path-k <n>", "Number of paths to compute", "3").action(
+  async (options) => {
+    try {
+      const ctx = await initContext();
+      if (options.listConstellations) {
+        const constellations2 = await ctx.constellationRepository.findAll();
+        if (constellations2.length === 0) {
+          console.log("No constellations saved yet.");
+          console.log('\nTo save one, open the visualizer and click "Save Current View".');
         } else {
-          all.forEach((c) => console.log(`  - ${c.name}`));
+          const rows = constellations2.map((c) => [
+            c.name,
+            c.description || "-",
+            new Date(c.updatedAt).toLocaleDateString()
+          ]);
+          printTable(["Name", "Description", "Updated"], rows);
         }
         ctx.connectionManager.close();
-        process2.exit(1);
+        return;
       }
-      console.log(`Loading constellation "${constellation.name}"...`);
-    }
-    console.log("Generating graph data...");
-    const nodes2 = await ctx.nodeRepository.findAll();
-    const edges2 = await ctx.edgeRepository.findAll();
-    const ghostNodeData = await ctx.unresolvedLinkRepository.getGhostNodesWithRecency();
-    const nodeWeights = /* @__PURE__ */ new Map();
-    edges2.forEach((e) => {
-      nodeWeights.set(e.sourceId, (nodeWeights.get(e.sourceId) || 0) + 1);
-      nodeWeights.set(e.targetId, (nodeWeights.get(e.targetId) || 0) + 1);
-    });
-    const graphNodes = nodes2.map((n) => ({
-      id: n.nodeId,
-      name: n.title,
-      type: n.type,
-      val: Math.max(1, Math.min(10, (nodeWeights.get(n.nodeId) || 0) / 2)),
-      color: typeColors[n.type] || "#94a3b8",
-      path: n.path,
-      metadata: n.metadata,
-      updatedAtMs: n.updatedAt ? new Date(n.updatedAt).getTime() : void 0
-    }));
-    const graphLinks = edges2.map((e) => ({
-      source: e.sourceId,
-      target: e.targetId,
-      type: e.edgeType,
-      strength: e.strength ?? 1,
-      provenance: e.provenance
-    }));
-    const nodeIdSet = new Set(nodes2.map((n) => n.nodeId));
-    for (const ghost of ghostNodeData) {
-      if (!ghost.targetText.trim()) continue;
-      const ghostId = `ghost:${ghost.targetText}`;
-      graphNodes.push({
-        id: ghostId,
-        name: ghost.targetText,
-        type: "ghost",
-        val: Math.max(1, Math.min(5, ghost.referenceCount)),
-        color: typeColors.ghost,
-        path: "",
-        metadata: {
-          referenceCount: ghost.referenceCount,
-          firstSeen: ghost.firstSeen
-        },
-        isGhost: true,
-        sourceIds: ghost.sourceIds.filter((id) => nodeIdSet.has(id)),
-        referenceCount: ghost.referenceCount,
-        mostRecentRef: ghost.mostRecentRef
+      let constellation = null;
+      if (options.constellation) {
+        constellation = await ctx.constellationRepository.findByName(options.constellation);
+        if (!constellation) {
+          console.error(`Constellation "${options.constellation}" not found.`);
+          console.log("\nAvailable constellations:");
+          const all = await ctx.constellationRepository.findAll();
+          if (all.length === 0) {
+            console.log("  (none)");
+          } else {
+            all.forEach((c) => console.log(`  - ${c.name}`));
+          }
+          ctx.connectionManager.close();
+          process2.exit(1);
+        }
+        console.log(`Loading constellation "${constellation.name}"...`);
+      }
+      console.log("Generating graph data...");
+      const nodes2 = await ctx.nodeRepository.findAll();
+      const edges2 = await ctx.edgeRepository.findAll();
+      const ghostNodeData = await ctx.unresolvedLinkRepository.getGhostNodesWithRecency();
+      const nodeWeights = /* @__PURE__ */ new Map();
+      edges2.forEach((e) => {
+        nodeWeights.set(e.sourceId, (nodeWeights.get(e.sourceId) || 0) + 1);
+        nodeWeights.set(e.targetId, (nodeWeights.get(e.targetId) || 0) + 1);
       });
-      for (const sourceId of ghost.sourceIds) {
-        if (nodeIdSet.has(sourceId)) {
-          graphLinks.push({
-            source: sourceId,
-            target: ghostId,
-            type: "ghost_ref",
-            strength: 0.3,
-            provenance: "unresolved_link"
-          });
+      const graphNodes = nodes2.map((n) => ({
+        id: n.nodeId,
+        name: n.title,
+        type: n.type,
+        val: Math.max(1, Math.min(10, (nodeWeights.get(n.nodeId) || 0) / 2)),
+        color: typeColors[n.type] || "#94a3b8",
+        path: n.path,
+        metadata: n.metadata,
+        updatedAtMs: n.updatedAt ? new Date(n.updatedAt).getTime() : void 0
+      }));
+      const graphLinks = edges2.map((e) => ({
+        source: e.sourceId,
+        target: e.targetId,
+        type: e.edgeType,
+        strength: e.strength ?? 1,
+        provenance: e.provenance
+      }));
+      const nodeIdSet = new Set(nodes2.map((n) => n.nodeId));
+      for (const ghost of ghostNodeData) {
+        if (!ghost.targetText.trim()) continue;
+        const ghostId = `ghost:${ghost.targetText}`;
+        graphNodes.push({
+          id: ghostId,
+          name: ghost.targetText,
+          type: "ghost",
+          val: Math.max(1, Math.min(5, ghost.referenceCount)),
+          color: typeColors["ghost"] ?? "#64748b",
+          path: "",
+          metadata: {
+            referenceCount: ghost.referenceCount,
+            firstSeen: ghost.firstSeen
+          },
+          isGhost: true,
+          sourceIds: ghost.sourceIds.filter((id) => nodeIdSet.has(id)),
+          referenceCount: ghost.referenceCount,
+          mostRecentRef: ghost.mostRecentRef
+        });
+        for (const sourceId of ghost.sourceIds) {
+          if (nodeIdSet.has(sourceId)) {
+            graphLinks.push({
+              source: sourceId,
+              target: ghostId,
+              type: "ghost_ref",
+              strength: 0.3,
+              provenance: "unresolved_link"
+            });
+          }
         }
       }
-    }
-    const graphData = {
-      nodes: graphNodes,
-      links: graphLinks
-    };
-    if (ghostNodeData.length > 0) {
-      console.log(`Found ${ghostNodeData.length} unresolved links (ghost nodes)`);
-    }
-    let computedPathData = null;
-    if (options.pathFrom && options.pathTo) {
-      console.log("Computing paths...");
-      let fromNode = await ctx.nodeRepository.findByPath(options.pathFrom);
-      if (!fromNode) {
-        const byTitle = await ctx.nodeRepository.findByTitle(options.pathFrom);
-        fromNode = byTitle[0] ?? null;
+      const graphData = {
+        nodes: graphNodes,
+        links: graphLinks
+      };
+      if (ghostNodeData.length > 0) {
+        console.log(`Found ${ghostNodeData.length} unresolved links (ghost nodes)`);
       }
-      if (!fromNode) {
-        const byAlias = await ctx.nodeRepository.findByTitleOrAlias(options.pathFrom);
-        fromNode = byAlias[0] ?? null;
-      }
-      let toNode = await ctx.nodeRepository.findByPath(options.pathTo);
-      if (!toNode) {
-        const byTitle = await ctx.nodeRepository.findByTitle(options.pathTo);
-        toNode = byTitle[0] ?? null;
-      }
-      if (!toNode) {
-        const byAlias = await ctx.nodeRepository.findByTitleOrAlias(options.pathTo);
-        toNode = byAlias[0] ?? null;
-      }
-      if (fromNode && toNode) {
-        const k = parseInt(options.pathK || "3", 10);
-        const { paths } = await ctx.graphEngine.findKShortestPaths(
-          fromNode.nodeId,
-          toNode.nodeId,
-          { k, edgeTypes: ["explicit_link", "sequence", "causes", "semantic"] }
-        );
-        if (paths.length > 0) {
-          computedPathData = {
-            paths: paths.map((p) => ({
-              path: p.path,
-              edges: p.edges,
-              hopCount: p.hopCount,
-              score: p.score
-            })),
-            fromId: fromNode.nodeId,
-            toId: toNode.nodeId,
-            fromLabel: fromNode.title,
-            toLabel: toNode.title
-          };
-          console.log(`Found ${paths.length} path(s) from "${fromNode.title}" to "${toNode.title}"`);
+      let computedPathData = null;
+      if (options.pathFrom && options.pathTo) {
+        console.log("Computing paths...");
+        let fromNode = await ctx.nodeRepository.findByPath(options.pathFrom);
+        if (!fromNode) {
+          const byTitle = await ctx.nodeRepository.findByTitle(options.pathFrom);
+          fromNode = byTitle[0] ?? null;
+        }
+        if (!fromNode) {
+          const byAlias = await ctx.nodeRepository.findByTitleOrAlias(options.pathFrom);
+          fromNode = byAlias[0] ?? null;
+        }
+        let toNode = await ctx.nodeRepository.findByPath(options.pathTo);
+        if (!toNode) {
+          const byTitle = await ctx.nodeRepository.findByTitle(options.pathTo);
+          toNode = byTitle[0] ?? null;
+        }
+        if (!toNode) {
+          const byAlias = await ctx.nodeRepository.findByTitleOrAlias(options.pathTo);
+          toNode = byAlias[0] ?? null;
+        }
+        if (fromNode && toNode) {
+          const k = parseInt(options.pathK || "3", 10);
+          const { paths } = await ctx.graphEngine.findKShortestPaths(
+            fromNode.nodeId,
+            toNode.nodeId,
+            { k, edgeTypes: ["explicit_link", "sequence", "causes", "semantic"] }
+          );
+          if (paths.length > 0) {
+            computedPathData = {
+              paths: paths.map((p) => ({
+                path: p.path,
+                edges: p.edges,
+                hopCount: p.hopCount,
+                score: p.score
+              })),
+              fromId: fromNode.nodeId,
+              toId: toNode.nodeId,
+              fromLabel: fromNode.title,
+              toLabel: toNode.title
+            };
+            console.log(
+              `Found ${paths.length} path(s) from "${fromNode.title}" to "${toNode.title}"`
+            );
+          } else {
+            console.log(`No paths found from "${fromNode.title}" to "${toNode.title}"`);
+          }
         } else {
-          console.log(`No paths found from "${fromNode.title}" to "${toNode.title}"`);
+          if (!fromNode) console.error(`Could not find node: "${options.pathFrom}"`);
+          if (!toNode) console.error(`Could not find node: "${options.pathTo}"`);
         }
-      } else {
-        if (!fromNode) console.error(`Could not find node: "${options.pathFrom}"`);
-        if (!toNode) console.error(`Could not find node: "${options.pathTo}"`);
       }
-    }
-    let wsConfig = null;
-    let wsServer = null;
-    if (options.live) {
-      console.log("Starting live update server...");
-      const { server, info } = await createVisualizeServer(ctx, {
-        onClose: () => {
-          console.log("\nBrowser disconnected. Server stopped.");
+      let wsConfig = null;
+      let wsServer = null;
+      if (options.live) {
+        console.log("Starting live update server...");
+        const { server, info } = await createVisualizeServer(ctx, {
+          onClose: () => {
+            console.log("\nBrowser disconnected. Server stopped.");
+            ctx.connectionManager.close();
+            process2.exit(0);
+          }
+        });
+        wsServer = server;
+        wsConfig = {
+          enabled: true,
+          port: info.port,
+          token: info.token,
+          protocolVersion: PROTOCOL_VERSION
+        };
+        console.log(`Live updates enabled on port ${info.port}`);
+      }
+      const htmlContent = generateVisualizationHtml(
+        graphData,
+        typeColors,
+        constellation,
+        computedPathData,
+        wsConfig
+      );
+      const outputDir = options.output ? path15.dirname(options.output) : getZettelScriptDir(ctx.vaultPath);
+      if (!fs12.existsSync(outputDir)) {
+        fs12.mkdirSync(outputDir, { recursive: true });
+      }
+      const outputPath = options.output || path15.join(outputDir, "graph.html");
+      fs12.writeFileSync(outputPath, htmlContent, "utf-8");
+      console.log(`
+Graph visualization generated at: ${outputPath}`);
+      if (options.open) {
+        console.log("Opening in default browser...");
+        await open(outputPath);
+      }
+      if (options.live && wsServer) {
+        console.log("\nLive mode active. Press Ctrl+C to stop.");
+        const shutdown = async () => {
+          console.log("\nShutting down...");
+          if (wsServer) {
+            await wsServer.stop();
+          }
           ctx.connectionManager.close();
           process2.exit(0);
-        }
-      });
-      wsServer = server;
-      wsConfig = {
-        enabled: true,
-        port: info.port,
-        token: info.token,
-        protocolVersion: PROTOCOL_VERSION
-      };
-      console.log(`Live updates enabled on port ${info.port}`);
-    }
-    const htmlContent = generateVisualizationHtml(graphData, typeColors, constellation, computedPathData, wsConfig);
-    const outputDir = options.output ? path15.dirname(options.output) : getZettelScriptDir(ctx.vaultPath);
-    if (!fs12.existsSync(outputDir)) {
-      fs12.mkdirSync(outputDir, { recursive: true });
-    }
-    const outputPath = options.output || path15.join(outputDir, "graph.html");
-    fs12.writeFileSync(outputPath, htmlContent, "utf-8");
-    console.log(`
-Graph visualization generated at: ${outputPath}`);
-    if (options.open) {
-      console.log("Opening in default browser...");
-      await open(outputPath);
-    }
-    if (options.live && wsServer) {
-      console.log("\nLive mode active. Press Ctrl+C to stop.");
-      const shutdown = async () => {
-        console.log("\nShutting down...");
-        if (wsServer) {
-          await wsServer.stop();
-        }
+        };
+        process2.on("SIGINT", shutdown);
+        process2.on("SIGTERM", shutdown);
+        await new Promise(() => {
+        });
+      } else {
         ctx.connectionManager.close();
-        process2.exit(0);
-      };
-      process2.on("SIGINT", shutdown);
-      process2.on("SIGTERM", shutdown);
-      await new Promise(() => {
-      });
-    } else {
-      ctx.connectionManager.close();
+      }
+    } catch (error) {
+      console.error("Visualization failed:", error);
+      process2.exit(1);
     }
-  } catch (error) {
-    console.error("Visualization failed:", error);
-    process2.exit(1);
   }
-});
+);
 
 // src/cli/commands/setup.ts
 import { Command as Command13 } from "commander";
 import * as fs13 from "fs";
 import * as path16 from "path";
+import * as readline3 from "readline";
 import process3 from "process";
 import { stringify as stringifyYaml7 } from "yaml";
-var setupCommand = new Command13("setup").alias("go").description("Initialize vault, index files, and generate visualization (0 to hero)").option("-f, --force", "Reinitialize even if already set up").option("--manuscript", "Enable manuscript mode with POV and timeline validation").option("--no-viz", "Skip visualization generation").option("-v, --verbose", "Show detailed output").action(async (options) => {
-  const vaultPath = process3.cwd();
-  const zettelDir = getZettelScriptDir(vaultPath);
-  let needsInit = true;
-  console.log("ZettelScript Setup");
-  console.log("==================\n");
-  if (fs13.existsSync(zettelDir) && !options.force) {
-    const existingRoot = findVaultRoot(vaultPath);
-    if (existingRoot) {
-      console.log("Step 1: Initialize");
-      console.log("  Already initialized, skipping...\n");
-      needsInit = false;
-    }
-  }
-  if (needsInit) {
-    console.log("Step 1: Initialize");
-    try {
-      fs13.mkdirSync(zettelDir, { recursive: true });
-      console.log(`  Created ${path16.relative(vaultPath, zettelDir)}/`);
-      const config = {
-        ...DEFAULT_CONFIG,
-        vault: {
-          ...DEFAULT_CONFIG.vault,
-          path: "."
-        },
-        manuscript: {
-          ...DEFAULT_CONFIG.manuscript,
-          enabled: options.manuscript || false
-        }
-      };
-      const configPath = getConfigPath(vaultPath);
-      fs13.writeFileSync(configPath, stringifyYaml7(config), "utf-8");
-      console.log(`  Created ${path16.relative(vaultPath, configPath)}`);
-      const dbPath = getDbPath(vaultPath);
-      const manager = ConnectionManager.getInstance(dbPath);
-      await manager.initialize();
-      manager.close();
-      ConnectionManager.resetInstance();
-      console.log(`  Created ${path16.relative(vaultPath, dbPath)}`);
-      const gitignorePath = path16.join(zettelDir, ".gitignore");
-      fs13.writeFileSync(gitignorePath, "# Ignore database (regenerated from files)\nzettelscript.db\nzettelscript.db-*\n", "utf-8");
-      console.log("  Done!\n");
-    } catch (error) {
-      console.error("  Failed to initialize:", error);
-      process3.exit(1);
-    }
-  }
-  console.log("Step 2: Index files");
-  try {
-    const ctx = await initContext();
-    const spinner = new Spinner("  Scanning files...");
-    spinner.start();
-    let lastProgress = 0;
-    const result = await fullIndex(ctx.pipeline, ctx.vaultPath, {
-      excludePatterns: ctx.config.vault.excludePatterns,
-      onProgress: (current, total, filePath) => {
-        if (current > lastProgress) {
-          lastProgress = current;
-          spinner.update(`  Indexing ${current}/${total}: ${filePath}`);
-        }
-      }
-    });
-    spinner.stop();
-    console.log(`  Files: ${result.stats.totalFiles}`);
-    console.log(`  Nodes: ${result.stats.nodeCount}`);
-    console.log(`  Edges: ${result.stats.edgeCount}`);
-    if (result.stats.unresolvedCount > 0) {
-      console.log(`  Unresolved links: ${result.stats.unresolvedCount}`);
-    }
-    console.log(`  Duration: ${formatDuration(result.stats.durationMs)}`);
-    if (result.errors.length > 0 && options.verbose) {
-      console.log(`  Errors (${result.errors.length}):`);
-      for (const err of result.errors.slice(0, 5)) {
-        console.log(`    ${err.path}: ${err.error}`);
-      }
-      if (result.errors.length > 5) {
-        console.log(`    ... and ${result.errors.length - 5} more`);
-      }
-    }
-    console.log("  Done!\n");
-    if (options.viz) {
-      console.log("Step 3: Generate visualization");
-      const nodes2 = await ctx.nodeRepository.findAll();
-      const edges2 = await ctx.edgeRepository.findAll();
-      if (nodes2.length === 0) {
-        console.log("  No nodes to visualize, skipping...\n");
-      } else {
-        const nodeWeights = /* @__PURE__ */ new Map();
-        edges2.forEach((e) => {
-          nodeWeights.set(e.sourceId, (nodeWeights.get(e.sourceId) || 0) + 1);
-          nodeWeights.set(e.targetId, (nodeWeights.get(e.targetId) || 0) + 1);
-        });
-        const graphData = {
-          nodes: nodes2.map((n) => ({
-            id: n.nodeId,
-            name: n.title,
-            type: n.type,
-            val: Math.max(1, Math.min(10, (nodeWeights.get(n.nodeId) || 0) / 2)),
-            color: typeColors[n.type] || "#94a3b8",
-            path: n.path,
-            metadata: n.metadata
-          })),
-          links: edges2.map((e) => ({
-            source: e.sourceId,
-            target: e.targetId,
-            type: e.edgeType,
-            strength: e.strength ?? 1,
-            provenance: e.provenance
-          }))
-        };
-        const htmlContent = generateVisualizationHtml(graphData, typeColors);
-        const outputPath = path16.join(getZettelScriptDir(ctx.vaultPath), "graph.html");
-        fs13.writeFileSync(outputPath, htmlContent, "utf-8");
-        console.log(`  Generated: ${path16.relative(vaultPath, outputPath)}`);
-        console.log("  Done!\n");
-      }
-    }
-    ctx.connectionManager.close();
-    console.log("Setup complete!");
-    console.log("---------------");
-    console.log("Next steps:");
-    console.log("  zettel query <search>   Search your knowledge graph");
-    console.log("  zettel discover --all   Find unlinked mentions");
-    console.log("  zettel watch            Watch for file changes");
-    if (options.viz && result.stats.nodeCount > 0) {
-      console.log("  zettel visualize        Open graph in browser");
-    }
-    if (options.manuscript) {
-      console.log("\nManuscript mode enabled:");
-      console.log("  zettel validate --continuity   Check POV/timeline consistency");
-    }
-  } catch (error) {
-    console.error("  Failed:", error);
-    process3.exit(1);
-  }
-});
-
-// src/cli/commands/constellation.ts
-import { Command as Command14 } from "commander";
-var constellationCommand = new Command14("constellation").alias("const").description("Manage saved graph views (constellations)");
-constellationCommand.command("save <name>").description("Save a constellation from JSON state").option("-s, --state <json>", "State JSON from visualizer").option("-d, --description <text>", "Description for the constellation").action(async (name, options) => {
-  try {
-    const ctx = await initContext();
-    const existing = await ctx.constellationRepository.findByName(name);
-    if (existing) {
-      console.error(`Constellation "${name}" already exists. Use a different name or delete it first.`);
-      ctx.connectionManager.close();
-      process.exit(1);
-    }
-    let state = {};
-    if (options.state) {
-      try {
-        state = JSON.parse(options.state);
-      } catch (e) {
-        console.error("Invalid JSON state:", e);
-        ctx.connectionManager.close();
-        process.exit(1);
-      }
-    }
-    const constellation = await ctx.constellationRepository.create({
-      name,
-      description: options.description,
-      hiddenNodeTypes: state.hiddenNodeTypes ?? [],
-      hiddenEdgeTypes: state.hiddenEdgeTypes ?? [],
-      showGhosts: state.showGhosts ?? true,
-      ghostThreshold: state.ghostThreshold ?? 1,
-      cameraX: state.cameraX,
-      cameraY: state.cameraY,
-      cameraZoom: state.cameraZoom,
-      focusNodeIds: state.focusNodeIds
-    });
-    console.log(`Constellation "${constellation.name}" saved successfully.`);
-    console.log(`
-To load it, run: zs visualize --constellation "${name}"`);
-    ctx.connectionManager.close();
-  } catch (error) {
-    console.error("Failed to save constellation:", error);
-    process.exit(1);
-  }
-});
-constellationCommand.command("list").alias("ls").description("List all saved constellations").action(async () => {
-  try {
-    const ctx = await initContext();
-    const constellations2 = await ctx.constellationRepository.findAll();
-    if (constellations2.length === 0) {
-      console.log("No constellations saved yet.");
-      console.log('\nTo save one, open the visualizer and click "Save Current View".');
-      ctx.connectionManager.close();
-      return;
-    }
-    const rows = constellations2.map((c) => [
-      c.name,
-      c.description || "-",
-      c.hiddenNodeTypes.length > 0 ? `${c.hiddenNodeTypes.length} hidden` : "all",
-      c.hiddenEdgeTypes.length > 0 ? `${c.hiddenEdgeTypes.length} hidden` : "all",
-      c.showGhosts ? "yes" : "no",
-      new Date(c.updatedAt).toLocaleDateString()
-    ]);
-    printTable(
-      ["Name", "Description", "Node Types", "Edge Types", "Ghosts", "Updated"],
-      rows
-    );
-    ctx.connectionManager.close();
-  } catch (error) {
-    console.error("Failed to list constellations:", error);
-    process.exit(1);
-  }
-});
-constellationCommand.command("show <name>").description("Show details of a constellation").action(async (name) => {
-  try {
-    const ctx = await initContext();
-    const constellation = await ctx.constellationRepository.findByName(name);
-    if (!constellation) {
-      console.error(`Constellation "${name}" not found.`);
-      ctx.connectionManager.close();
-      process.exit(1);
-    }
-    console.log(`
-Constellation: ${constellation.name}`);
-    console.log("\u2500".repeat(40));
-    if (constellation.description) {
-      console.log(`Description: ${constellation.description}`);
-    }
-    console.log(`
-Filters:`);
-    console.log(`  Hidden node types: ${constellation.hiddenNodeTypes.length > 0 ? constellation.hiddenNodeTypes.join(", ") : "(none)"}`);
-    console.log(`  Hidden edge types: ${constellation.hiddenEdgeTypes.length > 0 ? constellation.hiddenEdgeTypes.join(", ") : "(none)"}`);
-    console.log(`
-Ghost Nodes:`);
-    console.log(`  Show ghosts: ${constellation.showGhosts ? "yes" : "no"}`);
-    console.log(`  Min references: ${constellation.ghostThreshold}`);
-    if (constellation.cameraX !== void 0 || constellation.cameraY !== void 0) {
-      console.log(`
-Camera:`);
-      console.log(`  Position: (${constellation.cameraX?.toFixed(2) ?? "auto"}, ${constellation.cameraY?.toFixed(2) ?? "auto"})`);
-      console.log(`  Zoom: ${constellation.cameraZoom?.toFixed(2) ?? "auto"}`);
-    }
-    if (constellation.focusNodeIds && constellation.focusNodeIds.length > 0) {
-      console.log(`
-Focus nodes: ${constellation.focusNodeIds.length}`);
-    }
-    console.log(`
-Created: ${new Date(constellation.createdAt).toLocaleString()}`);
-    console.log(`Updated: ${new Date(constellation.updatedAt).toLocaleString()}`);
-    ctx.connectionManager.close();
-  } catch (error) {
-    console.error("Failed to show constellation:", error);
-    process.exit(1);
-  }
-});
-constellationCommand.command("delete <name>").alias("rm").description("Delete a constellation").action(async (name) => {
-  try {
-    const ctx = await initContext();
-    const deleted = await ctx.constellationRepository.deleteByName(name);
-    if (!deleted) {
-      console.error(`Constellation "${name}" not found.`);
-      ctx.connectionManager.close();
-      process.exit(1);
-    }
-    console.log(`Constellation "${name}" deleted.`);
-    ctx.connectionManager.close();
-  } catch (error) {
-    console.error("Failed to delete constellation:", error);
-    process.exit(1);
-  }
-});
-constellationCommand.command("update <name>").description("Update an existing constellation").option("-s, --state <json>", "New state JSON").option("-d, --description <text>", "New description").option("-n, --new-name <name>", "Rename the constellation").action(async (name, options) => {
-  try {
-    const ctx = await initContext();
-    const existing = await ctx.constellationRepository.findByName(name);
-    if (!existing) {
-      console.error(`Constellation "${name}" not found.`);
-      ctx.connectionManager.close();
-      process.exit(1);
-    }
-    let stateUpdates = {};
-    if (options.state) {
-      try {
-        stateUpdates = JSON.parse(options.state);
-      } catch (e) {
-        console.error("Invalid JSON state:", e);
-        ctx.connectionManager.close();
-        process.exit(1);
-      }
-    }
-    const updates = {
-      ...stateUpdates,
-      ...options.description !== void 0 && { description: options.description },
-      ...options.newName !== void 0 && { name: options.newName }
-    };
-    await ctx.constellationRepository.update(existing.constellationId, updates);
-    const finalName = options.newName ?? name;
-    console.log(`Constellation "${finalName}" updated.`);
-    ctx.connectionManager.close();
-  } catch (error) {
-    console.error("Failed to update constellation:", error);
-    process.exit(1);
-  }
-});
-
-// src/cli/commands/embed.ts
-import { Command as Command15 } from "commander";
-import * as fs14 from "fs";
-import * as path17 from "path";
+import { nanoid as nanoid10 } from "nanoid";
 
 // src/retrieval/embeddings/provider.ts
 var OpenAIEmbeddingProvider = class {
@@ -14265,7 +14190,7 @@ var OpenAIEmbeddingProvider = class {
       const response = await fetch(`${this.baseUrl}/embeddings`, {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${this.apiKey}`,
+          Authorization: `Bearer ${this.apiKey}`,
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
@@ -14374,149 +14299,6 @@ function createEmbeddingProvider(config) {
   }
 }
 
-// src/cli/commands/embed.ts
-var embedCommand = new Command15("embed").description("Manage node embeddings for semantic wormholes");
-embedCommand.command("compute").description("Compute embeddings for nodes that need them").option("-p, --provider <name>", "Embedding provider (openai|ollama|mock)", "openai").option("-m, --model <name>", "Model name (provider-specific)").option("--force", "Recompute all embeddings, not just dirty nodes").option("--batch-size <n>", "Batch size for API calls", "10").action(async (options) => {
-  try {
-    const ctx = await initContext();
-    const batchSize = parseInt(options.batchSize, 10);
-    let nodeIds;
-    if (options.force) {
-      const nodes3 = await ctx.nodeRepository.findAll();
-      nodeIds = nodes3.map((n) => n.nodeId);
-      console.log(`Force mode: will compute embeddings for all ${nodeIds.length} nodes`);
-    } else {
-      nodeIds = await ctx.embeddingRepository.findDirtyNodeIds();
-      if (nodeIds.length === 0) {
-        console.log("All nodes have up-to-date embeddings.");
-        ctx.connectionManager.close();
-        return;
-      }
-      console.log(`Found ${nodeIds.length} nodes needing embeddings`);
-    }
-    const providerConfig = {
-      provider: options.provider
-    };
-    if (options.provider === "openai") {
-      providerConfig.apiKey = process.env.OPENAI_API_KEY || ctx.config.embeddings.apiKey;
-      if (!providerConfig.apiKey) {
-        console.error("Error: OPENAI_API_KEY environment variable or config.embeddings.apiKey required");
-        ctx.connectionManager.close();
-        process.exit(1);
-      }
-    }
-    if (options.model) {
-      providerConfig.model = options.model;
-    } else if (ctx.config.embeddings.model) {
-      providerConfig.model = ctx.config.embeddings.model;
-    }
-    if (ctx.config.embeddings.baseUrl) {
-      providerConfig.baseUrl = ctx.config.embeddings.baseUrl;
-    }
-    const provider = createEmbeddingProvider(providerConfig);
-    const modelName = `${options.provider}:${providerConfig.model || provider.name}`;
-    console.log(`Using provider: ${modelName} (${provider.dimensions} dimensions)`);
-    const nodes2 = await ctx.nodeRepository.findByIds(nodeIds);
-    const nodeMap = new Map(nodes2.map((n) => [n.nodeId, n]));
-    const spinner = new Spinner("Computing embeddings...");
-    spinner.start();
-    let processed = 0;
-    let errors = 0;
-    for (let i = 0; i < nodeIds.length; i += batchSize) {
-      const batch = nodeIds.slice(i, i + batchSize);
-      const batchNodes = batch.map((id) => nodeMap.get(id)).filter(Boolean);
-      try {
-        const texts = [];
-        for (const node of batchNodes) {
-          const chunks2 = await ctx.chunkRepository.findByNodeId(node.nodeId);
-          if (chunks2.length > 0) {
-            texts.push(chunks2.map((c) => c.text).join("\n"));
-          } else {
-            const filePath = path17.join(ctx.vaultPath, node.path);
-            if (fs14.existsSync(filePath)) {
-              const content = fs14.readFileSync(filePath, "utf-8");
-              texts.push(content);
-            } else {
-              texts.push(node.title);
-            }
-          }
-        }
-        const embeddings = await provider.embedBatch(texts);
-        for (let j = 0; j < batchNodes.length; j++) {
-          const node = batchNodes[j];
-          const embedding = embeddings[j];
-          await ctx.embeddingRepository.upsert({
-            nodeId: node.nodeId,
-            embedding,
-            model: modelName,
-            dimensions: provider.dimensions,
-            contentHash: node.contentHash || ""
-          });
-        }
-        processed += batchNodes.length;
-        spinner.update(`Computing embeddings... ${processed}/${nodeIds.length}`);
-      } catch (error) {
-        errors += batchNodes.length;
-        console.error(`
-Error processing batch: ${error}`);
-      }
-    }
-    spinner.stop(`Computed embeddings for ${processed} nodes${errors > 0 ? ` (${errors} errors)` : ""}`);
-    ctx.connectionManager.close();
-  } catch (error) {
-    console.error("Embedding computation failed:", error);
-    process.exit(1);
-  }
-});
-embedCommand.command("stats").description("Show embedding statistics").action(async () => {
-  try {
-    const ctx = await initContext();
-    const totalNodes = await ctx.nodeRepository.count();
-    const embeddingCount = await ctx.embeddingRepository.count();
-    const dirtyCount = (await ctx.embeddingRepository.findDirtyNodeIds()).length;
-    const byModel = await ctx.embeddingRepository.countByModel();
-    console.log("\n=== Embedding Statistics ===\n");
-    console.log(`Total nodes: ${totalNodes}`);
-    console.log(`Embedded nodes: ${embeddingCount}`);
-    console.log(`Coverage: ${(embeddingCount / totalNodes * 100).toFixed(1)}%`);
-    console.log(`Nodes needing update: ${dirtyCount}`);
-    if (Object.keys(byModel).length > 0) {
-      console.log("\nBy model:");
-      for (const [model, count] of Object.entries(byModel)) {
-        console.log(`  ${model}: ${count}`);
-      }
-    }
-    ctx.connectionManager.close();
-  } catch (error) {
-    console.error("Failed to get stats:", error);
-    process.exit(1);
-  }
-});
-embedCommand.command("clear").description("Clear all embeddings").option("-m, --model <name>", "Only clear embeddings for a specific model").action(async (options) => {
-  try {
-    const ctx = await initContext();
-    let count;
-    if (options.model) {
-      count = await ctx.embeddingRepository.deleteByModel(options.model);
-      console.log(`Cleared ${count} embeddings for model: ${options.model}`);
-    } else {
-      const embeddings = await ctx.embeddingRepository.findAll();
-      for (const emb of embeddings) {
-        await ctx.embeddingRepository.delete(emb.embeddingId);
-      }
-      count = embeddings.length;
-      console.log(`Cleared all ${count} embeddings`);
-    }
-    ctx.connectionManager.close();
-  } catch (error) {
-    console.error("Failed to clear embeddings:", error);
-    process.exit(1);
-  }
-});
-
-// src/cli/commands/wormhole.ts
-import { Command as Command16 } from "commander";
-
 // src/retrieval/similarity/similarity.ts
 function cosineSimilarity(a, b) {
   if (a.length !== b.length) {
@@ -14526,9 +14308,11 @@ function cosineSimilarity(a, b) {
   let normA = 0;
   let normB = 0;
   for (let i = 0; i < a.length; i++) {
-    dotProduct += a[i] * b[i];
-    normA += a[i] * a[i];
-    normB += b[i] * b[i];
+    const aVal = a[i];
+    const bVal = b[i];
+    dotProduct += aVal * bVal;
+    normA += aVal * aVal;
+    normB += bVal * bVal;
   }
   const magnitude = Math.sqrt(normA) * Math.sqrt(normB);
   if (magnitude === 0) return 0;
@@ -14727,8 +14511,711 @@ var WormholeDetector = class {
   }
 };
 
+// src/cli/commands/setup.ts
+async function promptYesNo2(question) {
+  const rl = readline3.createInterface({
+    input: process3.stdin,
+    output: process3.stdout
+  });
+  return new Promise((resolve4) => {
+    rl.question(`${question} (y/n) `, (answer) => {
+      rl.close();
+      resolve4(answer.toLowerCase().startsWith("y"));
+    });
+  });
+}
+function formatBytes2(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+var setupCommand = new Command13("setup").alias("go").description("Initialize vault, index files, and generate visualization (0 to hero)").option("-f, --force", "Reinitialize even if already set up").option("--manuscript", "Enable manuscript mode with POV and timeline validation").option("--extract", "Extract entities from prose using LLM").option("--extract-model <model>", "Ollama model for extraction", "qwen2.5:7b").option("--embed", "Compute embeddings for semantic features").option("--wormholes", "Detect semantic wormholes (implies --embed)").option("--no-viz", "Skip visualization generation").option("-v, --verbose", "Show detailed output").action(async (options) => {
+  const vaultPath = process3.cwd();
+  const zettelDir = getZettelScriptDir(vaultPath);
+  let needsInit = true;
+  console.log("ZettelScript Setup");
+  console.log("==================\n");
+  if (fs13.existsSync(zettelDir) && !options.force) {
+    const existingRoot = findVaultRoot(vaultPath);
+    if (existingRoot) {
+      console.log("Step 1: Initialize");
+      console.log("  Already initialized, skipping...\n");
+      needsInit = false;
+    }
+  }
+  if (needsInit) {
+    console.log("Step 1: Initialize");
+    try {
+      fs13.mkdirSync(zettelDir, { recursive: true });
+      console.log(`  Created ${path16.relative(vaultPath, zettelDir)}/`);
+      const config = {
+        ...DEFAULT_CONFIG,
+        vault: {
+          ...DEFAULT_CONFIG.vault,
+          path: "."
+        },
+        manuscript: {
+          ...DEFAULT_CONFIG.manuscript,
+          enabled: options.manuscript || false
+        }
+      };
+      const configPath = getConfigPath(vaultPath);
+      fs13.writeFileSync(configPath, stringifyYaml7(config), "utf-8");
+      console.log(`  Created ${path16.relative(vaultPath, configPath)}`);
+      const dbPath = getDbPath(vaultPath);
+      const manager = ConnectionManager.getInstance(dbPath);
+      await manager.initialize();
+      manager.close();
+      ConnectionManager.resetInstance();
+      console.log(`  Created ${path16.relative(vaultPath, dbPath)}`);
+      const gitignorePath = path16.join(zettelDir, ".gitignore");
+      fs13.writeFileSync(
+        gitignorePath,
+        "# Ignore database (regenerated from files)\nzettelscript.db\nzettelscript.db-*\n",
+        "utf-8"
+      );
+      console.log("  Done!\n");
+    } catch (error) {
+      console.error("  Failed to initialize:", error);
+      process3.exit(1);
+    }
+  }
+  console.log("Step 2: Index files");
+  try {
+    const ctx = await initContext();
+    const spinner = new Spinner("  Scanning files...");
+    spinner.start();
+    let lastProgress = 0;
+    const result = await fullIndex(ctx.pipeline, ctx.vaultPath, {
+      excludePatterns: ctx.config.vault.excludePatterns,
+      onProgress: (current, total, filePath) => {
+        if (current > lastProgress) {
+          lastProgress = current;
+          spinner.update(`  Indexing ${current}/${total}: ${filePath}`);
+        }
+      }
+    });
+    spinner.stop();
+    console.log(`  Files: ${result.stats.totalFiles}`);
+    console.log(`  Nodes: ${result.stats.nodeCount}`);
+    console.log(`  Edges: ${result.stats.edgeCount}`);
+    if (result.stats.unresolvedCount > 0) {
+      console.log(`  Unresolved links: ${result.stats.unresolvedCount}`);
+    }
+    console.log(`  Duration: ${formatDuration(result.stats.durationMs)}`);
+    if (result.errors.length > 0 && options.verbose) {
+      console.log(`  Errors (${result.errors.length}):`);
+      for (const err of result.errors.slice(0, 5)) {
+        console.log(`    ${err.path}: ${err.error}`);
+      }
+      if (result.errors.length > 5) {
+        console.log(`    ... and ${result.errors.length - 5} more`);
+      }
+    }
+    console.log("  Done!\n");
+    let stepNum = 3;
+    if (options.extract) {
+      console.log(`Step ${stepNum}: Extract entities`);
+      stepNum++;
+      const ollamaRunning = await checkOllamaRunning();
+      if (!ollamaRunning) {
+        console.log("  Ollama is not running, skipping extraction.");
+        console.log("  Start Ollama and run: zettel extract --all\n");
+      } else {
+        const modelExists = await checkOllamaModelExists(options.extractModel);
+        if (!modelExists) {
+          console.log(`  Model '${options.extractModel}' is not installed.`);
+          const availableModels = await listOllamaModels();
+          if (availableModels.length > 0) {
+            console.log(
+              `  Installed: ${availableModels.slice(0, 3).join(", ")}${availableModels.length > 3 ? "..." : ""}`
+            );
+          }
+          const shouldDownload = await promptYesNo2(`  Download '${options.extractModel}' now?`);
+          if (shouldDownload) {
+            console.log(`  Downloading ${options.extractModel}...`);
+            try {
+              for await (const progress of pullOllamaModel(options.extractModel)) {
+                if (progress.completed !== void 0 && progress.total !== void 0) {
+                  const percent = (progress.completed / progress.total * 100).toFixed(0);
+                  process3.stdout.write(
+                    `\r  ${progress.status}: ${formatBytes2(progress.completed)} / ${formatBytes2(progress.total)} (${percent}%)    `
+                  );
+                } else {
+                  process3.stdout.write(`\r  ${progress.status}...    `);
+                }
+              }
+              console.log("\n  Download complete!");
+            } catch (err) {
+              console.error(
+                `
+  Failed to download: ${err instanceof Error ? err.message : err}`
+              );
+              console.log("  Skipping extraction.\n");
+            }
+          } else {
+            console.log("  Skipping extraction.\n");
+          }
+        }
+        const modelReady = await checkOllamaModelExists(options.extractModel);
+        if (modelReady) {
+          const llmProvider = new OllamaLLMProvider({
+            provider: "ollama",
+            model: options.extractModel,
+            baseUrl: "http://localhost:11434"
+          });
+          const extractor = new EntityExtractor({
+            llmProvider,
+            chunkSize: 6e3
+          });
+          const findMarkdown = (dir) => {
+            const results = [];
+            const entries = fs13.readdirSync(dir, { withFileTypes: true });
+            for (const entry of entries) {
+              const fullPath = path16.join(dir, entry.name);
+              if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
+              if (entry.isDirectory()) {
+                results.push(...findMarkdown(fullPath));
+              } else if (entry.name.endsWith(".md")) {
+                results.push(fullPath);
+              }
+            }
+            return results;
+          };
+          const files = findMarkdown(ctx.vaultPath);
+          const allEntities = /* @__PURE__ */ new Map();
+          let filesProcessed = 0;
+          const spinner2 = new Spinner(`  Extracting from ${files.length} files...`);
+          spinner2.start();
+          for (const filePath of files) {
+            const content = fs13.readFileSync(filePath, "utf-8");
+            if (content.length < 100) continue;
+            try {
+              const result2 = await extractor.extractFromText(content);
+              for (const entity of result2.entities) {
+                const key = entity.name.toLowerCase();
+                if (!allEntities.has(key)) {
+                  allEntities.set(key, entity);
+                } else {
+                  const existing = allEntities.get(key);
+                  existing.mentions += entity.mentions;
+                }
+              }
+              filesProcessed++;
+              spinner2.update(
+                `  Extracted ${filesProcessed}/${files.length}: ${allEntities.size} entities found`
+              );
+            } catch {
+            }
+          }
+          spinner2.stop();
+          const outputDir = path16.join(ctx.vaultPath, "entities");
+          if (!fs13.existsSync(outputDir)) {
+            fs13.mkdirSync(outputDir, { recursive: true });
+          }
+          let created = 0;
+          for (const entity of allEntities.values()) {
+            if (entity.mentions < 2) continue;
+            const safeName = entity.name.replace(/[<>:"/\\|?*]/g, "-");
+            const filePath = path16.join(outputDir, `${safeName}.md`);
+            if (!fs13.existsSync(filePath)) {
+              const frontmatter = {
+                id: nanoid10(12),
+                title: entity.name,
+                type: entity.type,
+                aliases: entity.aliases.length > 0 ? entity.aliases : void 0
+              };
+              const content = `---
+${stringifyYaml7(frontmatter)}---
+
+${entity.description}
+`;
+              fs13.writeFileSync(filePath, content, "utf-8");
+              created++;
+            }
+          }
+          console.log(`  Entities found: ${allEntities.size}`);
+          console.log(`  Files created: ${created} (in entities/)`);
+          console.log("  Done!\n");
+          if (created > 0) {
+            console.log(`Step ${stepNum}: Re-index (including new entities)`);
+            stepNum++;
+            const reindexSpinner = new Spinner("  Re-indexing...");
+            reindexSpinner.start();
+            await fullIndex(ctx.pipeline, ctx.vaultPath, {
+              excludePatterns: ctx.config.vault.excludePatterns
+            });
+            reindexSpinner.stop();
+            console.log("  Done!\n");
+          }
+        }
+      }
+    }
+    const needsEmbed = options.embed || options.wormholes;
+    if (needsEmbed) {
+      console.log(`Step ${stepNum}: Compute embeddings`);
+      stepNum++;
+      try {
+        const provider = createEmbeddingProvider(ctx.config.embeddings);
+        const dirtyNodeIds = await ctx.embeddingRepository.findDirtyNodeIds();
+        if (dirtyNodeIds.length === 0) {
+          console.log("  All nodes have up-to-date embeddings.");
+          console.log("  Done!\n");
+        } else {
+          const nodes2 = await ctx.nodeRepository.findByIds(dirtyNodeIds);
+          let computed = 0;
+          const spinner2 = new Spinner(`  Computing embeddings for ${nodes2.length} nodes...`);
+          spinner2.start();
+          for (const node of nodes2) {
+            const filePath = path16.join(ctx.vaultPath, node.path);
+            let text2 = node.title;
+            if (fs13.existsSync(filePath)) {
+              text2 = fs13.readFileSync(filePath, "utf-8");
+            }
+            try {
+              const embedding = await provider.embed(text2);
+              await ctx.embeddingRepository.upsert({
+                nodeId: node.nodeId,
+                embedding,
+                model: ctx.config.embeddings.model,
+                dimensions: provider.dimensions,
+                contentHash: node.contentHash || ""
+              });
+              computed++;
+              spinner2.update(`  Computed ${computed}/${nodes2.length} embeddings...`);
+            } catch {
+            }
+          }
+          spinner2.stop();
+          console.log(`  Embeddings computed: ${computed}`);
+          console.log("  Done!\n");
+        }
+      } catch (err) {
+        console.log(
+          `  Embedding provider not configured: ${err instanceof Error ? err.message : err}`
+        );
+        console.log("  Configure embeddings in .zettelscript/config.yaml\n");
+      }
+    }
+    if (options.wormholes) {
+      console.log(`Step ${stepNum}: Detect semantic wormholes`);
+      stepNum++;
+      try {
+        const detector = new WormholeDetector(
+          ctx.embeddingRepository,
+          ctx.edgeRepository,
+          ctx.wormholeRepository,
+          ctx.nodeRepository
+        );
+        const spinner2 = new Spinner("  Detecting wormholes...");
+        spinner2.start();
+        const candidates = await detector.detectWormholes();
+        spinner2.stop();
+        console.log(`  Wormholes detected: ${candidates.length}`);
+        console.log("  Done!\n");
+      } catch (err) {
+        console.log(`  Failed: ${err instanceof Error ? err.message : err}
+`);
+      }
+    }
+    if (options.viz) {
+      console.log(`Step ${stepNum}: Generate visualization`);
+      const nodes2 = await ctx.nodeRepository.findAll();
+      const edges2 = await ctx.edgeRepository.findAll();
+      if (nodes2.length === 0) {
+        console.log("  No nodes to visualize, skipping...\n");
+      } else {
+        const nodeWeights = /* @__PURE__ */ new Map();
+        edges2.forEach((e) => {
+          nodeWeights.set(e.sourceId, (nodeWeights.get(e.sourceId) || 0) + 1);
+          nodeWeights.set(e.targetId, (nodeWeights.get(e.targetId) || 0) + 1);
+        });
+        const graphData = {
+          nodes: nodes2.map((n) => ({
+            id: n.nodeId,
+            name: n.title,
+            type: n.type,
+            val: Math.max(1, Math.min(10, (nodeWeights.get(n.nodeId) || 0) / 2)),
+            color: typeColors[n.type] || "#94a3b8",
+            path: n.path,
+            metadata: n.metadata
+          })),
+          links: edges2.map((e) => ({
+            source: e.sourceId,
+            target: e.targetId,
+            type: e.edgeType,
+            strength: e.strength ?? 1,
+            provenance: e.provenance
+          }))
+        };
+        const htmlContent = generateVisualizationHtml(graphData, typeColors);
+        const outputPath = path16.join(getZettelScriptDir(ctx.vaultPath), "graph.html");
+        fs13.writeFileSync(outputPath, htmlContent, "utf-8");
+        console.log(`  Generated: ${path16.relative(vaultPath, outputPath)}`);
+        console.log("  Done!\n");
+      }
+    }
+    ctx.connectionManager.close();
+    console.log("Setup complete!");
+    console.log("---------------");
+    console.log("Next steps:");
+    if (options.viz && result.stats.nodeCount > 0) {
+      console.log("  zettel viz              Open graph in browser");
+    }
+    if (!options.extract) {
+      console.log("  zettel go --extract     Extract entities with AI");
+    }
+    if (!options.wormholes) {
+      console.log("  zettel go --wormholes   Find hidden connections");
+    }
+    console.log("  zettel discover --all   Find unlinked mentions");
+    console.log("  zettel watch            Watch for file changes");
+    if (options.manuscript) {
+      console.log("\nManuscript mode enabled:");
+      console.log("  zettel validate --continuity   Check POV/timeline consistency");
+    }
+    if (options.extract || options.wormholes) {
+      console.log("\nTo explore semantic features:");
+      console.log("  zettel wormhole list    Show suggested connections");
+      console.log('  zettel path "A" "B"     Find narrative paths');
+    }
+  } catch (error) {
+    console.error("  Failed:", error);
+    process3.exit(1);
+  }
+});
+
+// src/cli/commands/constellation.ts
+import { Command as Command14 } from "commander";
+var constellationCommand = new Command14("constellation").alias("const").description("Manage saved graph views (constellations)");
+constellationCommand.command("save <name>").description("Save a constellation from JSON state").option("-s, --state <json>", "State JSON from visualizer").option("-d, --description <text>", "Description for the constellation").action(async (name, options) => {
+  try {
+    const ctx = await initContext();
+    const existing = await ctx.constellationRepository.findByName(name);
+    if (existing) {
+      console.error(
+        `Constellation "${name}" already exists. Use a different name or delete it first.`
+      );
+      ctx.connectionManager.close();
+      process.exit(1);
+    }
+    let state = {};
+    if (options.state) {
+      try {
+        state = JSON.parse(options.state);
+      } catch (e) {
+        console.error("Invalid JSON state:", e);
+        ctx.connectionManager.close();
+        process.exit(1);
+      }
+    }
+    const createInput = {
+      name,
+      hiddenNodeTypes: state.hiddenNodeTypes ?? [],
+      hiddenEdgeTypes: state.hiddenEdgeTypes ?? [],
+      showGhosts: state.showGhosts ?? true,
+      ghostThreshold: state.ghostThreshold ?? 1
+    };
+    if (options.description !== void 0) createInput.description = options.description;
+    if (state.cameraX !== void 0) createInput.cameraX = state.cameraX;
+    if (state.cameraY !== void 0) createInput.cameraY = state.cameraY;
+    if (state.cameraZoom !== void 0) createInput.cameraZoom = state.cameraZoom;
+    if (state.focusNodeIds !== void 0) createInput.focusNodeIds = state.focusNodeIds;
+    const constellation = await ctx.constellationRepository.create(createInput);
+    console.log(`Constellation "${constellation.name}" saved successfully.`);
+    console.log(`
+To load it, run: zs visualize --constellation "${name}"`);
+    ctx.connectionManager.close();
+  } catch (error) {
+    console.error("Failed to save constellation:", error);
+    process.exit(1);
+  }
+});
+constellationCommand.command("list").alias("ls").description("List all saved constellations").action(async () => {
+  try {
+    const ctx = await initContext();
+    const constellations2 = await ctx.constellationRepository.findAll();
+    if (constellations2.length === 0) {
+      console.log("No constellations saved yet.");
+      console.log('\nTo save one, open the visualizer and click "Save Current View".');
+      ctx.connectionManager.close();
+      return;
+    }
+    const rows = constellations2.map((c) => [
+      c.name,
+      c.description || "-",
+      c.hiddenNodeTypes.length > 0 ? `${c.hiddenNodeTypes.length} hidden` : "all",
+      c.hiddenEdgeTypes.length > 0 ? `${c.hiddenEdgeTypes.length} hidden` : "all",
+      c.showGhosts ? "yes" : "no",
+      new Date(c.updatedAt).toLocaleDateString()
+    ]);
+    printTable(["Name", "Description", "Node Types", "Edge Types", "Ghosts", "Updated"], rows);
+    ctx.connectionManager.close();
+  } catch (error) {
+    console.error("Failed to list constellations:", error);
+    process.exit(1);
+  }
+});
+constellationCommand.command("show <name>").description("Show details of a constellation").action(async (name) => {
+  try {
+    const ctx = await initContext();
+    const constellation = await ctx.constellationRepository.findByName(name);
+    if (!constellation) {
+      console.error(`Constellation "${name}" not found.`);
+      ctx.connectionManager.close();
+      process.exit(1);
+    }
+    console.log(`
+Constellation: ${constellation.name}`);
+    console.log("\u2500".repeat(40));
+    if (constellation.description) {
+      console.log(`Description: ${constellation.description}`);
+    }
+    console.log(`
+Filters:`);
+    console.log(
+      `  Hidden node types: ${constellation.hiddenNodeTypes.length > 0 ? constellation.hiddenNodeTypes.join(", ") : "(none)"}`
+    );
+    console.log(
+      `  Hidden edge types: ${constellation.hiddenEdgeTypes.length > 0 ? constellation.hiddenEdgeTypes.join(", ") : "(none)"}`
+    );
+    console.log(`
+Ghost Nodes:`);
+    console.log(`  Show ghosts: ${constellation.showGhosts ? "yes" : "no"}`);
+    console.log(`  Min references: ${constellation.ghostThreshold}`);
+    if (constellation.cameraX !== void 0 || constellation.cameraY !== void 0) {
+      console.log(`
+Camera:`);
+      console.log(
+        `  Position: (${constellation.cameraX?.toFixed(2) ?? "auto"}, ${constellation.cameraY?.toFixed(2) ?? "auto"})`
+      );
+      console.log(`  Zoom: ${constellation.cameraZoom?.toFixed(2) ?? "auto"}`);
+    }
+    if (constellation.focusNodeIds && constellation.focusNodeIds.length > 0) {
+      console.log(`
+Focus nodes: ${constellation.focusNodeIds.length}`);
+    }
+    console.log(`
+Created: ${new Date(constellation.createdAt).toLocaleString()}`);
+    console.log(`Updated: ${new Date(constellation.updatedAt).toLocaleString()}`);
+    ctx.connectionManager.close();
+  } catch (error) {
+    console.error("Failed to show constellation:", error);
+    process.exit(1);
+  }
+});
+constellationCommand.command("delete <name>").alias("rm").description("Delete a constellation").action(async (name) => {
+  try {
+    const ctx = await initContext();
+    const deleted = await ctx.constellationRepository.deleteByName(name);
+    if (!deleted) {
+      console.error(`Constellation "${name}" not found.`);
+      ctx.connectionManager.close();
+      process.exit(1);
+    }
+    console.log(`Constellation "${name}" deleted.`);
+    ctx.connectionManager.close();
+  } catch (error) {
+    console.error("Failed to delete constellation:", error);
+    process.exit(1);
+  }
+});
+constellationCommand.command("update <name>").description("Update an existing constellation").option("-s, --state <json>", "New state JSON").option("-d, --description <text>", "New description").option("-n, --new-name <name>", "Rename the constellation").action(
+  async (name, options) => {
+    try {
+      const ctx = await initContext();
+      const existing = await ctx.constellationRepository.findByName(name);
+      if (!existing) {
+        console.error(`Constellation "${name}" not found.`);
+        ctx.connectionManager.close();
+        process.exit(1);
+      }
+      let stateUpdates = {};
+      if (options.state) {
+        try {
+          stateUpdates = JSON.parse(options.state);
+        } catch (e) {
+          console.error("Invalid JSON state:", e);
+          ctx.connectionManager.close();
+          process.exit(1);
+        }
+      }
+      const updates = {
+        ...stateUpdates,
+        ...options.description !== void 0 && { description: options.description },
+        ...options.newName !== void 0 && { name: options.newName }
+      };
+      await ctx.constellationRepository.update(existing.constellationId, updates);
+      const finalName = options.newName ?? name;
+      console.log(`Constellation "${finalName}" updated.`);
+      ctx.connectionManager.close();
+    } catch (error) {
+      console.error("Failed to update constellation:", error);
+      process.exit(1);
+    }
+  }
+);
+
+// src/cli/commands/embed.ts
+import { Command as Command15 } from "commander";
+import * as fs14 from "fs";
+import * as path17 from "path";
+var embedCommand = new Command15("embed").description(
+  "Manage node embeddings for semantic wormholes"
+);
+embedCommand.command("compute").description("Compute embeddings for nodes that need them").option("-p, --provider <name>", "Embedding provider (openai|ollama|mock)", "openai").option("-m, --model <name>", "Model name (provider-specific)").option("--force", "Recompute all embeddings, not just dirty nodes").option("--batch-size <n>", "Batch size for API calls", "10").action(
+  async (options) => {
+    try {
+      const ctx = await initContext();
+      const batchSize = parseInt(options.batchSize, 10);
+      let nodeIds;
+      if (options.force) {
+        const nodes3 = await ctx.nodeRepository.findAll();
+        nodeIds = nodes3.map((n) => n.nodeId);
+        console.log(`Force mode: will compute embeddings for all ${nodeIds.length} nodes`);
+      } else {
+        nodeIds = await ctx.embeddingRepository.findDirtyNodeIds();
+        if (nodeIds.length === 0) {
+          console.log("All nodes have up-to-date embeddings.");
+          ctx.connectionManager.close();
+          return;
+        }
+        console.log(`Found ${nodeIds.length} nodes needing embeddings`);
+      }
+      const providerConfig = {
+        provider: options.provider
+      };
+      if (options.provider === "openai") {
+        const apiKey = process.env.OPENAI_API_KEY || ctx.config.embeddings.apiKey;
+        if (!apiKey) {
+          console.error(
+            "Error: OPENAI_API_KEY environment variable or config.embeddings.apiKey required"
+          );
+          ctx.connectionManager.close();
+          process.exit(1);
+        }
+        providerConfig.apiKey = apiKey;
+      }
+      if (options.model) {
+        providerConfig.model = options.model;
+      } else if (ctx.config.embeddings.model) {
+        providerConfig.model = ctx.config.embeddings.model;
+      }
+      if (ctx.config.embeddings.baseUrl) {
+        providerConfig.baseUrl = ctx.config.embeddings.baseUrl;
+      }
+      const provider = createEmbeddingProvider(providerConfig);
+      const modelName = `${options.provider}:${providerConfig.model || provider.name}`;
+      console.log(`Using provider: ${modelName} (${provider.dimensions} dimensions)`);
+      const nodes2 = await ctx.nodeRepository.findByIds(nodeIds);
+      const nodeMap = new Map(nodes2.map((n) => [n.nodeId, n]));
+      const spinner = new Spinner("Computing embeddings...");
+      spinner.start();
+      let processed = 0;
+      let errors = 0;
+      for (let i = 0; i < nodeIds.length; i += batchSize) {
+        const batch = nodeIds.slice(i, i + batchSize);
+        const batchNodes = batch.map((id) => nodeMap.get(id)).filter(Boolean);
+        try {
+          const texts = [];
+          for (const node of batchNodes) {
+            const chunks2 = await ctx.chunkRepository.findByNodeId(node.nodeId);
+            if (chunks2.length > 0) {
+              texts.push(chunks2.map((c) => c.text).join("\n"));
+            } else {
+              const filePath = path17.join(ctx.vaultPath, node.path);
+              if (fs14.existsSync(filePath)) {
+                const content = fs14.readFileSync(filePath, "utf-8");
+                texts.push(content);
+              } else {
+                texts.push(node.title);
+              }
+            }
+          }
+          const embeddings = await provider.embedBatch(texts);
+          for (let j = 0; j < batchNodes.length; j++) {
+            const node = batchNodes[j];
+            const embedding = embeddings[j];
+            if (node && embedding) {
+              await ctx.embeddingRepository.upsert({
+                nodeId: node.nodeId,
+                embedding,
+                model: modelName,
+                dimensions: provider.dimensions,
+                contentHash: node.contentHash || ""
+              });
+            }
+          }
+          processed += batchNodes.length;
+          spinner.update(`Computing embeddings... ${processed}/${nodeIds.length}`);
+        } catch (error) {
+          errors += batchNodes.length;
+          console.error(`
+Error processing batch: ${error}`);
+        }
+      }
+      spinner.stop(
+        `Computed embeddings for ${processed} nodes${errors > 0 ? ` (${errors} errors)` : ""}`
+      );
+      ctx.connectionManager.close();
+    } catch (error) {
+      console.error("Embedding computation failed:", error);
+      process.exit(1);
+    }
+  }
+);
+embedCommand.command("stats").description("Show embedding statistics").action(async () => {
+  try {
+    const ctx = await initContext();
+    const totalNodes = await ctx.nodeRepository.count();
+    const embeddingCount = await ctx.embeddingRepository.count();
+    const dirtyCount = (await ctx.embeddingRepository.findDirtyNodeIds()).length;
+    const byModel = await ctx.embeddingRepository.countByModel();
+    console.log("\n=== Embedding Statistics ===\n");
+    console.log(`Total nodes: ${totalNodes}`);
+    console.log(`Embedded nodes: ${embeddingCount}`);
+    console.log(`Coverage: ${(embeddingCount / totalNodes * 100).toFixed(1)}%`);
+    console.log(`Nodes needing update: ${dirtyCount}`);
+    if (Object.keys(byModel).length > 0) {
+      console.log("\nBy model:");
+      for (const [model, count] of Object.entries(byModel)) {
+        console.log(`  ${model}: ${count}`);
+      }
+    }
+    ctx.connectionManager.close();
+  } catch (error) {
+    console.error("Failed to get stats:", error);
+    process.exit(1);
+  }
+});
+embedCommand.command("clear").description("Clear all embeddings").option("-m, --model <name>", "Only clear embeddings for a specific model").action(async (options) => {
+  try {
+    const ctx = await initContext();
+    let count;
+    if (options.model) {
+      count = await ctx.embeddingRepository.deleteByModel(options.model);
+      console.log(`Cleared ${count} embeddings for model: ${options.model}`);
+    } else {
+      const embeddings = await ctx.embeddingRepository.findAll();
+      for (const emb of embeddings) {
+        await ctx.embeddingRepository.delete(emb.embeddingId);
+      }
+      count = embeddings.length;
+      console.log(`Cleared all ${count} embeddings`);
+    }
+    ctx.connectionManager.close();
+  } catch (error) {
+    console.error("Failed to clear embeddings:", error);
+    process.exit(1);
+  }
+});
+
 // src/cli/commands/wormhole.ts
-var wormholeCommand = new Command16("wormhole").description("Detect and manage semantic wormholes (similar but unlinked nodes)");
+import { Command as Command16 } from "commander";
+var wormholeCommand = new Command16("wormhole").description(
+  "Detect and manage semantic wormholes (similar but unlinked nodes)"
+);
 wormholeCommand.command("detect").description("Detect semantic wormholes and create suggestion edges").option("-t, --threshold <number>", "Similarity threshold (0-1)", "0.75").option("-k, --max-per-node <number>", "Maximum wormholes per node", "5").option("--dry-run", "Preview without creating edges").action(async (options) => {
   try {
     const ctx = await initContext();
@@ -14742,14 +15229,18 @@ wormholeCommand.command("detect").description("Detect semantic wormholes and cre
       return;
     }
     const coverage = embeddingCount / nodeCount * 100;
-    console.log(`Embedding coverage: ${embeddingCount}/${nodeCount} nodes (${coverage.toFixed(1)}%)`);
+    console.log(
+      `Embedding coverage: ${embeddingCount}/${nodeCount} nodes (${coverage.toFixed(1)}%)`
+    );
     if (coverage < 50) {
       console.log("Warning: Low embedding coverage may result in missing wormholes.");
     }
     const embeddings = await ctx.embeddingRepository.findAll();
     const model = embeddings[0]?.model || "unknown";
-    console.log(`
-Detecting wormholes (threshold: ${threshold}, max per node: ${maxPerNode})...`);
+    console.log(
+      `
+Detecting wormholes (threshold: ${threshold}, max per node: ${maxPerNode})...`
+    );
     const detector = new WormholeDetector(
       ctx.embeddingRepository,
       ctx.edgeRepository,
@@ -14981,8 +15472,8 @@ var ALL_EDGE_TYPES = [
   "alias"
 ];
 async function resolveNode(identifier, ctx) {
-  let node = await ctx.nodeRepository.findByPath(identifier);
-  if (node) return node;
+  const node = await ctx.nodeRepository.findByPath(identifier);
+  if (node !== void 0) return node;
   const byTitle = await ctx.nodeRepository.findByTitle(identifier);
   if (byTitle.length === 1) return byTitle[0];
   if (byTitle.length > 1) {
@@ -15020,22 +15511,21 @@ Paths from "${fromNode.title}" to "${toNode.title}":
     }).join(" \u2192 ");
     const maxRouteLen = 80;
     const displayRoute = route.length > maxRouteLen ? route.slice(0, maxRouteLen - 3) + "..." : route;
-    return [
-      String(i + 1),
-      String(p.hopCount),
-      p.score.toFixed(1),
-      displayRoute
-    ];
+    return [String(i + 1), String(p.hopCount), p.score.toFixed(1), displayRoute];
   });
   printTable(["#", "Hops", "Score", "Route"], rows);
   console.log();
   if (paths.length < k) {
     const reasonText = reason === "diversity_filter" ? "diversity filter rejected remaining candidates" : reason === "exhausted_candidates" ? "no more unique paths exist" : reason;
-    console.log(`Found ${paths.length} path${paths.length !== 1 ? "s" : ""} (requested ${k}). Reason: ${reasonText}.`);
+    console.log(
+      `Found ${paths.length} path${paths.length !== 1 ? "s" : ""} (requested ${k}). Reason: ${reasonText}.`
+    );
   } else {
     console.log(`Found ${paths.length} path${paths.length !== 1 ? "s" : ""}.`);
   }
-  console.log(`Constraints: maxDepth=${options.maxDepth}, maxExtra=${options.maxExtra}, overlap\u22640.7, edges=[${effectiveEdgeTypes.join(",")}]`);
+  console.log(
+    `Constraints: maxDepth=${options.maxDepth}, maxExtra=${options.maxExtra}, overlap\u22640.7, edges=[${effectiveEdgeTypes.join(",")}]`
+  );
 }
 function formatVerbose(fromNode, toNode, paths, nodeMap, options) {
   console.log(`
@@ -15150,7 +15640,9 @@ var pathCommand = new Command17("path").description("Find narrative paths betwee
     }
     if (effectiveEdgeTypes.length === 0) {
       spinner.stop();
-      console.error("No edge types selected. Check your --edge-types and --exclude-edges options.");
+      console.error(
+        "No edge types selected. Check your --edge-types and --exclude-edges options."
+      );
       ctx.connectionManager.close();
       process4.exit(1);
     }

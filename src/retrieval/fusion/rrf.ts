@@ -38,11 +38,14 @@ export function reciprocalRankFusion(
   const weights = options.weights ?? {};
 
   // Collect scores for each item
-  const scores = new Map<string, {
-    score: number;
-    sources: Set<string>;
-    ranks: Map<string, number>;
-  }>();
+  const scores = new Map<
+    string,
+    {
+      score: number;
+      sources: Set<string>;
+      ranks: Map<string, number>;
+    }
+  >();
 
   for (const [source, items] of resultLists) {
     const weight = weights[source] ?? 1.0;
@@ -89,12 +92,15 @@ export function weightedScoreFusion(
   resultLists: Map<string, RankedItem[]>,
   weights: Record<string, number>
 ): FusionResult[] {
-  const scores = new Map<string, {
-    totalScore: number;
-    totalWeight: number;
-    sources: Set<string>;
-    ranks: Map<string, number>;
-  }>();
+  const scores = new Map<
+    string,
+    {
+      totalScore: number;
+      totalWeight: number;
+      sources: Set<string>;
+      ranks: Map<string, number>;
+    }
+  >();
 
   for (const [source, items] of resultLists) {
     const weight = weights[source] ?? 1.0;
@@ -143,7 +149,7 @@ export function interleave(
   const seen = new Set<string>();
   const results: FusionResult[] = [];
   const sources = Array.from(resultLists.keys());
-  const indices = new Map(sources.map(s => [s, 0]));
+  const indices = new Map(sources.map((s) => [s, 0]));
 
   while (results.length < maxResults) {
     let added = false;
@@ -182,12 +188,11 @@ export function interleave(
 /**
  * Combine fusion results with score boosting for items in multiple sources
  */
-export function boostOverlap(
-  results: FusionResult[],
-  boostFactor: number = 1.2
-): FusionResult[] {
-  return results.map(r => ({
-    ...r,
-    score: r.score * Math.pow(boostFactor, r.sources.length - 1),
-  })).sort((a, b) => b.score - a.score);
+export function boostOverlap(results: FusionResult[], boostFactor: number = 1.2): FusionResult[] {
+  return results
+    .map((r) => ({
+      ...r,
+      score: r.score * Math.pow(boostFactor, r.sources.length - 1),
+    }))
+    .sort((a, b) => b.score - a.score);
 }

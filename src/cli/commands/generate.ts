@@ -65,12 +65,15 @@ function printResult(result: GeneratorResult): void {
 // Create the parent generate command
 export const generateCommand = new Command('generate')
   .description('Generate vault notes from knowledge base data')
-  .addHelpText('after', `
+  .addHelpText(
+    'after',
+    `
 Examples:
   zettel generate characters         Generate character notes
   zettel generate all                Generate all note types
   zettel generate chapters -m book.md  Split manuscript into chapters
-`);
+`
+  );
 
 // Characters subcommand
 generateCommand
@@ -211,7 +214,9 @@ generateCommand
       const opts = resolveOptions(options);
 
       if (!opts.kbPath && !opts.worldRulesPath) {
-        spinner.stop('Error: No KB or world-rules file found. Specify with --kb or --world-rules option.');
+        spinner.stop(
+          'Error: No KB or world-rules file found. Specify with --kb or --world-rules option.'
+        );
         process.exit(1);
       }
 

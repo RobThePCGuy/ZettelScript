@@ -5,6 +5,8 @@
  * client (browser) and the ZettelScript server.
  */
 
+import { randomBytes } from 'node:crypto';
+
 // Protocol version for compatibility checking
 export const PROTOCOL_VERSION = '1.0.0';
 
@@ -20,6 +22,7 @@ export interface ClientMessage extends BaseMessage {
   sessionNonce?: string;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface ServerMessage extends BaseMessage {}
 
 // ============================================================================
@@ -74,11 +77,7 @@ export interface CreateAckMessage extends ServerMessage {
 // Patch Messages
 // ============================================================================
 
-export type PatchOp =
-  | NodeReplaceOp
-  | EdgeReplaceOp
-  | NodeRemoveOp
-  | EdgeRemoveOp;
+export type PatchOp = NodeReplaceOp | EdgeReplaceOp | NodeRemoveOp | EdgeRemoveOp;
 
 export interface NodeReplaceOp {
   op: 'node_replace';
@@ -251,16 +250,12 @@ export function isValidPath(targetFolder: string | undefined): boolean {
  * Generate a cryptographically secure token
  */
 export function generateToken(): string {
-  const array = new Uint8Array(32);
-  crypto.getRandomValues(array);
-  return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+  return randomBytes(32).toString('hex');
 }
 
 /**
  * Generate a session nonce
  */
 export function generateSessionNonce(): string {
-  const array = new Uint8Array(16);
-  crypto.getRandomValues(array);
-  return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+  return randomBytes(16).toString('hex');
 }

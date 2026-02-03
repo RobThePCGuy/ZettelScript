@@ -243,11 +243,13 @@ export class CacheManager<T = unknown> {
 /**
  * Specialized cache for mention detection results
  */
-export class MentionCache extends CacheManager<Array<{
-  targetId: string;
-  surfaceText: string;
-  confidence: number;
-}>> {
+export class MentionCache extends CacheManager<
+  Array<{
+    targetId: string;
+    surfaceText: string;
+    confidence: number;
+  }>
+> {
   constructor(config?: ZettelScriptConfig) {
     const cfg = config ?? DEFAULT_CONFIG;
     super({

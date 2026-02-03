@@ -3,8 +3,9 @@ import { initContext, Spinner, printTable } from '../utils.js';
 import { WormholeDetector } from '../../retrieval/similarity/wormhole-detector.js';
 import type { EdgeType } from '../../core/types/index.js';
 
-export const wormholeCommand = new Command('wormhole')
-  .description('Detect and manage semantic wormholes (similar but unlinked nodes)');
+export const wormholeCommand = new Command('wormhole').description(
+  'Detect and manage semantic wormholes (similar but unlinked nodes)'
+);
 
 wormholeCommand
   .command('detect')
@@ -12,11 +13,7 @@ wormholeCommand
   .option('-t, --threshold <number>', 'Similarity threshold (0-1)', '0.75')
   .option('-k, --max-per-node <number>', 'Maximum wormholes per node', '5')
   .option('--dry-run', 'Preview without creating edges')
-  .action(async (options: {
-    threshold: string;
-    maxPerNode: string;
-    dryRun?: boolean;
-  }) => {
+  .action(async (options: { threshold: string; maxPerNode: string; dryRun?: boolean }) => {
     try {
       const ctx = await initContext();
 
@@ -34,7 +31,9 @@ wormholeCommand
       }
 
       const coverage = (embeddingCount / nodeCount) * 100;
-      console.log(`Embedding coverage: ${embeddingCount}/${nodeCount} nodes (${coverage.toFixed(1)}%)`);
+      console.log(
+        `Embedding coverage: ${embeddingCount}/${nodeCount} nodes (${coverage.toFixed(1)}%)`
+      );
 
       if (coverage < 50) {
         console.log('Warning: Low embedding coverage may result in missing wormholes.');
@@ -44,7 +43,9 @@ wormholeCommand
       const embeddings = await ctx.embeddingRepository.findAll();
       const model = embeddings[0]?.model || 'unknown';
 
-      console.log(`\nDetecting wormholes (threshold: ${threshold}, max per node: ${maxPerNode})...`);
+      console.log(
+        `\nDetecting wormholes (threshold: ${threshold}, max per node: ${maxPerNode})...`
+      );
 
       const detector = new WormholeDetector(
         ctx.embeddingRepository,
@@ -73,12 +74,12 @@ wormholeCommand
 
       // Get node titles for display
       const nodeIds = new Set<string>();
-      candidates.forEach(c => {
+      candidates.forEach((c) => {
         nodeIds.add(c.sourceId);
         nodeIds.add(c.targetId);
       });
       const nodes = await ctx.nodeRepository.findByIds(Array.from(nodeIds));
-      const nodeMap = new Map(nodes.map(n => [n.nodeId, n]));
+      const nodeMap = new Map(nodes.map((n) => [n.nodeId, n]));
 
       // Display top candidates
       console.log('\nTop wormhole candidates:');
@@ -161,16 +162,16 @@ wormholeCommand
 
       // Get node titles
       const nodeIds = new Set<string>();
-      suggestions.forEach(s => {
+      suggestions.forEach((s) => {
         nodeIds.add(s.sourceId);
         nodeIds.add(s.targetId);
       });
       const nodes = await ctx.nodeRepository.findByIds(Array.from(nodeIds));
-      const nodeMap = new Map(nodes.map(n => [n.nodeId, n]));
+      const nodeMap = new Map(nodes.map((n) => [n.nodeId, n]));
 
       console.log(`\nPending wormhole suggestions (${suggestions.length}):\n`);
 
-      const rows = suggestions.map(s => {
+      const rows = suggestions.map((s) => {
         const source = nodeMap.get(s.sourceId);
         const target = nodeMap.get(s.targetId);
         const similarity = s.strength || 0;
@@ -205,7 +206,7 @@ wormholeCommand
 
       // Find the edge (support partial ID match)
       const suggestions = await ctx.edgeRepository.findByType('semantic_suggestion' as EdgeType);
-      const edge = suggestions.find(s => s.edgeId.startsWith(id));
+      const edge = suggestions.find((s) => s.edgeId.startsWith(id));
 
       if (!edge) {
         console.error(`Wormhole suggestion not found: ${id}`);
@@ -248,7 +249,7 @@ wormholeCommand
 
       // Find the edge (support partial ID match)
       const suggestions = await ctx.edgeRepository.findByType('semantic_suggestion' as EdgeType);
-      const edge = suggestions.find(s => s.edgeId.startsWith(id));
+      const edge = suggestions.find((s) => s.edgeId.startsWith(id));
 
       if (!edge) {
         console.error(`Wormhole suggestion not found: ${id}`);

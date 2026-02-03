@@ -24,44 +24,55 @@ export interface SchemaValidatorOptions {
 }
 
 // Base frontmatter schema
-const BaseFrontmatterSchema = Type.Object({
-  id: Type.Optional(Type.String()),
-  title: Type.Optional(Type.String()),
-  type: Type.Optional(Type.Union([
-    Type.Literal('note'),
-    Type.Literal('scene'),
-    Type.Literal('character'),
-    Type.Literal('location'),
-    Type.Literal('object'),
-    Type.Literal('event'),
-    Type.Literal('concept'),
-    Type.Literal('moc'),
-    Type.Literal('timeline'),
-    Type.Literal('draft'),
-  ])),
-  aliases: Type.Optional(Type.Array(Type.String())),
-  tags: Type.Optional(Type.Array(Type.String())),
-  created: Type.Optional(Type.String()),
-  updated: Type.Optional(Type.String()),
-}, { additionalProperties: true });
+const BaseFrontmatterSchema = Type.Object(
+  {
+    id: Type.Optional(Type.String()),
+    title: Type.Optional(Type.String()),
+    type: Type.Optional(
+      Type.Union([
+        Type.Literal('note'),
+        Type.Literal('scene'),
+        Type.Literal('character'),
+        Type.Literal('location'),
+        Type.Literal('object'),
+        Type.Literal('event'),
+        Type.Literal('concept'),
+        Type.Literal('moc'),
+        Type.Literal('timeline'),
+        Type.Literal('draft'),
+      ])
+    ),
+    aliases: Type.Optional(Type.Array(Type.String())),
+    tags: Type.Optional(Type.Array(Type.String())),
+    created: Type.Optional(Type.String()),
+    updated: Type.Optional(Type.String()),
+  },
+  { additionalProperties: true }
+);
 
 // Scene-specific schema
-const SceneFrontmatterSchema = Type.Object({
-  type: Type.Literal('scene'),
-  pov: Type.Optional(Type.String()),
-  scene_order: Type.Optional(Type.Number()),
-  timeline_position: Type.Optional(Type.String()),
-  characters: Type.Optional(Type.Array(Type.String())),
-  locations: Type.Optional(Type.Array(Type.String())),
-}, { additionalProperties: true });
+const SceneFrontmatterSchema = Type.Object(
+  {
+    type: Type.Literal('scene'),
+    pov: Type.Optional(Type.String()),
+    scene_order: Type.Optional(Type.Number()),
+    timeline_position: Type.Optional(Type.String()),
+    characters: Type.Optional(Type.Array(Type.String())),
+    locations: Type.Optional(Type.Array(Type.String())),
+  },
+  { additionalProperties: true }
+);
 
 // Character-specific schema
-const CharacterFrontmatterSchema = Type.Object({
-  type: Type.Literal('character'),
-  aliases: Type.Optional(Type.Array(Type.String())),
-  description: Type.Optional(Type.String()),
-  traits: Type.Optional(Type.Array(Type.String())),
-}, { additionalProperties: true });
+const CharacterFrontmatterSchema = Type.Object(
+  {
+    type: Type.Literal('character'),
+    aliases: Type.Optional(Type.Array(Type.String())),
+    description: Type.Optional(Type.String()),
+    traits: Type.Optional(Type.Array(Type.String())),
+  },
+  { additionalProperties: true }
+);
 
 /**
  * Validates frontmatter schema for nodes

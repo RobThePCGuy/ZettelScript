@@ -20,7 +20,9 @@ constellationCommand
       // Check if constellation already exists
       const existing = await ctx.constellationRepository.findByName(name);
       if (existing) {
-        console.error(`Constellation "${name}" already exists. Use a different name or delete it first.`);
+        console.error(
+          `Constellation "${name}" already exists. Use a different name or delete it first.`
+        );
         ctx.connectionManager.close();
         process.exit(1);
       }
@@ -48,18 +50,22 @@ constellationCommand
       }
 
       // Create the constellation
-      const constellation = await ctx.constellationRepository.create({
+      const createInput: Parameters<typeof ctx.constellationRepository.create>[0] = {
         name,
-        description: options.description,
         hiddenNodeTypes: state.hiddenNodeTypes ?? [],
         hiddenEdgeTypes: state.hiddenEdgeTypes ?? [],
         showGhosts: state.showGhosts ?? true,
         ghostThreshold: state.ghostThreshold ?? 1,
-        cameraX: state.cameraX,
-        cameraY: state.cameraY,
-        cameraZoom: state.cameraZoom,
-        focusNodeIds: state.focusNodeIds,
-      });
+      };
+
+      // Only set optional properties if they have values
+      if (options.description !== undefined) createInput.description = options.description;
+      if (state.cameraX !== undefined) createInput.cameraX = state.cameraX;
+      if (state.cameraY !== undefined) createInput.cameraY = state.cameraY;
+      if (state.cameraZoom !== undefined) createInput.cameraZoom = state.cameraZoom;
+      if (state.focusNodeIds !== undefined) createInput.focusNodeIds = state.focusNodeIds;
+
+      const constellation = await ctx.constellationRepository.create(createInput);
 
       console.log(`Constellation "${constellation.name}" saved successfully.`);
       console.log(`\nTo load it, run: zs visualize --constellation "${name}"`);
@@ -90,7 +96,7 @@ constellationCommand
         return;
       }
 
-      const rows = constellations.map(c => [
+      const rows = constellations.map((c) => [
         c.name,
         c.description || '-',
         c.hiddenNodeTypes.length > 0 ? `${c.hiddenNodeTypes.length} hidden` : 'all',
@@ -99,10 +105,7 @@ constellationCommand
         new Date(c.updatedAt).toLocaleDateString(),
       ]);
 
-      printTable(
-        ['Name', 'Description', 'Node Types', 'Edge Types', 'Ghosts', 'Updated'],
-        rows
-      );
+      printTable(['Name', 'Description', 'Node Types', 'Edge Types', 'Ghosts', 'Updated'], rows);
 
       ctx.connectionManager.close();
     } catch (error) {
@@ -136,8 +139,12 @@ constellationCommand
       }
 
       console.log(`\nFilters:`);
-      console.log(`  Hidden node types: ${constellation.hiddenNodeTypes.length > 0 ? constellation.hiddenNodeTypes.join(', ') : '(none)'}`);
-      console.log(`  Hidden edge types: ${constellation.hiddenEdgeTypes.length > 0 ? constellation.hiddenEdgeTypes.join(', ') : '(none)'}`);
+      console.log(
+        `  Hidden node types: ${constellation.hiddenNodeTypes.length > 0 ? constellation.hiddenNodeTypes.join(', ') : '(none)'}`
+      );
+      console.log(
+        `  Hidden edge types: ${constellation.hiddenEdgeTypes.length > 0 ? constellation.hiddenEdgeTypes.join(', ') : '(none)'}`
+      );
 
       console.log(`\nGhost Nodes:`);
       console.log(`  Show ghosts: ${constellation.showGhosts ? 'yes' : 'no'}`);
@@ -145,7 +152,9 @@ constellationCommand
 
       if (constellation.cameraX !== undefined || constellation.cameraY !== undefined) {
         console.log(`\nCamera:`);
-        console.log(`  Position: (${constellation.cameraX?.toFixed(2) ?? 'auto'}, ${constellation.cameraY?.toFixed(2) ?? 'auto'})`);
+        console.log(
+          `  Position: (${constellation.cameraX?.toFixed(2) ?? 'auto'}, ${constellation.cameraY?.toFixed(2) ?? 'auto'})`
+        );
         console.log(`  Zoom: ${constellation.cameraZoom?.toFixed(2) ?? 'auto'}`);
       }
 
@@ -198,53 +207,55 @@ constellationCommand
   .option('-s, --state <json>', 'New state JSON')
   .option('-d, --description <text>', 'New description')
   .option('-n, --new-name <name>', 'Rename the constellation')
-  .action(async (name: string, options: { state?: string; description?: string; newName?: string }) => {
-    try {
-      const ctx = await initContext();
-      const existing = await ctx.constellationRepository.findByName(name);
+  .action(
+    async (name: string, options: { state?: string; description?: string; newName?: string }) => {
+      try {
+        const ctx = await initContext();
+        const existing = await ctx.constellationRepository.findByName(name);
 
-      if (!existing) {
-        console.error(`Constellation "${name}" not found.`);
-        ctx.connectionManager.close();
-        process.exit(1);
-      }
-
-      // Parse state if provided
-      let stateUpdates: {
-        hiddenNodeTypes?: string[];
-        hiddenEdgeTypes?: string[];
-        showGhosts?: boolean;
-        ghostThreshold?: number;
-        cameraX?: number;
-        cameraY?: number;
-        cameraZoom?: number;
-        focusNodeIds?: string[];
-      } = {};
-
-      if (options.state) {
-        try {
-          stateUpdates = JSON.parse(options.state);
-        } catch (e) {
-          console.error('Invalid JSON state:', e);
+        if (!existing) {
+          console.error(`Constellation "${name}" not found.`);
           ctx.connectionManager.close();
           process.exit(1);
         }
+
+        // Parse state if provided
+        let stateUpdates: {
+          hiddenNodeTypes?: string[];
+          hiddenEdgeTypes?: string[];
+          showGhosts?: boolean;
+          ghostThreshold?: number;
+          cameraX?: number;
+          cameraY?: number;
+          cameraZoom?: number;
+          focusNodeIds?: string[];
+        } = {};
+
+        if (options.state) {
+          try {
+            stateUpdates = JSON.parse(options.state);
+          } catch (e) {
+            console.error('Invalid JSON state:', e);
+            ctx.connectionManager.close();
+            process.exit(1);
+          }
+        }
+
+        const updates = {
+          ...stateUpdates,
+          ...(options.description !== undefined && { description: options.description }),
+          ...(options.newName !== undefined && { name: options.newName }),
+        };
+
+        await ctx.constellationRepository.update(existing.constellationId, updates);
+
+        const finalName = options.newName ?? name;
+        console.log(`Constellation "${finalName}" updated.`);
+
+        ctx.connectionManager.close();
+      } catch (error) {
+        console.error('Failed to update constellation:', error);
+        process.exit(1);
       }
-
-      const updates = {
-        ...stateUpdates,
-        ...(options.description !== undefined && { description: options.description }),
-        ...(options.newName !== undefined && { name: options.newName }),
-      };
-
-      await ctx.constellationRepository.update(existing.constellationId, updates);
-
-      const finalName = options.newName ?? name;
-      console.log(`Constellation "${finalName}" updated.`);
-
-      ctx.connectionManager.close();
-    } catch (error) {
-      console.error('Failed to update constellation:', error);
-      process.exit(1);
     }
-  });
+  );

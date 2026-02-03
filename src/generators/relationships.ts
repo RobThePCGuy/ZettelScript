@@ -36,11 +36,7 @@ interface EntityInfo {
  * Normalize a name for robust matching (handles whitespace, underscores, case)
  */
 function normalizeName(s: string): string {
-  return s
-    .toLowerCase()
-    .replace(/\s+/g, ' ')
-    .replace(/[_-]+/g, ' ')
-    .trim();
+  return s.toLowerCase().replace(/\s+/g, ' ').replace(/[_-]+/g, ' ').trim();
 }
 
 /**
@@ -237,7 +233,7 @@ export class RelationshipEngine {
     const coOccurrence = this.getCoOccurrenceRelationships(entityId);
     for (const rel of coOccurrence) {
       // Only add if we don't already have a more specific relationship
-      const hasExisting = relationships.some(r => r.targetId === rel.targetId);
+      const hasExisting = relationships.some((r) => r.targetId === rel.targetId);
       if (!hasExisting) {
         relationships.push(rel);
       }
@@ -324,7 +320,7 @@ export class RelationshipEngine {
 
     if (entity.type === 'character') {
       // Character → equipment (owns)
-      const char = this.kb.characters.find(c => c.id === entityId);
+      const char = this.kb.characters.find((c) => c.id === entityId);
       if (char?.equipment) {
         for (const equipName of char.equipment) {
           const objInfo = this.resolveEntity(equipName);
@@ -383,7 +379,7 @@ export class RelationshipEngine {
 
     if (entity.type === 'object') {
       // Object → holder (holds)
-      const obj = this.kb.objects.find(o => o.id === entityId);
+      const obj = this.kb.objects.find((o) => o.id === entityId);
       if (obj?.holder) {
         const charInfo = this.resolveEntity(obj.holder);
         if (charInfo) {
@@ -421,7 +417,7 @@ export class RelationshipEngine {
 
     if (entity.type === 'event') {
       // Event → locations (occurred_at) based on shared chapters
-      const event = this.kb.timeline.find(e => e.id === entityId);
+      const event = this.kb.timeline.find((e) => e.id === entityId);
       if (event) {
         for (const loc of this.kb.locations) {
           if (loc.chapters_seen?.includes(event.chapter)) {
@@ -464,7 +460,7 @@ export class RelationshipEngine {
 
     if (entity.type === 'location') {
       // Location → events (occurred_at inverse - site of)
-      const loc = this.kb.locations.find(l => l.id === entityId);
+      const loc = this.kb.locations.find((l) => l.id === entityId);
       if (loc?.chapters_seen) {
         for (const event of this.kb.timeline) {
           if (loc.chapters_seen.includes(event.chapter)) {
@@ -515,7 +511,7 @@ export class RelationshipEngine {
       if (otherChapters.length === 0) continue;
 
       // Calculate shared chapters
-      const sharedChapters = otherChapters.filter(ch => entityChapters.has(ch));
+      const sharedChapters = otherChapters.filter((ch) => entityChapters.has(ch));
 
       if (sharedChapters.length >= this.coOccurrenceThreshold) {
         relationships.push({
@@ -539,7 +535,7 @@ export class RelationshipEngine {
    */
   private deriveObjectChapters(objectId: string): number[] {
     const chapters = new Set<number>();
-    const obj = this.kb.objects.find(o => o.id === objectId);
+    const obj = this.kb.objects.find((o) => o.id === objectId);
     if (!obj) return [];
 
     // Get chapters from current holder

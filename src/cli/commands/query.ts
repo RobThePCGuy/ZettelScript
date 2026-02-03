@@ -2,8 +2,7 @@ import { Command } from 'commander';
 import { initContext, printTable } from '../utils.js';
 import { parseIntSafe } from '../../core/validation.js';
 
-export const queryCommand = new Command('query')
-  .description('Query the knowledge graph');
+export const queryCommand = new Command('query').description('Query the knowledge graph');
 
 // Backlinks subcommand
 queryCommand
@@ -39,11 +38,9 @@ queryCommand
       if (backlinks.length === 0) {
         console.log('No backlinks found.');
       } else {
-        const rows = backlinks.slice(0, limit).map(bl => [
-          bl.sourceNode.title,
-          bl.sourceNode.type,
-          bl.sourceNode.path,
-        ]);
+        const rows = backlinks
+          .slice(0, limit)
+          .map((bl) => [bl.sourceNode.title, bl.sourceNode.type, bl.sourceNode.path]);
         printTable(['Title', 'Type', 'Path'], rows);
 
         if (backlinks.length > limit) {
@@ -91,7 +88,7 @@ queryCommand
       const neighbors = await ctx.graphEngine.getNeighbors(node.nodeId);
 
       // Filter by direction
-      const filtered = neighbors.filter(n => {
+      const filtered = neighbors.filter((n) => {
         if (options.direction === 'in') return n.direction === 'incoming';
         if (options.direction === 'out') return n.direction === 'outgoing';
         return true;
@@ -100,12 +97,14 @@ queryCommand
       if (filtered.length === 0) {
         console.log('No neighbors found.');
       } else {
-        const rows = filtered.slice(0, limit).map(n => [
-          n.direction === 'incoming' ? '←' : '→',
-          n.node.title,
-          n.node.type,
-          n.edge.edgeType,
-        ]);
+        const rows = filtered
+          .slice(0, limit)
+          .map((n) => [
+            n.direction === 'incoming' ? '←' : '→',
+            n.node.title,
+            n.node.type,
+            n.edge.edgeType,
+          ]);
         printTable(['Dir', 'Title', 'Type', 'Edge Type'], rows);
 
         if (filtered.length > limit) {
@@ -160,7 +159,7 @@ queryCommand
         console.log('No path found.');
       } else {
         const pathNodes = await ctx.nodeRepository.findByIds(path);
-        const nodeMap = new Map(pathNodes.map(n => [n.nodeId, n]));
+        const nodeMap = new Map(pathNodes.map((n) => [n.nodeId, n]));
 
         for (let i = 0; i < path.length; i++) {
           const nodeId = path[i];
@@ -209,7 +208,7 @@ queryCommand
 
       // Find orphan nodes
       const components = await ctx.graphEngine.findConnectedComponents();
-      const isolatedCount = components.filter(c => c.length === 1).length;
+      const isolatedCount = components.filter((c) => c.length === 1).length;
       if (isolatedCount > 0) {
         console.log(`\nIsolated nodes: ${isolatedCount}`);
       }
@@ -238,11 +237,7 @@ queryCommand
       } else {
         console.log(`Orphan nodes (${isolated.length}):\n`);
 
-        const rows = isolated.slice(0, limit).map(n => [
-          n.title,
-          n.type,
-          n.path,
-        ]);
+        const rows = isolated.slice(0, limit).map((n) => [n.title, n.type, n.path]);
         printTable(['Title', 'Type', 'Path'], rows);
 
         if (isolated.length > limit) {
@@ -276,11 +271,9 @@ queryCommand
       } else {
         console.log(`Hub nodes (${hubs.length}):\n`);
 
-        const rows = hubs.slice(0, limit).map(h => [
-          h.node.title,
-          h.node.type,
-          h.inDegree.toString(),
-        ]);
+        const rows = hubs
+          .slice(0, limit)
+          .map((h) => [h.node.title, h.node.type, h.inDegree.toString()]);
         printTable(['Title', 'Type', 'Incoming Links'], rows);
 
         if (hubs.length > limit) {

@@ -51,7 +51,7 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
       const response = await fetch(`${this.baseUrl}/embeddings`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
+          Authorization: `Bearer ${this.apiKey}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -65,13 +65,13 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
         throw new EmbeddingError(`OpenAI API error: ${error}`, this.name);
       }
 
-      const data = await response.json() as {
+      const data = (await response.json()) as {
         data: Array<{ embedding: number[]; index: number }>;
       };
 
       // Sort by index to maintain order
       const sorted = data.data.sort((a, b) => a.index - b.index);
-      return sorted.map(d => d.embedding);
+      return sorted.map((d) => d.embedding);
     } catch (error) {
       if (error instanceof EmbeddingError) throw error;
       throw new EmbeddingError(`Failed to get embeddings: ${error}`, this.name);
@@ -113,7 +113,7 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
         throw new EmbeddingError(`Ollama API error: ${error}`, this.name);
       }
 
-      const data = await response.json() as { embedding: number[] };
+      const data = (await response.json()) as { embedding: number[] };
       return data.embedding;
     } catch (error) {
       if (error instanceof EmbeddingError) throw error;
@@ -160,14 +160,14 @@ export class MockEmbeddingProvider implements EmbeddingProvider {
   }
 
   async embedBatch(texts: string[]): Promise<number[][]> {
-    return Promise.all(texts.map(t => this.embed(t)));
+    return Promise.all(texts.map((t) => this.embed(t)));
   }
 
   private hashString(str: string): number {
     let hash = 0;
     for (let i = 0; i < str.length; i++) {
       const char = str.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
+      hash = (hash << 5) - hash + char;
       hash = hash & hash;
     }
     return hash;

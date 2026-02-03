@@ -62,7 +62,9 @@ export function buildRewritePrompt(context: RewriteContext): string {
   }
 
   parts.push('## Instructions');
-  parts.push('Based on the context above, provide specific suggestions for how to rewrite this scene to achieve the stated goal.');
+  parts.push(
+    'Based on the context above, provide specific suggestions for how to rewrite this scene to achieve the stated goal.'
+  );
   parts.push('');
   parts.push('Please provide:');
   parts.push('1. A brief analysis of how the current scene could be improved');
@@ -101,7 +103,11 @@ export function buildDisambiguationPrompt(
     }
   }
   parts.push('');
-  parts.push('Which entity (1-' + candidates.length + ') is most likely being referenced? Respond with just the number.');
+  parts.push(
+    'Which entity (1-' +
+      candidates.length +
+      ') is most likely being referenced? Respond with just the number.'
+  );
 
   return parts.join('\n');
 }
@@ -115,7 +121,9 @@ export function buildContinuityCheckPrompt(
 ): string {
   const parts: string[] = [];
 
-  parts.push('You are a continuity editor checking for consistency between two scenes in a manuscript.');
+  parts.push(
+    'You are a continuity editor checking for consistency between two scenes in a manuscript.'
+  );
   parts.push('');
   parts.push('## Scene 1');
   parts.push(`Title: ${scene1.title}`);
@@ -138,9 +146,11 @@ export function buildContinuityCheckPrompt(
   parts.push('- Character inconsistencies (different descriptions, abilities, or knowledge)');
   parts.push('- Timeline problems');
   parts.push('- Setting/location inconsistencies');
-  parts.push('- POV violations (character knowing things they shouldn\'t)');
+  parts.push("- POV violations (character knowing things they shouldn't)");
   parts.push('');
-  parts.push('List each issue found with a brief explanation, or state "No continuity issues found."');
+  parts.push(
+    'List each issue found with a brief explanation, or state "No continuity issues found."'
+  );
 
   return parts.join('\n');
 }

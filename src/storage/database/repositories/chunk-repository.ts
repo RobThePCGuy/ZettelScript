@@ -41,7 +41,7 @@ export class ChunkRepository {
   async createMany(dataArray: Array<Omit<Chunk, 'chunkId'>>): Promise<Chunk[]> {
     if (dataArray.length === 0) return [];
 
-    const rows: NewChunkRow[] = dataArray.map(data => ({
+    const rows: NewChunkRow[] = dataArray.map((data) => ({
       chunkId: nanoid(),
       nodeId: data.nodeId,
       text: data.text,
@@ -53,18 +53,14 @@ export class ChunkRepository {
 
     await this.db.insert(chunks).values(rows);
 
-    return rows.map(row => this.rowToChunk(row as ChunkRow));
+    return rows.map((row) => this.rowToChunk(row as ChunkRow));
   }
 
   /**
    * Find a chunk by ID
    */
   async findById(chunkId: string): Promise<Chunk | null> {
-    const result = await this.db
-      .select()
-      .from(chunks)
-      .where(eq(chunks.chunkId, chunkId))
-      .limit(1);
+    const result = await this.db.select().from(chunks).where(eq(chunks.chunkId, chunkId)).limit(1);
 
     return result[0] ? this.rowToChunk(result[0]) : null;
   }
@@ -101,10 +97,7 @@ export class ChunkRepository {
   async findByIds(chunkIds: string[]): Promise<Chunk[]> {
     if (chunkIds.length === 0) return [];
 
-    const result = await this.db
-      .select()
-      .from(chunks)
-      .where(inArray(chunks.chunkId, chunkIds));
+    const result = await this.db.select().from(chunks).where(inArray(chunks.chunkId, chunkIds));
 
     return result.map(this.rowToChunk);
   }
@@ -121,7 +114,7 @@ export class ChunkRepository {
       .replace(/['"]/g, '')
       .replace(/\*/g, '')
       .split(/\s+/)
-      .filter(word => word.length > 0)
+      .filter((word) => word.length > 0)
       .join(' OR ');
 
     if (!escapedQuery) return [];
@@ -157,7 +150,7 @@ export class ChunkRepository {
       .replace(/['"]/g, '')
       .replace(/\*/g, '')
       .split(/\s+/)
-      .filter(word => word.length > 0)
+      .filter((word) => word.length > 0)
       .join(' OR ');
 
     if (!escapedQuery) return [];
@@ -195,10 +188,7 @@ export class ChunkRepository {
     if (data.versionId !== undefined) updateData.versionId = data.versionId;
     if (data.tokenCount !== undefined) updateData.tokenCount = data.tokenCount;
 
-    await this.db
-      .update(chunks)
-      .set(updateData)
-      .where(eq(chunks.chunkId, chunkId));
+    await this.db.update(chunks).set(updateData).where(eq(chunks.chunkId, chunkId));
 
     const updated = await this.findById(chunkId);
     if (!updated) {
@@ -218,9 +208,7 @@ export class ChunkRepository {
    * Delete all chunks for a node
    */
   async deleteForNode(nodeId: string): Promise<number> {
-    const result = await this.db
-      .delete(chunks)
-      .where(eq(chunks.nodeId, nodeId));
+    const result = await this.db.delete(chunks).where(eq(chunks.nodeId, nodeId));
 
     return result.changes;
   }
@@ -229,9 +217,7 @@ export class ChunkRepository {
    * Delete chunks by version
    */
   async deleteByVersion(versionId: string): Promise<number> {
-    const result = await this.db
-      .delete(chunks)
-      .where(eq(chunks.versionId, versionId));
+    const result = await this.db.delete(chunks).where(eq(chunks.versionId, versionId));
 
     return result.changes;
   }
@@ -240,9 +226,7 @@ export class ChunkRepository {
    * Count chunks
    */
   async count(): Promise<number> {
-    const result = await this.db
-      .select({ count: sql<number>`count(*)` })
-      .from(chunks);
+    const result = await this.db.select({ count: sql<number>`count(*)` }).from(chunks);
 
     return result[0]?.count ?? 0;
   }

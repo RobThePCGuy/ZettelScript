@@ -2,7 +2,11 @@ import { Command } from 'commander';
 import { initContext } from '../utils.js';
 import { ImpactAnalyzer } from '../../engine/manuscript/impact-analyzer.js';
 import { RewriteOrchestrator } from '../../engine/manuscript/rewrite-orchestrator.js';
-import { createLLMProvider, buildRewritePrompt, type RewriteContext as LLMRewriteContext } from '../../llm/index.js';
+import {
+  createLLMProvider,
+  buildRewritePrompt,
+  type RewriteContext as LLMRewriteContext,
+} from '../../llm/index.js';
 
 export const rewriteCommand = new Command('rewrite')
   .description('Analyze and orchestrate scene rewrites')
@@ -26,7 +30,7 @@ export const rewriteCommand = new Command('rewrite')
       let scene = await ctx.nodeRepository.findByPath(sceneIdentifier);
       if (!scene) {
         const nodes = await ctx.nodeRepository.findByTitle(sceneIdentifier);
-        scene = nodes.find(n => n.type === 'scene') ?? nodes[0] ?? null;
+        scene = nodes.find((n) => n.type === 'scene') ?? nodes[0] ?? null;
       }
 
       if (!scene) {
@@ -140,15 +144,15 @@ export const rewriteCommand = new Command('rewrite')
         sceneTitle: scene.title,
         sceneContent: context.sceneContent,
         goal: options.goal,
-        characterContext: context.characterContext.map(c => ({
+        characterContext: context.characterContext.map((c) => ({
           name: c.name,
           details: c.description,
         })),
-        timelineContext: context.timelineContext.map(t => ({
+        timelineContext: context.timelineContext.map((t) => ({
           title: t.title,
           position: String(t.order),
         })),
-        relatedContent: context.relatedContent.map(r => ({
+        relatedContent: context.relatedContent.map((r) => ({
           title: r.title,
           excerpt: r.excerpt,
         })),

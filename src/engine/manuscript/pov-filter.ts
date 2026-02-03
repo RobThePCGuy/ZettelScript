@@ -1,5 +1,9 @@
 import type { Node, Chunk, Frontmatter } from '../../core/types/index.js';
-import { NodeRepository, EdgeRepository, ChunkRepository } from '../../storage/database/repositories/index.js';
+import {
+  NodeRepository,
+  EdgeRepository,
+  ChunkRepository,
+} from '../../storage/database/repositories/index.js';
 import { SceneGraph } from './scene-graph.js';
 import { CharacterTracker } from './character-tracker.js';
 
@@ -67,11 +71,7 @@ export class PovFilter {
       if (checkedNodes.has(node.nodeId)) continue;
       checkedNodes.add(node.nodeId);
 
-      const { visible, reason } = await this.isVisibleToPov(
-        node,
-        povCharacter,
-        scene.sceneOrder
-      );
+      const { visible, reason } = await this.isVisibleToPov(node, povCharacter, scene.sceneOrder);
 
       if (visible) {
         visibleNodes.push(node);
@@ -81,7 +81,7 @@ export class PovFilter {
     }
 
     // Filter chunks based on visible nodes
-    const visibleNodeIds = new Set(visibleNodes.map(n => n.nodeId));
+    const visibleNodeIds = new Set(visibleNodes.map((n) => n.nodeId));
     for (const chunk of content.chunks) {
       if (visibleNodeIds.has(chunk.nodeId)) {
         visibleChunks.push(chunk);
@@ -160,10 +160,7 @@ export class PovFilter {
   /**
    * Get all content visible to a POV at a scene
    */
-  async getVisibleContent(
-    povCharacter: string,
-    atSceneNodeId: string
-  ): Promise<FilteredContent> {
+  async getVisibleContent(povCharacter: string, atSceneNodeId: string): Promise<FilteredContent> {
     const scene = this.sceneGraph.getScene(atSceneNodeId);
     if (!scene) {
       return { chunks: [], nodes: [], filtered: [] };
@@ -200,11 +197,13 @@ export class PovFilter {
   /**
    * Check for POV consistency in a scene
    */
-  async checkPovConsistency(sceneNodeId: string): Promise<Array<{
-    type: 'error' | 'warning';
-    message: string;
-    nodeId?: string;
-  }>> {
+  async checkPovConsistency(sceneNodeId: string): Promise<
+    Array<{
+      type: 'error' | 'warning';
+      message: string;
+      nodeId?: string;
+    }>
+  > {
     const issues: Array<{ type: 'error' | 'warning'; message: string; nodeId?: string }> = [];
 
     const scene = this.sceneGraph.getScene(sceneNodeId);

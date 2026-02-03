@@ -58,7 +58,11 @@ export const initCommand = new Command('init')
 
       // Create .gitignore for .zettelscript
       const gitignorePath = path.join(zettelDir, '.gitignore');
-      fs.writeFileSync(gitignorePath, '# Ignore database (regenerated from files)\nzettelscript.db\nzettelscript.db-*\n', 'utf-8');
+      fs.writeFileSync(
+        gitignorePath,
+        '# Ignore database (regenerated from files)\nzettelscript.db\nzettelscript.db-*\n',
+        'utf-8'
+      );
 
       console.log('\nZettelScript vault initialized!');
       console.log('\nNext steps:');

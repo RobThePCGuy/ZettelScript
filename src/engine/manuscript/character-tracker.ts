@@ -154,11 +154,7 @@ export class CharacterTracker {
   /**
    * Check if a character knows about something at a given scene
    */
-  knowsAbout(
-    characterName: string,
-    informationId: string,
-    atSceneOrder: number
-  ): boolean {
+  knowsAbout(characterName: string, informationId: string, atSceneOrder: number): boolean {
     const state = this.getStateByName(characterName);
     if (!state) return false;
 
@@ -195,17 +191,19 @@ export class CharacterTracker {
     if (!state1 || !state2) return [];
 
     const set1 = new Set(state1.presentIn);
-    return state2.presentIn.filter(sceneId => set1.has(sceneId));
+    return state2.presentIn.filter((sceneId) => set1.has(sceneId));
   }
 
   /**
    * Find potential POV leakage
    * Returns information that POV shouldn't know at a scene
    */
-  async findPovLeakage(sceneNodeId: string): Promise<Array<{
-    informationId: string;
-    reason: string;
-  }>> {
+  async findPovLeakage(sceneNodeId: string): Promise<
+    Array<{
+      informationId: string;
+      reason: string;
+    }>
+  > {
     const scene = this.sceneGraph.getScene(sceneNodeId);
     if (!scene || !scene.pov) return [];
 
@@ -241,7 +239,7 @@ export class CharacterTracker {
    * Get all character names
    */
   getCharacterNames(): string[] {
-    return Array.from(this.characterStates.values()).map(s => s.characterName);
+    return Array.from(this.characterStates.values()).map((s) => s.characterName);
   }
 
   /**
@@ -254,7 +252,7 @@ export class CharacterTracker {
     knowledgeCount: number;
     relationshipCount: number;
   }> {
-    return Array.from(this.characterStates.values()).map(state => ({
+    return Array.from(this.characterStates.values()).map((state) => ({
       name: state.characterName,
       sceneCount: state.presentIn.length,
       povSceneCount: state.povScenes.length,

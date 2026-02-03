@@ -82,13 +82,13 @@ function buildRuleContent(rule: WorldRule): string {
   // Examples
   if (rule.examples && rule.examples.length > 0) {
     parts.push(section('Examples'));
-    parts.push(rule.examples.map(e => `- ${e}`).join('\n') + '\n\n');
+    parts.push(rule.examples.map((e) => `- ${e}`).join('\n') + '\n\n');
   }
 
   // Exceptions
   if (rule.exceptions && rule.exceptions.length > 0) {
     parts.push(section('Exceptions'));
-    parts.push(rule.exceptions.map(e => `- ${e}`).join('\n') + '\n\n');
+    parts.push(rule.exceptions.map((e) => `- ${e}`).join('\n') + '\n\n');
   }
 
   // Source
@@ -154,9 +154,7 @@ function buildFactContent(fact: KBFact): string {
 /**
  * Generate lore notes from KB and world rules data
  */
-export async function generateLore(
-  options: GeneratorOptions
-): Promise<GeneratorResult> {
+export async function generateLore(options: GeneratorOptions): Promise<GeneratorResult> {
   const result: GeneratorResult = {
     created: [],
     skipped: [],

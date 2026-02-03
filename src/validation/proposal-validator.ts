@@ -140,7 +140,9 @@ export class ProposalValidator {
       if (targetNodes.length === 0) {
         warnings.push(`Link target may not resolve: [[${targetText}]]`);
       } else if (targetNodes.length > 1) {
-        warnings.push(`Link target is ambiguous: [[${targetText}]] (${targetNodes.length} matches)`);
+        warnings.push(
+          `Link target is ambiguous: [[${targetText}]] (${targetNodes.length} matches)`
+        );
       }
     }
   }
@@ -193,9 +195,9 @@ export class ProposalValidator {
 
     if (backlinks.length > 0) {
       // Get source node details for better error messages
-      const sourceIds = backlinks.map(e => e.sourceId);
+      const sourceIds = backlinks.map((e) => e.sourceId);
       const sourceNodes = await this.nodeRepo.findByIds(sourceIds);
-      const sourceNames = sourceNodes.map(n => n.title).slice(0, 5);
+      const sourceNames = sourceNodes.map((n) => n.title).slice(0, 5);
       const moreCount = backlinks.length > 5 ? ` and ${backlinks.length - 5} more` : '';
 
       // Check if force flag is set in metadata
@@ -213,9 +215,9 @@ export class ProposalValidator {
 
     // Check for other edge types (not just explicit_link backlinks)
     const allIncoming = await this.edgeRepo.findIncoming(node.nodeId);
-    const nonBacklinks = allIncoming.filter(e => e.edgeType !== 'explicit_link');
+    const nonBacklinks = allIncoming.filter((e) => e.edgeType !== 'explicit_link');
     if (nonBacklinks.length > 0) {
-      const edgeTypes = [...new Set(nonBacklinks.map(e => e.edgeType))];
+      const edgeTypes = [...new Set(nonBacklinks.map((e) => e.edgeType))];
       warnings.push(
         `Node has ${nonBacklinks.length} other incoming relationship(s) of type: ${edgeTypes.join(', ')}`
       );

@@ -1,6 +1,10 @@
 import type { Chunk, ZettelScriptConfig } from '../../core/types/index.js';
 import { DEFAULT_CONFIG } from '../../core/types/index.js';
-import { splitIntoSections, splitIntoParagraphs, type ParsedMarkdown } from '../../parser/markdown.js';
+import {
+  splitIntoSections,
+  splitIntoParagraphs,
+  type ParsedMarkdown,
+} from '../../parser/markdown.js';
 
 export interface ChunkingOptions {
   strategy: 'paragraph' | 'section' | 'sliding' | 'scene';
@@ -100,10 +104,7 @@ export function chunkByParagraph(
 /**
  * Chunk content by sections (headings)
  */
-export function chunkBySection(
-  parsed: ParsedMarkdown,
-  options: ChunkingOptions
-): ChunkCandidate[] {
+export function chunkBySection(parsed: ParsedMarkdown, options: ChunkingOptions): ChunkCandidate[] {
   const defaults = getDefaults(options);
   const maxTokens = defaults.maxTokens;
   const minSize = defaults.minSize;
@@ -241,10 +242,7 @@ export function chunkByScene(
 /**
  * Main chunking function
  */
-export function chunkContent(
-  parsed: ParsedMarkdown,
-  options: ChunkingOptions
-): ChunkCandidate[] {
+export function chunkContent(parsed: ParsedMarkdown, options: ChunkingOptions): ChunkCandidate[] {
   switch (options.strategy) {
     case 'paragraph':
       return chunkByParagraph(parsed.content, parsed.contentStartOffset, options);
@@ -271,7 +269,7 @@ export function createChunks(
   nodeId: string,
   versionId: string
 ): Omit<Chunk, 'chunkId'>[] {
-  return candidates.map(candidate => ({
+  return candidates.map((candidate) => ({
     nodeId,
     text: candidate.text,
     offsetStart: candidate.offsetStart,

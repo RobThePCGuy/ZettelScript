@@ -73,9 +73,7 @@ export class ProposalBuilder {
       // Replace at specific position
       before = content.slice(data.position.start, data.position.end);
       newContent =
-        content.slice(0, data.position.start) +
-        newLink +
-        content.slice(data.position.end);
+        content.slice(0, data.position.start) + newLink + content.slice(data.position.end);
     } else {
       // Find and replace the target text
       const index = content.indexOf(data.targetText);
@@ -84,9 +82,7 @@ export class ProposalBuilder {
       }
       before = data.targetText;
       newContent =
-        content.slice(0, index) +
-        newLink +
-        content.slice(index + data.targetText.length);
+        content.slice(0, index) + newLink + content.slice(index + data.targetText.length);
     }
 
     return this.createProposal('link_addition', data.nodeId, {
@@ -144,9 +140,7 @@ export class ProposalBuilder {
 
     // Read current content for the diff
     const filePath = path.join(this.vaultPath, node.path);
-    const content = fs.existsSync(filePath)
-      ? fs.readFileSync(filePath, 'utf-8')
-      : '';
+    const content = fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf-8') : '';
 
     return this.createProposal('node_deletion', nodeId, {
       description: `Delete "${node.title}": ${reason}`,
@@ -191,10 +185,10 @@ export class ProposalBuilder {
     }>
   ): Promise<{
     proposals: Proposal[];
-    errors: Array<{ mention: typeof mentions[0]; error: string }>;
+    errors: Array<{ mention: (typeof mentions)[0]; error: string }>;
   }> {
     const proposals: Proposal[] = [];
-    const errors: Array<{ mention: typeof mentions[0]; error: string }> = [];
+    const errors: Array<{ mention: (typeof mentions)[0]; error: string }> = [];
 
     for (const mention of mentions) {
       const targetNode = await this.nodeRepo.findById(mention.targetId);

@@ -49,7 +49,9 @@ export const validateCommand = new Command('validate')
             console.log(`  ! Ambiguous links: ${linkResult.ambiguous.length}`);
             if (options.verbose) {
               for (const a of linkResult.ambiguous.slice(0, 10)) {
-                console.log(`    ${a.sourcePath}: [[${a.targetText}]] → ${a.candidates.length} matches`);
+                console.log(
+                  `    ${a.sourcePath}: [[${a.targetText}]] → ${a.candidates.length} matches`
+                );
               }
             }
           }
@@ -96,8 +98,8 @@ export const validateCommand = new Command('validate')
 
         const continuityResult = await continuityChecker.check();
 
-        const errors = continuityResult.issues.filter(i => i.severity === 'error');
-        const warnings = continuityResult.issues.filter(i => i.severity === 'warning');
+        const errors = continuityResult.issues.filter((i) => i.severity === 'error');
+        const warnings = continuityResult.issues.filter((i) => i.severity === 'warning');
 
         if (errors.length === 0 && warnings.length === 0) {
           console.log('  ✓ No continuity issues\n');

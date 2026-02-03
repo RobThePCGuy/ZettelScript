@@ -3,13 +3,7 @@
  * Creates location notes from KB data with realm classification
  */
 
-import type {
-  GeneratorOptions,
-  GeneratorResult,
-  KBLocation,
-  KBData,
-  RealmType,
-} from './types.js';
+import type { GeneratorOptions, GeneratorResult, KBLocation, KBData, RealmType } from './types.js';
 import {
   parseKBJson,
   buildNote,
@@ -109,7 +103,7 @@ function buildLocationContent(
   // Features
   if (loc.features && loc.features.length > 0) {
     parts.push(section('Features'));
-    parts.push(loc.features.map(f => `- ${f}`).join('\n') + '\n\n');
+    parts.push(loc.features.map((f) => `- ${f}`).join('\n') + '\n\n');
   }
 
   // Related Entities
@@ -160,9 +154,7 @@ function formatRealmName(realm: RealmType): string {
 /**
  * Generate location notes from KB data
  */
-export async function generateLocations(
-  options: GeneratorOptions
-): Promise<GeneratorResult> {
+export async function generateLocations(options: GeneratorOptions): Promise<GeneratorResult> {
   const result: GeneratorResult = {
     created: [],
     skipped: [],

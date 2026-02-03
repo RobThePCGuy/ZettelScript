@@ -4,8 +4,8 @@ import type { Edge, EdgeType } from '../types/index.js';
  * Result of a path search
  */
 export interface PathResult {
-  path: string[];        // Node IDs
-  edges: EdgeType[];     // Length = path.length - 1
+  path: string[]; // Node IDs
+  edges: EdgeType[]; // Length = path.length - 1
   hopCount: number;
   score: number;
 }
@@ -14,12 +14,12 @@ export interface PathResult {
  * Options for K-shortest paths search
  */
 export interface KShortestPathsOptions {
-  k?: number;                    // Default: 3
-  edgeTypes?: EdgeType[];        // Default: explicit_link, sequence, causes, semantic
-  maxDepth?: number;             // Default: 15
-  overlapThreshold?: number;     // Default: 0.7 (max allowed Jaccard overlap)
-  maxCandidates?: number;        // Default: 100
-  maxExtraHops?: number;         // Default: 2
+  k?: number; // Default: 3
+  edgeTypes?: EdgeType[]; // Default: explicit_link, sequence, causes, semantic
+  maxDepth?: number; // Default: 15
+  overlapThreshold?: number; // Default: 0.7 (max allowed Jaccard overlap)
+  maxCandidates?: number; // Default: 100
+  maxExtraHops?: number; // Default: 2
 }
 
 /**
@@ -97,7 +97,7 @@ export function bidirectionalBFS(
   forward: Map<string, AdjEntry[]>,
   backward: Map<string, AdjEntry[]>,
   maxDepth: number,
-  disabledEdges?: Set<string>,  // Set of "sourceId->targetId" strings
+  disabledEdges?: Set<string>, // Set of "sourceId->targetId" strings
   disabledNodes?: Set<string>
 ): { path: string[]; edges: EdgeType[] } | null {
   if (startId === endId) {
@@ -124,13 +124,16 @@ export function bidirectionalBFS(
   let bestDistance = Infinity;
   let meetingNode: string | null = null;
 
-  while ((forwardQueue.length > 0 || backwardQueue.length > 0) &&
-         (forwardDepth + backwardDepth < bestDistance)) {
+  while (
+    (forwardQueue.length > 0 || backwardQueue.length > 0) &&
+    forwardDepth + backwardDepth < bestDistance
+  ) {
     // Check depth limit
     if (forwardDepth + backwardDepth >= maxDepth * 2) break;
 
     // Expand the smaller frontier
-    const expandForward = forwardQueue.length > 0 &&
+    const expandForward =
+      forwardQueue.length > 0 &&
       (backwardQueue.length === 0 || forwardQueue.length <= backwardQueue.length);
 
     if (expandForward && forwardQueue.length > 0) {
@@ -229,9 +232,8 @@ export function bidirectionalBFS(
     pathFromMeeting.push(current);
     const info = backwardVisited.get(current);
     // Edge type is stored in child pointing to parent
-    const prevNode: string = pathFromMeeting.length > 1
-      ? pathFromMeeting[pathFromMeeting.length - 2]!
-      : meetingNode;
+    const prevNode: string =
+      pathFromMeeting.length > 1 ? pathFromMeeting[pathFromMeeting.length - 2]! : meetingNode;
     const prevInfo = backwardVisited.get(prevNode);
     if (prevInfo?.edgeType) {
       edgesFromMeeting.push(prevInfo.edgeType);
@@ -268,7 +270,7 @@ export function calculateJaccardOverlap(
     return 1.0;
   }
 
-  const intersection = new Set([...nodesA].filter(x => nodesB.has(x)));
+  const intersection = new Set([...nodesA].filter((x) => nodesB.has(x)));
   const union = new Set([...nodesA, ...nodesB]);
 
   if (union.size === 0) return 1.0;
@@ -342,12 +344,14 @@ export function findKShortestPaths(
   const maxAllowedHops = shortestHopCount + maxExtraHops;
 
   // Result paths
-  const results: PathResult[] = [{
-    path: firstResult.path,
-    edges: firstResult.edges,
-    hopCount: shortestHopCount,
-    score: calculatePathScore(firstResult.edges),
-  }];
+  const results: PathResult[] = [
+    {
+      path: firstResult.path,
+      edges: firstResult.edges,
+      hopCount: shortestHopCount,
+      score: calculatePathScore(firstResult.edges),
+    },
+  ];
 
   // Candidate heap: [score, path, edges]
   // We use an array and sort as needed (small heap)
@@ -407,9 +411,11 @@ export function findKShortestPaths(
         const pathKey = totalPath.join('|');
 
         // Check if path is valid
-        if (!seenPaths.has(pathKey) &&
-            isSimplePath(totalPath) &&
-            totalPath.length - 1 <= maxAllowedHops) {
+        if (
+          !seenPaths.has(pathKey) &&
+          isSimplePath(totalPath) &&
+          totalPath.length - 1 <= maxAllowedHops
+        ) {
           seenPaths.add(pathKey);
           candidates.push({
             path: totalPath,
@@ -424,7 +430,7 @@ export function findKShortestPaths(
         // Sort and trim
         candidates.sort((a, b) => {
           // Primary: hop count ascending
-          const hopDiff = (a.path.length - 1) - (b.path.length - 1);
+          const hopDiff = a.path.length - 1 - (b.path.length - 1);
           if (hopDiff !== 0) return hopDiff;
           // Secondary: score ascending
           const scoreDiff = a.score - b.score;
@@ -440,7 +446,7 @@ export function findKShortestPaths(
     if (candidates.length > 0) {
       // Sort candidates
       candidates.sort((a, b) => {
-        const hopDiff = (a.path.length - 1) - (b.path.length - 1);
+        const hopDiff = a.path.length - 1 - (b.path.length - 1);
         if (hopDiff !== 0) return hopDiff;
         const scoreDiff = a.score - b.score;
         if (scoreDiff !== 0) return scoreDiff;

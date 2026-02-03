@@ -1,7 +1,11 @@
 import { eq, and, sql } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { DrizzleDB } from '../connection.js';
-import { mentionCandidates, type MentionCandidateRow, type NewMentionCandidateRow } from '../schema.js';
+import {
+  mentionCandidates,
+  type MentionCandidateRow,
+  type NewMentionCandidateRow,
+} from '../schema.js';
 import type { MentionCandidate, MentionStatus } from '../../../core/types/index.js';
 
 /**
@@ -36,10 +40,12 @@ export class MentionRepository {
   /**
    * Create multiple mention candidates
    */
-  async createMany(dataArray: Array<Omit<MentionCandidate, 'candidateId'>>): Promise<MentionCandidate[]> {
+  async createMany(
+    dataArray: Array<Omit<MentionCandidate, 'candidateId'>>
+  ): Promise<MentionCandidate[]> {
     if (dataArray.length === 0) return [];
 
-    const rows: NewMentionCandidateRow[] = dataArray.map(data => ({
+    const rows: NewMentionCandidateRow[] = dataArray.map((data) => ({
       candidateId: nanoid(),
       sourceId: data.sourceId,
       targetId: data.targetId,
@@ -53,7 +59,7 @@ export class MentionRepository {
 
     await this.db.insert(mentionCandidates).values(rows);
 
-    return rows.map(row => this.rowToMention(row as MentionCandidateRow));
+    return rows.map((row) => this.rowToMention(row as MentionCandidateRow));
   }
 
   /**
@@ -112,10 +118,7 @@ export class MentionRepository {
     const result = await this.db
       .select()
       .from(mentionCandidates)
-      .where(and(
-        eq(mentionCandidates.sourceId, sourceId),
-        eq(mentionCandidates.status, 'new')
-      ));
+      .where(and(eq(mentionCandidates.sourceId, sourceId), eq(mentionCandidates.status, 'new')));
 
     return result.map(this.rowToMention);
   }
@@ -123,16 +126,23 @@ export class MentionRepository {
   /**
    * Check if a mention already exists
    */
-  async exists(sourceId: string, targetId: string, spanStart: number, spanEnd: number): Promise<boolean> {
+  async exists(
+    sourceId: string,
+    targetId: string,
+    spanStart: number,
+    spanEnd: number
+  ): Promise<boolean> {
     const result = await this.db
       .select({ count: sql<number>`count(*)` })
       .from(mentionCandidates)
-      .where(and(
-        eq(mentionCandidates.sourceId, sourceId),
-        eq(mentionCandidates.targetId, targetId),
-        eq(mentionCandidates.spanStart, spanStart),
-        eq(mentionCandidates.spanEnd, spanEnd)
-      ));
+      .where(
+        and(
+          eq(mentionCandidates.sourceId, sourceId),
+          eq(mentionCandidates.targetId, targetId),
+          eq(mentionCandidates.spanStart, spanStart),
+          eq(mentionCandidates.spanEnd, spanEnd)
+        )
+      );
 
     return (result[0]?.count ?? 0) > 0;
   }
@@ -194,9 +204,7 @@ export class MentionRepository {
    * Delete a mention
    */
   async delete(candidateId: string): Promise<void> {
-    await this.db
-      .delete(mentionCandidates)
-      .where(eq(mentionCandidates.candidateId, candidateId));
+    await this.db.delete(mentionCandidates).where(eq(mentionCandidates.candidateId, candidateId));
   }
 
   /**
@@ -225,9 +233,7 @@ export class MentionRepository {
    * Count mentions
    */
   async count(): Promise<number> {
-    const result = await this.db
-      .select({ count: sql<number>`count(*)` })
-      .from(mentionCandidates);
+    const result = await this.db.select({ count: sql<number>`count(*)` }).from(mentionCandidates);
 
     return result[0]?.count ?? 0;
   }

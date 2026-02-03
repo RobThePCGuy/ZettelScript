@@ -61,7 +61,7 @@ export class MentionRanker {
     if (mentions.length === 0) return [];
 
     // Get unique target IDs
-    const targetIds = [...new Set(mentions.map(m => m.targetId))];
+    const targetIds = [...new Set(mentions.map((m) => m.targetId))];
 
     // Calculate centrality scores
     const centralityScores = await this.calculateCentrality(targetIds);
@@ -111,8 +111,9 @@ export class MentionRanker {
 
       // Ambiguity penalty
       const ambiguousTargets = mentions.filter(
-        m => m.surfaceText.toLowerCase() === mention.surfaceText.toLowerCase() &&
-             m.targetId !== mention.targetId
+        (m) =>
+          m.surfaceText.toLowerCase() === mention.surfaceText.toLowerCase() &&
+          m.targetId !== mention.targetId
       );
       if (ambiguousTargets.length > 0) {
         score *= this.ambiguityPenalty; // Reduce confidence for ambiguous matches
@@ -200,7 +201,7 @@ export class MentionRanker {
       includeIncoming: true,
     });
 
-    const distanceMap = new Map(expansion.map(e => [e.nodeId, e.depth]));
+    const distanceMap = new Map(expansion.map((e) => [e.nodeId, e.depth]));
 
     for (const targetId of targetNodeIds) {
       const distance = distanceMap.get(targetId);
@@ -251,7 +252,7 @@ export class MentionRanker {
    */
   filterByThreshold(mentions: RankedMention[], threshold?: number): RankedMention[] {
     const thresh = threshold ?? this.confidenceThreshold;
-    return mentions.filter(m => m.confidence >= thresh);
+    return mentions.filter((m) => m.confidence >= thresh);
   }
 
   /**

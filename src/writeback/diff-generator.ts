@@ -214,7 +214,11 @@ export function getDiffWithContext(
   for (let i = 0; i < lines.length; i++) {
     if (lines[i]?.type !== 'unchanged') {
       // Add context around this change
-      for (let j = Math.max(0, i - contextLines); j <= Math.min(lines.length - 1, i + contextLines); j++) {
+      for (
+        let j = Math.max(0, i - contextLines);
+        j <= Math.min(lines.length - 1, i + contextLines);
+        j++
+      ) {
         changePositions.add(j);
       }
     }

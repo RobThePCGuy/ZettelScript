@@ -28,6 +28,7 @@ export interface EntityExtractorOptions {
   llmProvider: LLMProvider;
   chunkSize?: number; // Max characters per chunk
   overlapSize?: number; // Overlap between chunks
+  maxTokens?: number; // Max tokens for LLM response (default: 4096)
 }
 
 const EXTRACTION_PROMPT = `You are an entity extractor for fiction manuscripts. Analyze the following text and extract all named entities.
@@ -84,17 +85,22 @@ export class EntityExtractor {
   private llm: LLMProvider;
   private chunkSize: number;
   private overlapSize: number;
+  private maxTokens: number;
 
   constructor(options: EntityExtractorOptions) {
     this.llm = options.llmProvider;
     this.chunkSize = options.chunkSize ?? 8000; // ~2000 tokens
     this.overlapSize = options.overlapSize ?? 500;
+    this.maxTokens = options.maxTokens ?? 4096; // Enough for complex JSON responses
   }
 
   /**
    * Extract entities from a full manuscript
    */
-  async extractFromText(text: string, onProgress?: (current: number, total: number) => void): Promise<ExtractionResult> {
+  async extractFromText(
+    text: string,
+    onProgress?: (current: number, total: number) => void
+  ): Promise<ExtractionResult> {
     const chunks = this.chunkText(text);
     const allEntities = new Map<string, ExtractedEntity>();
 
@@ -169,7 +175,10 @@ export class EntityExtractor {
     const prompt = EXTRACTION_PROMPT + text;
 
     try {
-      const response = await this.llm.complete(prompt, { temperature: 0.1 });
+      const response = await this.llm.complete(prompt, {
+        temperature: 0.1,
+        maxTokens: this.maxTokens,
+      });
       const parsed = this.parseJSON(response);
 
       const entities: ExtractedEntity[] = [];
@@ -250,7 +259,7 @@ export class EntityExtractor {
     const scenes: ExtractionResult['scenes'] = [];
 
     // Try to find chapter markers
-    const chapterRegex = /^#+\s*(Chapter|Scene|Part)\s*\d*[:\s]*.*/gmi;
+    const chapterRegex = /^#+\s*(Chapter|Scene|Part)\s*\d*[:\s]*.*/gim;
 
     for (const chunk of chunks) {
       const matches = chunk.text.matchAll(chapterRegex);

@@ -58,8 +58,7 @@ export class ApprovalWorkflow {
    * Get all pending proposals
    */
   getPending(): Proposal[] {
-    return Array.from(this.pendingProposals.values())
-      .filter(p => p.status === 'pending');
+    return Array.from(this.pendingProposals.values()).filter((p) => p.status === 'pending');
   }
 
   /**
@@ -181,11 +180,13 @@ export class ApprovalWorkflow {
    * Apply a node creation
    */
   private async applyNodeCreation(proposal: Proposal): Promise<void> {
-    const metadata = proposal.metadata as {
-      path?: string;
-      title?: string;
-      type?: string;
-    } | undefined;
+    const metadata = proposal.metadata as
+      | {
+          path?: string;
+          title?: string;
+          type?: string;
+        }
+      | undefined;
 
     if (!metadata?.path) {
       throw new Error('Node creation requires path in metadata');
@@ -326,10 +327,10 @@ export class ApprovalWorkflow {
     const proposals = Array.from(this.pendingProposals.values());
 
     return {
-      pending: proposals.filter(p => p.status === 'pending').length,
-      approved: proposals.filter(p => p.status === 'approved').length,
-      rejected: proposals.filter(p => p.status === 'rejected').length,
-      applied: proposals.filter(p => p.status === 'applied').length,
+      pending: proposals.filter((p) => p.status === 'pending').length,
+      approved: proposals.filter((p) => p.status === 'approved').length,
+      rejected: proposals.filter((p) => p.status === 'rejected').length,
+      applied: proposals.filter((p) => p.status === 'applied').length,
     };
   }
 }

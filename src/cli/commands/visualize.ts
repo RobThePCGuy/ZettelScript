@@ -3,42 +3,41 @@ import process from 'node:process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import open from 'open';
-import { initContext, getZettelScriptDir, printTable, type CLIContext } from '../utils.js';
+import { initContext, getZettelScriptDir, printTable } from '../utils.js';
 import type { Constellation } from '../../storage/database/repositories/index.js';
-import type { EdgeType } from '../../core/types/index.js';
 import { createVisualizeServer, type VisualizeServer } from '../server/visualize-server.js';
 import { PROTOCOL_VERSION } from '../server/ws-protocol.js';
 
 // Node type colors (Modern Palette)
 export const typeColors: Record<string, string> = {
-  note: '#94a3b8',      // Slate 400
-  scene: '#a78bfa',     // Violet 400
+  note: '#94a3b8', // Slate 400
+  scene: '#a78bfa', // Violet 400
   character: '#34d399', // Emerald 400
-  location: '#60a5fa',  // Blue 400
-  object: '#fbbf24',    // Amber 400
-  event: '#f87171',     // Red 400
-  concept: '#f472b6',   // Pink 400
-  moc: '#fb923c',       // Orange 400
-  timeline: '#818cf8',  // Indigo 400
-  draft: '#52525b',     // Zinc 600
-  ghost: '#64748b',     // Slate 500 (for ghost nodes)
+  location: '#60a5fa', // Blue 400
+  object: '#fbbf24', // Amber 400
+  event: '#f87171', // Red 400
+  concept: '#f472b6', // Pink 400
+  moc: '#fb923c', // Orange 400
+  timeline: '#818cf8', // Indigo 400
+  draft: '#52525b', // Zinc 600
+  ghost: '#64748b', // Slate 500 (for ghost nodes)
 };
 
 // Edge type styling configuration
 export const edgeStyles: Record<string, { color: string; dash: number[]; label: string }> = {
-  explicit_link: { color: '#22d3ee', dash: [], label: 'Links to' },           // Cyan
-  backlink: { color: '#a78bfa', dash: [5, 5], label: 'Backlinks' },           // Violet
-  sequence: { color: '#34d399', dash: [], label: 'Sequence' },                 // Emerald
-  hierarchy: { color: '#fbbf24', dash: [], label: 'Hierarchy' },               // Amber
-  participation: { color: '#f472b6', dash: [], label: 'Participation' },       // Pink
-  pov_visible_to: { color: '#60a5fa', dash: [3, 3], label: 'POV Visible' },   // Blue
-  causes: { color: '#f87171', dash: [], label: 'Causes' },                     // Red
-  setup_payoff: { color: '#fb923c', dash: [], label: 'Setup/Payoff' },        // Orange
-  semantic: { color: '#94a3b8', dash: [2, 2], label: 'Semantic' },            // Gray (accepted wormholes)
+  explicit_link: { color: '#22d3ee', dash: [], label: 'Links to' }, // Cyan
+  backlink: { color: '#a78bfa', dash: [5, 5], label: 'Backlinks' }, // Violet
+  sequence: { color: '#34d399', dash: [], label: 'Sequence' }, // Emerald
+  hierarchy: { color: '#fbbf24', dash: [], label: 'Hierarchy' }, // Amber
+  participation: { color: '#f472b6', dash: [], label: 'Participation' }, // Pink
+  pov_visible_to: { color: '#60a5fa', dash: [3, 3], label: 'POV Visible' }, // Blue
+  causes: { color: '#f87171', dash: [], label: 'Causes' }, // Red
+  setup_payoff: { color: '#fb923c', dash: [], label: 'Setup/Payoff' }, // Orange
+  semantic: { color: '#94a3b8', dash: [2, 2], label: 'Semantic' }, // Gray (accepted wormholes)
   semantic_suggestion: { color: '#64748b', dash: [3, 3], label: 'Wormhole' }, // Slate 500 (pending wormholes)
-  mention: { color: '#2dd4bf', dash: [2, 2], label: 'Mention' },              // Teal
-  alias: { color: '#818cf8', dash: [4, 2], label: 'Alias' },                  // Indigo
-  ghost_ref: { color: '#64748b', dash: [2, 2], label: 'Ghost Reference' },   // Slate 500
+  mention: { color: '#2dd4bf', dash: [2, 2], label: 'Mention' }, // Teal
+  alias: { color: '#818cf8', dash: [4, 2], label: 'Alias' }, // Indigo
+  ghost_ref: { color: '#64748b', dash: [2, 2], label: 'Ghost Reference' }, // Slate 500
 };
 
 export interface GraphNode {
@@ -49,11 +48,11 @@ export interface GraphNode {
   color: string;
   path: string;
   metadata: Record<string, unknown>;
-  updatedAtMs?: number;  // Epoch ms for heat vision
+  updatedAtMs?: number | undefined; // Epoch ms for heat vision
   isGhost?: boolean;
   sourceIds?: string[];
   referenceCount?: number;
-  mostRecentRef?: string;
+  mostRecentRef?: string | undefined;
 }
 
 export interface WebSocketConfig {
@@ -2851,258 +2850,277 @@ export const visualizeCommand = new Command('visualize')
   .option('--path-from <node>', 'Starting node for path highlighting (title or path)')
   .option('--path-to <node>', 'Ending node for path highlighting (title or path)')
   .option('--path-k <n>', 'Number of paths to compute', '3')
-  .action(async (options: { output?: string; open?: boolean; live?: boolean; constellation?: string; listConstellations?: boolean; pathFrom?: string; pathTo?: string; pathK?: string }) => {
-    try {
-      const ctx = await initContext();
+  .action(
+    async (options: {
+      output?: string;
+      open?: boolean;
+      live?: boolean;
+      constellation?: string;
+      listConstellations?: boolean;
+      pathFrom?: string;
+      pathTo?: string;
+      pathK?: string;
+    }) => {
+      try {
+        const ctx = await initContext();
 
-      // Handle --list-constellations
-      if (options.listConstellations) {
-        const constellations = await ctx.constellationRepository.findAll();
-        if (constellations.length === 0) {
-          console.log('No constellations saved yet.');
-          console.log('\nTo save one, open the visualizer and click "Save Current View".');
-        } else {
-          const rows = constellations.map(c => [
-            c.name,
-            c.description || '-',
-            new Date(c.updatedAt).toLocaleDateString(),
-          ]);
-          printTable(['Name', 'Description', 'Updated'], rows);
-        }
-        ctx.connectionManager.close();
-        return;
-      }
-
-      // Load constellation if specified
-      let constellation: Constellation | null = null;
-      if (options.constellation) {
-        constellation = await ctx.constellationRepository.findByName(options.constellation);
-        if (!constellation) {
-          console.error(`Constellation "${options.constellation}" not found.`);
-          console.log('\nAvailable constellations:');
-          const all = await ctx.constellationRepository.findAll();
-          if (all.length === 0) {
-            console.log('  (none)');
+        // Handle --list-constellations
+        if (options.listConstellations) {
+          const constellations = await ctx.constellationRepository.findAll();
+          if (constellations.length === 0) {
+            console.log('No constellations saved yet.');
+            console.log('\nTo save one, open the visualizer and click "Save Current View".');
           } else {
-            all.forEach(c => console.log(`  - ${c.name}`));
+            const rows = constellations.map((c) => [
+              c.name,
+              c.description || '-',
+              new Date(c.updatedAt).toLocaleDateString(),
+            ]);
+            printTable(['Name', 'Description', 'Updated'], rows);
           }
           ctx.connectionManager.close();
-          process.exit(1);
+          return;
         }
-        console.log(`Loading constellation "${constellation.name}"...`);
-      }
 
-      console.log('Generating graph data...');
+        // Load constellation if specified
+        let constellation: Constellation | null = null;
+        if (options.constellation) {
+          constellation = await ctx.constellationRepository.findByName(options.constellation);
+          if (!constellation) {
+            console.error(`Constellation "${options.constellation}" not found.`);
+            console.log('\nAvailable constellations:');
+            const all = await ctx.constellationRepository.findAll();
+            if (all.length === 0) {
+              console.log('  (none)');
+            } else {
+              all.forEach((c) => console.log(`  - ${c.name}`));
+            }
+            ctx.connectionManager.close();
+            process.exit(1);
+          }
+          console.log(`Loading constellation "${constellation.name}"...`);
+        }
 
-      // 1. Fetch Data
-      const nodes = await ctx.nodeRepository.findAll();
-      const edges = await ctx.edgeRepository.findAll();
-      const ghostNodeData = await ctx.unresolvedLinkRepository.getGhostNodesWithRecency();
+        console.log('Generating graph data...');
 
-      // 2. Calculate degree centrality
-      const nodeWeights = new Map<string, number>();
-      edges.forEach(e => {
-        nodeWeights.set(e.sourceId, (nodeWeights.get(e.sourceId) || 0) + 1);
-        nodeWeights.set(e.targetId, (nodeWeights.get(e.targetId) || 0) + 1);
-      });
+        // 1. Fetch Data
+        const nodes = await ctx.nodeRepository.findAll();
+        const edges = await ctx.edgeRepository.findAll();
+        const ghostNodeData = await ctx.unresolvedLinkRepository.getGhostNodesWithRecency();
 
-      // 3. Prepare Graph Data Structure
-      const graphNodes: GraphNode[] = nodes.map(n => ({
-        id: n.nodeId,
-        name: n.title,
-        type: n.type,
-        val: Math.max(1, Math.min(10, (nodeWeights.get(n.nodeId) || 0) / 2)),
-        color: typeColors[n.type] || '#94a3b8',
-        path: n.path,
-        metadata: n.metadata as Record<string, unknown>,
-        updatedAtMs: n.updatedAt ? new Date(n.updatedAt).getTime() : undefined,
-      }));
-
-      const graphLinks: GraphLink[] = edges.map(e => ({
-        source: e.sourceId,
-        target: e.targetId,
-        type: e.edgeType,
-        strength: e.strength ?? 1.0,
-        provenance: e.provenance
-      }));
-
-      // 4. Add ghost nodes (unresolved links)
-      const nodeIdSet = new Set(nodes.map(n => n.nodeId));
-      for (const ghost of ghostNodeData) {
-        // Skip if target text is empty
-        if (!ghost.targetText.trim()) continue;
-
-        const ghostId = `ghost:${ghost.targetText}`;
-
-        // Create ghost node
-        graphNodes.push({
-          id: ghostId,
-          name: ghost.targetText,
-          type: 'ghost',
-          val: Math.max(1, Math.min(5, ghost.referenceCount)),
-          color: typeColors.ghost,
-          path: '',
-          metadata: {
-            referenceCount: ghost.referenceCount,
-            firstSeen: ghost.firstSeen,
-          },
-          isGhost: true,
-          sourceIds: ghost.sourceIds.filter(id => nodeIdSet.has(id)),
-          referenceCount: ghost.referenceCount,
-          mostRecentRef: ghost.mostRecentRef,
+        // 2. Calculate degree centrality
+        const nodeWeights = new Map<string, number>();
+        edges.forEach((e) => {
+          nodeWeights.set(e.sourceId, (nodeWeights.get(e.sourceId) || 0) + 1);
+          nodeWeights.set(e.targetId, (nodeWeights.get(e.targetId) || 0) + 1);
         });
 
-        // Create edges from source nodes to ghost
-        for (const sourceId of ghost.sourceIds) {
-          if (nodeIdSet.has(sourceId)) {
-            graphLinks.push({
-              source: sourceId,
-              target: ghostId,
-              type: 'ghost_ref',
-              strength: 0.3,
-              provenance: 'unresolved_link',
-            });
+        // 3. Prepare Graph Data Structure
+        const graphNodes: GraphNode[] = nodes.map((n) => ({
+          id: n.nodeId,
+          name: n.title,
+          type: n.type,
+          val: Math.max(1, Math.min(10, (nodeWeights.get(n.nodeId) || 0) / 2)),
+          color: typeColors[n.type] || '#94a3b8',
+          path: n.path,
+          metadata: n.metadata as Record<string, unknown>,
+          updatedAtMs: n.updatedAt ? new Date(n.updatedAt).getTime() : undefined,
+        }));
+
+        const graphLinks: GraphLink[] = edges.map((e) => ({
+          source: e.sourceId,
+          target: e.targetId,
+          type: e.edgeType,
+          strength: e.strength ?? 1.0,
+          provenance: e.provenance,
+        }));
+
+        // 4. Add ghost nodes (unresolved links)
+        const nodeIdSet = new Set(nodes.map((n) => n.nodeId));
+        for (const ghost of ghostNodeData) {
+          // Skip if target text is empty
+          if (!ghost.targetText.trim()) continue;
+
+          const ghostId = `ghost:${ghost.targetText}`;
+
+          // Create ghost node
+          graphNodes.push({
+            id: ghostId,
+            name: ghost.targetText,
+            type: 'ghost',
+            val: Math.max(1, Math.min(5, ghost.referenceCount)),
+            color: typeColors['ghost'] ?? '#64748b',
+            path: '',
+            metadata: {
+              referenceCount: ghost.referenceCount,
+              firstSeen: ghost.firstSeen,
+            },
+            isGhost: true,
+            sourceIds: ghost.sourceIds.filter((id) => nodeIdSet.has(id)),
+            referenceCount: ghost.referenceCount,
+            mostRecentRef: ghost.mostRecentRef,
+          });
+
+          // Create edges from source nodes to ghost
+          for (const sourceId of ghost.sourceIds) {
+            if (nodeIdSet.has(sourceId)) {
+              graphLinks.push({
+                source: sourceId,
+                target: ghostId,
+                type: 'ghost_ref',
+                strength: 0.3,
+                provenance: 'unresolved_link',
+              });
+            }
           }
         }
-      }
 
-      const graphData: GraphData = {
-        nodes: graphNodes,
-        links: graphLinks,
-      };
+        const graphData: GraphData = {
+          nodes: graphNodes,
+          links: graphLinks,
+        };
 
-      if (ghostNodeData.length > 0) {
-        console.log(`Found ${ghostNodeData.length} unresolved links (ghost nodes)`);
-      }
-
-      // 5. Compute paths if requested
-      let computedPathData: PathData | null = null;
-      if (options.pathFrom && options.pathTo) {
-        console.log('Computing paths...');
-
-        // Resolve from node
-        let fromNode = await ctx.nodeRepository.findByPath(options.pathFrom);
-        if (!fromNode) {
-          const byTitle = await ctx.nodeRepository.findByTitle(options.pathFrom);
-          fromNode = byTitle[0] ?? null;
-        }
-        if (!fromNode) {
-          const byAlias = await ctx.nodeRepository.findByTitleOrAlias(options.pathFrom);
-          fromNode = byAlias[0] ?? null;
+        if (ghostNodeData.length > 0) {
+          console.log(`Found ${ghostNodeData.length} unresolved links (ghost nodes)`);
         }
 
-        // Resolve to node
-        let toNode = await ctx.nodeRepository.findByPath(options.pathTo);
-        if (!toNode) {
-          const byTitle = await ctx.nodeRepository.findByTitle(options.pathTo);
-          toNode = byTitle[0] ?? null;
-        }
-        if (!toNode) {
-          const byAlias = await ctx.nodeRepository.findByTitleOrAlias(options.pathTo);
-          toNode = byAlias[0] ?? null;
-        }
+        // 5. Compute paths if requested
+        let computedPathData: PathData | null = null;
+        if (options.pathFrom && options.pathTo) {
+          console.log('Computing paths...');
 
-        if (fromNode && toNode) {
-          const k = parseInt(options.pathK || '3', 10);
-          const { paths } = await ctx.graphEngine.findKShortestPaths(
-            fromNode.nodeId,
-            toNode.nodeId,
-            { k, edgeTypes: ['explicit_link', 'sequence', 'causes', 'semantic'] }
-          );
+          // Resolve from node
+          let fromNode = await ctx.nodeRepository.findByPath(options.pathFrom);
+          if (!fromNode) {
+            const byTitle = await ctx.nodeRepository.findByTitle(options.pathFrom);
+            fromNode = byTitle[0] ?? null;
+          }
+          if (!fromNode) {
+            const byAlias = await ctx.nodeRepository.findByTitleOrAlias(options.pathFrom);
+            fromNode = byAlias[0] ?? null;
+          }
 
-          if (paths.length > 0) {
-            computedPathData = {
-              paths: paths.map(p => ({
-                path: p.path,
-                edges: p.edges,
-                hopCount: p.hopCount,
-                score: p.score,
-              })),
-              fromId: fromNode.nodeId,
-              toId: toNode.nodeId,
-              fromLabel: fromNode.title,
-              toLabel: toNode.title,
-            };
-            console.log(`Found ${paths.length} path(s) from "${fromNode.title}" to "${toNode.title}"`);
+          // Resolve to node
+          let toNode = await ctx.nodeRepository.findByPath(options.pathTo);
+          if (!toNode) {
+            const byTitle = await ctx.nodeRepository.findByTitle(options.pathTo);
+            toNode = byTitle[0] ?? null;
+          }
+          if (!toNode) {
+            const byAlias = await ctx.nodeRepository.findByTitleOrAlias(options.pathTo);
+            toNode = byAlias[0] ?? null;
+          }
+
+          if (fromNode && toNode) {
+            const k = parseInt(options.pathK || '3', 10);
+            const { paths } = await ctx.graphEngine.findKShortestPaths(
+              fromNode.nodeId,
+              toNode.nodeId,
+              { k, edgeTypes: ['explicit_link', 'sequence', 'causes', 'semantic'] }
+            );
+
+            if (paths.length > 0) {
+              computedPathData = {
+                paths: paths.map((p) => ({
+                  path: p.path,
+                  edges: p.edges,
+                  hopCount: p.hopCount,
+                  score: p.score,
+                })),
+                fromId: fromNode.nodeId,
+                toId: toNode.nodeId,
+                fromLabel: fromNode.title,
+                toLabel: toNode.title,
+              };
+              console.log(
+                `Found ${paths.length} path(s) from "${fromNode.title}" to "${toNode.title}"`
+              );
+            } else {
+              console.log(`No paths found from "${fromNode.title}" to "${toNode.title}"`);
+            }
           } else {
-            console.log(`No paths found from "${fromNode.title}" to "${toNode.title}"`);
+            if (!fromNode) console.error(`Could not find node: "${options.pathFrom}"`);
+            if (!toNode) console.error(`Could not find node: "${options.pathTo}"`);
           }
-        } else {
-          if (!fromNode) console.error(`Could not find node: "${options.pathFrom}"`);
-          if (!toNode) console.error(`Could not find node: "${options.pathTo}"`);
         }
-      }
 
-      // 6. Start WebSocket server if live mode enabled
-      let wsConfig: WebSocketConfig | null = null;
-      let wsServer: VisualizeServer | null = null;
+        // 6. Start WebSocket server if live mode enabled
+        let wsConfig: WebSocketConfig | null = null;
+        let wsServer: VisualizeServer | null = null;
 
-      if (options.live) {
-        console.log('Starting live update server...');
-        const { server, info } = await createVisualizeServer(ctx, {
-          onClose: () => {
-            console.log('\nBrowser disconnected. Server stopped.');
+        if (options.live) {
+          console.log('Starting live update server...');
+          const { server, info } = await createVisualizeServer(ctx, {
+            onClose: () => {
+              console.log('\nBrowser disconnected. Server stopped.');
+              ctx.connectionManager.close();
+              process.exit(0);
+            },
+          });
+          wsServer = server;
+          wsConfig = {
+            enabled: true,
+            port: info.port,
+            token: info.token,
+            protocolVersion: PROTOCOL_VERSION,
+          };
+          console.log(`Live updates enabled on port ${info.port}`);
+        }
+
+        // 7. Generate HTML
+        const htmlContent = generateVisualizationHtml(
+          graphData,
+          typeColors,
+          constellation,
+          computedPathData,
+          wsConfig
+        );
+
+        // 8. Write Output
+        const outputDir = options.output
+          ? path.dirname(options.output)
+          : getZettelScriptDir(ctx.vaultPath);
+
+        if (!fs.existsSync(outputDir)) {
+          fs.mkdirSync(outputDir, { recursive: true });
+        }
+
+        const outputPath = options.output || path.join(outputDir, 'graph.html');
+        fs.writeFileSync(outputPath, htmlContent, 'utf-8');
+
+        console.log(`\nGraph visualization generated at: ${outputPath}`);
+
+        // 9. Open Browser
+        if (options.open) {
+          console.log('Opening in default browser...');
+          await open(outputPath);
+        }
+
+        // 10. Keep process alive if live mode, otherwise close
+        if (options.live && wsServer) {
+          console.log('\nLive mode active. Press Ctrl+C to stop.');
+
+          // Handle graceful shutdown
+          const shutdown = async () => {
+            console.log('\nShutting down...');
+            if (wsServer) {
+              await wsServer.stop();
+            }
             ctx.connectionManager.close();
             process.exit(0);
-          },
-        });
-        wsServer = server;
-        wsConfig = {
-          enabled: true,
-          port: info.port,
-          token: info.token,
-          protocolVersion: PROTOCOL_VERSION,
-        };
-        console.log(`Live updates enabled on port ${info.port}`);
-      }
+          };
 
-      // 7. Generate HTML
-      const htmlContent = generateVisualizationHtml(graphData, typeColors, constellation, computedPathData, wsConfig);
+          process.on('SIGINT', shutdown);
+          process.on('SIGTERM', shutdown);
 
-      // 8. Write Output
-      const outputDir = options.output
-        ? path.dirname(options.output)
-        : getZettelScriptDir(ctx.vaultPath);
-
-      if (!fs.existsSync(outputDir)) {
-        fs.mkdirSync(outputDir, { recursive: true });
-      }
-
-      const outputPath = options.output || path.join(outputDir, 'graph.html');
-      fs.writeFileSync(outputPath, htmlContent, 'utf-8');
-
-      console.log(`\nGraph visualization generated at: ${outputPath}`);
-
-      // 9. Open Browser
-      if (options.open) {
-        console.log('Opening in default browser...');
-        await open(outputPath);
-      }
-
-      // 10. Keep process alive if live mode, otherwise close
-      if (options.live && wsServer) {
-        console.log('\nLive mode active. Press Ctrl+C to stop.');
-
-        // Handle graceful shutdown
-        const shutdown = async () => {
-          console.log('\nShutting down...');
-          if (wsServer) {
-            await wsServer.stop();
-          }
+          // Keep process alive
+          await new Promise(() => {});
+        } else {
           ctx.connectionManager.close();
-          process.exit(0);
-        };
-
-        process.on('SIGINT', shutdown);
-        process.on('SIGTERM', shutdown);
-
-        // Keep process alive
-        await new Promise(() => {});
-      } else {
-        ctx.connectionManager.close();
+        }
+      } catch (error) {
+        console.error('Visualization failed:', error);
+        process.exit(1);
       }
-    } catch (error) {
-      console.error('Visualization failed:', error);
-      process.exit(1);
     }
-  });
+  );

@@ -114,7 +114,7 @@ function buildCharacterContent(
   // Aliases
   if (char.aliases && char.aliases.length > 0) {
     parts.push(section('Aliases', 3));
-    parts.push(char.aliases.map(a => `- ${a}`).join('\n') + '\n\n');
+    parts.push(char.aliases.map((a) => `- ${a}`).join('\n') + '\n\n');
   }
 
   // Physical description
@@ -134,7 +134,7 @@ function buildCharacterContent(
   // Personality
   if (char.personality && char.personality.length > 0) {
     parts.push(section('Personality'));
-    parts.push(char.personality.map(p => `- ${p}`).join('\n') + '\n\n');
+    parts.push(char.personality.map((p) => `- ${p}`).join('\n') + '\n\n');
   }
 
   // Abilities
@@ -161,7 +161,7 @@ function buildCharacterContent(
   // Equipment
   if (char.equipment && char.equipment.length > 0) {
     parts.push(section('Equipment'));
-    parts.push(char.equipment.map(e => `- ${wikilink(e)}`).join('\n') + '\n\n');
+    parts.push(char.equipment.map((e) => `- ${wikilink(e)}`).join('\n') + '\n\n');
   }
 
   // Related Entities
@@ -295,9 +295,7 @@ function formatStateObject(state: Record<string, unknown>): string {
 /**
  * Generate character notes from KB data
  */
-export async function generateCharacters(
-  options: GeneratorOptions
-): Promise<GeneratorResult> {
+export async function generateCharacters(options: GeneratorOptions): Promise<GeneratorResult> {
   const result: GeneratorResult = {
     created: [],
     skipped: [],

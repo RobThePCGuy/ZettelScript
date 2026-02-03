@@ -1,6 +1,5 @@
 import { Command } from 'commander';
 import * as fs from 'node:fs';
-import * as path from 'node:path';
 import process from 'node:process';
 import { initContext, Spinner, printTable } from '../utils.js';
 import type { Node, EdgeType } from '../../core/types/index.js';
@@ -11,9 +10,18 @@ const DEFAULT_EXCLUDED: EdgeType[] = ['semantic_suggestion', 'backlink', 'mentio
 
 // All possible edge types
 const ALL_EDGE_TYPES: EdgeType[] = [
-  'explicit_link', 'backlink', 'sequence', 'hierarchy', 'participation',
-  'pov_visible_to', 'causes', 'setup_payoff', 'semantic', 'semantic_suggestion',
-  'mention', 'alias'
+  'explicit_link',
+  'backlink',
+  'sequence',
+  'hierarchy',
+  'participation',
+  'pov_visible_to',
+  'causes',
+  'setup_payoff',
+  'semantic',
+  'semantic_suggestion',
+  'mention',
+  'alias',
 ];
 
 interface PathCommandOptions {
@@ -35,25 +43,25 @@ async function resolveNode(
   ctx: Awaited<ReturnType<typeof initContext>>
 ): Promise<Node | null> {
   // Try by path first
-  let node = await ctx.nodeRepository.findByPath(identifier);
-  if (node) return node;
+  const node = await ctx.nodeRepository.findByPath(identifier);
+  if (node !== undefined) return node;
 
   // Try by exact title
   const byTitle = await ctx.nodeRepository.findByTitle(identifier);
-  if (byTitle.length === 1) return byTitle[0];
+  if (byTitle.length === 1) return byTitle[0]!;
   if (byTitle.length > 1) {
     console.error(`Ambiguous title "${identifier}". Found ${byTitle.length} matches:`);
-    byTitle.slice(0, 5).forEach(n => console.error(`  - ${n.title} (${n.path})`));
+    byTitle.slice(0, 5).forEach((n) => console.error(`  - ${n.title} (${n.path})`));
     if (byTitle.length > 5) console.error(`  ... and ${byTitle.length - 5} more`);
     return null;
   }
 
   // Try by alias or partial title match
   const byAlias = await ctx.nodeRepository.findByTitleOrAlias(identifier);
-  if (byAlias.length === 1) return byAlias[0];
+  if (byAlias.length === 1) return byAlias[0]!;
   if (byAlias.length > 1) {
     console.error(`Ambiguous identifier "${identifier}". Found ${byAlias.length} matches:`);
-    byAlias.slice(0, 5).forEach(n => console.error(`  - ${n.title} (${n.path})`));
+    byAlias.slice(0, 5).forEach((n) => console.error(`  - ${n.title} (${n.path})`));
     if (byAlias.length > 5) console.error(`  ... and ${byAlias.length - 5} more`);
     return null;
   }
@@ -65,9 +73,10 @@ async function resolveNode(
  * Parse comma-separated edge types
  */
 function parseEdgeTypes(input: string): EdgeType[] {
-  return input.split(',')
-    .map(s => s.trim())
-    .filter(s => ALL_EDGE_TYPES.includes(s as EdgeType)) as EdgeType[];
+  return input
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => ALL_EDGE_TYPES.includes(s as EdgeType)) as EdgeType[];
 }
 
 /**
@@ -91,24 +100,20 @@ function formatTable(
   }
 
   const rows = paths.map((p, i) => {
-    const route = p.path.map(id => {
-      const node = nodeMap.get(id);
-      const name = node?.title || id;
-      return options.ids ? `${name} [${id.slice(0, 8)}]` : name;
-    }).join(' → ');
+    const route = p.path
+      .map((id) => {
+        const node = nodeMap.get(id);
+        const name = node?.title || id;
+        return options.ids ? `${name} [${id.slice(0, 8)}]` : name;
+      })
+      .join(' → ');
 
     // Truncate route if too long
     const maxRouteLen = 80;
-    const displayRoute = route.length > maxRouteLen
-      ? route.slice(0, maxRouteLen - 3) + '...'
-      : route;
+    const displayRoute =
+      route.length > maxRouteLen ? route.slice(0, maxRouteLen - 3) + '...' : route;
 
-    return [
-      String(i + 1),
-      String(p.hopCount),
-      p.score.toFixed(1),
-      displayRoute
-    ];
+    return [String(i + 1), String(p.hopCount), p.score.toFixed(1), displayRoute];
   });
 
   printTable(['#', 'Hops', 'Score', 'Route'], rows);
@@ -116,17 +121,22 @@ function formatTable(
   // Footer
   console.log();
   if (paths.length < k) {
-    const reasonText = reason === 'diversity_filter'
-      ? 'diversity filter rejected remaining candidates'
-      : reason === 'exhausted_candidates'
-      ? 'no more unique paths exist'
-      : reason;
-    console.log(`Found ${paths.length} path${paths.length !== 1 ? 's' : ''} (requested ${k}). Reason: ${reasonText}.`);
+    const reasonText =
+      reason === 'diversity_filter'
+        ? 'diversity filter rejected remaining candidates'
+        : reason === 'exhausted_candidates'
+          ? 'no more unique paths exist'
+          : reason;
+    console.log(
+      `Found ${paths.length} path${paths.length !== 1 ? 's' : ''} (requested ${k}). Reason: ${reasonText}.`
+    );
   } else {
     console.log(`Found ${paths.length} path${paths.length !== 1 ? 's' : ''}.`);
   }
 
-  console.log(`Constraints: maxDepth=${options.maxDepth}, maxExtra=${options.maxExtra}, overlap≤0.7, edges=[${effectiveEdgeTypes.join(',')}]`);
+  console.log(
+    `Constraints: maxDepth=${options.maxDepth}, maxExtra=${options.maxExtra}, overlap≤0.7, edges=[${effectiveEdgeTypes.join(',')}]`
+  );
 }
 
 /**
@@ -147,12 +157,12 @@ function formatVerbose(
   }
 
   for (let i = 0; i < paths.length; i++) {
-    const p = paths[i];
+    const p = paths[i]!;
     console.log(`Path ${i + 1} (${p.hopCount} hops, score ${p.score.toFixed(1)}):`);
 
     let line = '  ';
     for (let j = 0; j < p.path.length; j++) {
-      const id = p.path[j];
+      const id = p.path[j]!;
       const node = nodeMap.get(id);
       const name = node?.title || id;
       const display = options.ids ? `${name} [${id.slice(0, 8)}]` : name;
@@ -185,12 +195,12 @@ function formatMarkdown(
     lines.push('');
   } else {
     for (let i = 0; i < paths.length; i++) {
-      const p = paths[i];
+      const p = paths[i]!;
       lines.push(`## Path ${i + 1} (${p.hopCount} hops)`);
       lines.push('');
 
       for (let j = 0; j < p.path.length; j++) {
-        const id = p.path[j];
+        const id = p.path[j]!;
         const node = nodeMap.get(id);
         const name = node?.title || id;
         const nodePath = node?.path || '';
@@ -234,7 +244,7 @@ function formatJson(
     },
     returnedCount: paths.length,
     reason: paths.length < k ? reason : 'found_all',
-    paths: paths.map(p => ({
+    paths: paths.map((p) => ({
       hopCount: p.hopCount,
       score: p.score,
       nodes: p.path,
@@ -293,16 +303,18 @@ export const pathCommand = new Command('path')
       // Apply exclusions
       if (options.excludeEdges) {
         const excluded = new Set(parseEdgeTypes(options.excludeEdges));
-        effectiveEdgeTypes = effectiveEdgeTypes.filter(t => !excluded.has(t));
+        effectiveEdgeTypes = effectiveEdgeTypes.filter((t) => !excluded.has(t));
       } else if (!options.edgeTypes) {
         // Apply default exclusions only if --edge-types not specified
         const defaultExcluded = new Set(DEFAULT_EXCLUDED);
-        effectiveEdgeTypes = effectiveEdgeTypes.filter(t => !defaultExcluded.has(t));
+        effectiveEdgeTypes = effectiveEdgeTypes.filter((t) => !defaultExcluded.has(t));
       }
 
       if (effectiveEdgeTypes.length === 0) {
         spinner.stop();
-        console.error('No edge types selected. Check your --edge-types and --exclude-edges options.');
+        console.error(
+          'No edge types selected. Check your --edge-types and --exclude-edges options.'
+        );
         ctx.connectionManager.close();
         process.exit(1);
       }
@@ -334,7 +346,7 @@ export const pathCommand = new Command('path')
         }
       }
       const nodes = await ctx.nodeRepository.findByIds([...allNodeIds]);
-      const nodeMap = new Map(nodes.map(n => [n.nodeId, n]));
+      const nodeMap = new Map(nodes.map((n) => [n.nodeId, n]));
 
       spinner.stop();
 

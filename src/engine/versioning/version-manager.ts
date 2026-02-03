@@ -156,9 +156,7 @@ export class VersionManager {
     }
 
     // Sort by date descending
-    versions.sort((a, b) =>
-      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
+    versions.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
     // Delete old versions
     const toDelete = versions.slice(keepCount);
@@ -172,14 +170,10 @@ export class VersionManager {
   /**
    * Find versions within a date range
    */
-  async findVersionsInRange(
-    nodeId: string,
-    startDate: Date,
-    endDate: Date
-  ): Promise<Version[]> {
+  async findVersionsInRange(nodeId: string, startDate: Date, endDate: Date): Promise<Version[]> {
     const versions = await this.versionRepo.findByNodeId(nodeId);
 
-    return versions.filter(v => {
+    return versions.filter((v) => {
       const date = new Date(v.createdAt);
       return date >= startDate && date <= endDate;
     });

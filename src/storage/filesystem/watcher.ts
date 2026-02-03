@@ -8,7 +8,7 @@ export interface FileEvent {
   type: FileEventType;
   path: string;
   relativePath: string;
-  oldPath?: string;  // For rename events
+  oldPath?: string; // For rename events
 }
 
 export interface WatcherOptions {
@@ -59,8 +59,8 @@ export class FileWatcher extends EventEmitter {
       return;
     }
 
-    const patterns = this.options.extensions!.map(
-      ext => path.join(this.basePath, '**', `*${ext}`)
+    const patterns = this.options.extensions!.map((ext) =>
+      path.join(this.basePath, '**', `*${ext}`)
     );
 
     this.watcher = watch(patterns, {

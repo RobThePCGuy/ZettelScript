@@ -3,6 +3,7 @@
  */
 /* global fetch */
 
+import { TextDecoder } from 'node:util';
 import type { ZettelScriptConfig } from '../core/types/index.js';
 
 export interface LLMOptions {
@@ -45,13 +46,11 @@ export class OpenAILLMProvider implements LLMProvider {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.apiKey}`,
+        Authorization: `Bearer ${this.apiKey}`,
       },
       body: JSON.stringify({
         model: this.model,
-        messages: [
-          { role: 'user', content: prompt },
-        ],
+        messages: [{ role: 'user', content: prompt }],
         max_tokens: maxTokens,
         temperature,
       }),
@@ -62,7 +61,7 @@ export class OpenAILLMProvider implements LLMProvider {
       throw new Error(`OpenAI API error: ${response.status} - ${error}`);
     }
 
-    const data = await response.json() as {
+    const data = (await response.json()) as {
       choices?: Array<{ message?: { content?: string } }>;
     };
 
@@ -74,6 +73,112 @@ export interface OllamaModelInfo {
   contextLength: number;
   parameterSize?: string;
   family?: string;
+}
+
+/**
+ * Check if Ollama is running
+ */
+export async function checkOllamaRunning(baseUrl = 'http://localhost:11434'): Promise<boolean> {
+  try {
+    const response = await fetch(`${baseUrl}/api/tags`, { method: 'GET' });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * List models available in Ollama
+ */
+export async function listOllamaModels(baseUrl = 'http://localhost:11434'): Promise<string[]> {
+  try {
+    const response = await fetch(`${baseUrl}/api/tags`, { method: 'GET' });
+    if (!response.ok) return [];
+
+    const data = (await response.json()) as { models?: Array<{ name: string }> };
+    return data.models?.map((m) => m.name) ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Check if a specific model is available in Ollama
+ */
+export async function checkOllamaModelExists(
+  model: string,
+  baseUrl = 'http://localhost:11434'
+): Promise<boolean> {
+  const models = await listOllamaModels(baseUrl);
+  // Normalize model names (ollama may store as "qwen2.5:7b" or "qwen2.5:7b-instruct")
+  const normalizedModel = model.toLowerCase();
+  return models.some((m) => {
+    const normalizedM = m.toLowerCase();
+    const modelBase = normalizedM.split(':')[0] ?? normalizedM;
+    return (
+      normalizedM === normalizedModel ||
+      normalizedM.startsWith(normalizedModel + '-') ||
+      normalizedModel.startsWith(modelBase)
+    );
+  });
+}
+
+/**
+ * Pull/download a model from Ollama registry
+ * Returns an async generator that yields progress updates
+ */
+export async function* pullOllamaModel(
+  model: string,
+  baseUrl = 'http://localhost:11434'
+): AsyncGenerator<{ status: string; completed?: number; total?: number }> {
+  const response = await fetch(`${baseUrl}/api/pull`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: model, stream: true }),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Failed to pull model: ${error}`);
+  }
+
+  if (!response.body) {
+    throw new Error('No response body from Ollama');
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() ?? '';
+
+    for (const line of lines) {
+      if (line.trim()) {
+        try {
+          const data = JSON.parse(line) as { status: string; completed?: number; total?: number };
+          yield data;
+        } catch {
+          // Skip malformed JSON
+        }
+      }
+    }
+  }
+
+  // Process any remaining data
+  if (buffer.trim()) {
+    try {
+      const data = JSON.parse(buffer) as { status: string; completed?: number; total?: number };
+      yield data;
+    } catch {
+      // Skip malformed JSON
+    }
+  }
 }
 
 /**
@@ -92,7 +197,7 @@ export async function getOllamaModelInfo(
 
     if (!response.ok) return null;
 
-    const data = await response.json() as {
+    const data = (await response.json()) as {
       model_info?: Record<string, unknown>;
       details?: { parameter_size?: string; family?: string };
     };
@@ -194,7 +299,7 @@ export class OllamaLLMProvider implements LLMProvider {
       throw new Error(`Ollama API error: ${response.status} - ${error}`);
     }
 
-    const data = await response.json() as { response?: string };
+    const data = (await response.json()) as { response?: string };
 
     return data.response ?? '';
   }

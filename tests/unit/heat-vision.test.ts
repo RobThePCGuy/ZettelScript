@@ -14,8 +14,8 @@ const MS_PER_DAY = 86400000;
 function computeAutoWindow(nodes: Array<{ updatedAtMs?: number; isGhost?: boolean }>): number {
   const now = Date.now();
   const ages = nodes
-    .filter(n => n.updatedAtMs && !n.isGhost)
-    .map(n => Math.max(0, (now - n.updatedAtMs!) / MS_PER_DAY))
+    .filter((n) => n.updatedAtMs && !n.isGhost)
+    .map((n) => Math.max(0, (now - n.updatedAtMs!) / MS_PER_DAY))
     .sort((a, b) => a - b);
 
   if (ages.length < 10) return 30;
@@ -46,7 +46,7 @@ function computeHeat(
 // Replicate settings loading logic
 function parseManualWindow(value: string | null): number {
   const parsed = parseInt(value || '', 10);
-  return (Number.isNaN(parsed) || parsed < 7 || parsed > 180) ? 30 : parsed;
+  return Number.isNaN(parsed) || parsed < 7 || parsed > 180 ? 30 : parsed;
 }
 
 describe('Heat Vision', () => {
@@ -120,7 +120,7 @@ describe('Heat Vision', () => {
       const now = Date.now();
       // All nodes updated within last 2 days
       const nodes = Array.from({ length: 20 }, (_, i) => ({
-        updatedAtMs: now - (i * 0.1) * MS_PER_DAY, // 0, 0.1, 0.2, ... 1.9 days
+        updatedAtMs: now - i * 0.1 * MS_PER_DAY, // 0, 0.1, 0.2, ... 1.9 days
       }));
 
       const result = computeAutoWindow(nodes);
@@ -212,10 +212,10 @@ describe('Heat Vision', () => {
     it('should use linear scaling', () => {
       const now = Date.now();
       const nodes = [
-        { updatedAtMs: now },                        // 0 days = heat 1.0
-        { updatedAtMs: now - 10 * MS_PER_DAY },      // 10 days = heat ~0.67
-        { updatedAtMs: now - 20 * MS_PER_DAY },      // 20 days = heat ~0.33
-        { updatedAtMs: now - 30 * MS_PER_DAY },      // 30 days = heat 0.0
+        { updatedAtMs: now }, // 0 days = heat 1.0
+        { updatedAtMs: now - 10 * MS_PER_DAY }, // 10 days = heat ~0.67
+        { updatedAtMs: now - 20 * MS_PER_DAY }, // 20 days = heat ~0.33
+        { updatedAtMs: now - 30 * MS_PER_DAY }, // 30 days = heat 0.0
       ];
       computeHeat(nodes, 30);
 

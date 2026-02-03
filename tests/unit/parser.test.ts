@@ -1,7 +1,16 @@
 import { describe, it, expect } from 'vitest';
-import { extractWikilinks, createWikilink, normalizeTarget, targetsMatch } from '../../src/parser/wikilink.js';
+import {
+  extractWikilinks,
+  createWikilink,
+  normalizeTarget,
+  targetsMatch,
+} from '../../src/parser/wikilink.js';
 import { parseFrontmatter, extractTitle, extractAliases } from '../../src/parser/frontmatter.js';
-import { findExclusionZones, isInExclusionZone, filterExcludedMatches } from '../../src/parser/exclusions.js';
+import {
+  findExclusionZones,
+  isInExclusionZone,
+  filterExcludedMatches,
+} from '../../src/parser/exclusions.js';
 import { parseMarkdown } from '../../src/parser/markdown.js';
 
 describe('Wikilink Parser', () => {
@@ -113,28 +122,28 @@ describe('Exclusion Zones', () => {
     const content = 'Text before\n```js\ncode here\n```\nText after';
     const zones = findExclusionZones(content);
 
-    expect(zones.some(z => z.type === 'code_block')).toBe(true);
+    expect(zones.some((z) => z.type === 'code_block')).toBe(true);
   });
 
   it('should find inline code', () => {
     const content = 'Use `inline code` here.';
     const zones = findExclusionZones(content);
 
-    expect(zones.some(z => z.type === 'inline_code')).toBe(true);
+    expect(zones.some((z) => z.type === 'inline_code')).toBe(true);
   });
 
   it('should find URLs', () => {
     const content = 'Visit https://example.com for more.';
     const zones = findExclusionZones(content);
 
-    expect(zones.some(z => z.type === 'url')).toBe(true);
+    expect(zones.some((z) => z.type === 'url')).toBe(true);
   });
 
   it('should find existing wikilinks', () => {
     const content = 'See [[existing link]] here.';
     const zones = findExclusionZones(content);
 
-    expect(zones.some(z => z.type === 'existing_link')).toBe(true);
+    expect(zones.some((z) => z.type === 'existing_link')).toBe(true);
   });
 
   it('should check if position is in exclusion zone', () => {

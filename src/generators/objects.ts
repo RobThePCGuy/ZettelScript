@@ -3,13 +3,7 @@
  * Creates object/artifact notes from KB data with lock level system
  */
 
-import type {
-  GeneratorOptions,
-  GeneratorResult,
-  KBObject,
-  KBData,
-  LockLevel,
-} from './types.js';
+import type { GeneratorOptions, GeneratorResult, KBObject, KBData, LockLevel } from './types.js';
 import {
   parseKBJson,
   buildNote,
@@ -112,7 +106,7 @@ function buildObjectContent(
     overview.push(kvPair('Current Holder', wikilink(obj.holder)));
   }
   if (obj.holders && obj.holders.length > 0) {
-    const holderLinks = obj.holders.map(h => wikilink(h)).join(', ');
+    const holderLinks = obj.holders.map((h) => wikilink(h)).join(', ');
     overview.push(kvPair('Holders', holderLinks));
   }
   if (obj.status) {
@@ -129,7 +123,7 @@ function buildObjectContent(
   // Properties
   if (obj.properties && obj.properties.length > 0) {
     parts.push(section('Properties'));
-    parts.push(obj.properties.map(p => `- ${p}`).join('\n') + '\n\n');
+    parts.push(obj.properties.map((p) => `- ${p}`).join('\n') + '\n\n');
   }
 
   // Significance
@@ -168,9 +162,7 @@ function buildObjectContent(
 /**
  * Generate object notes from KB data
  */
-export async function generateObjects(
-  options: GeneratorOptions
-): Promise<GeneratorResult> {
+export async function generateObjects(options: GeneratorOptions): Promise<GeneratorResult> {
   const result: GeneratorResult = {
     created: [],
     skipped: [],

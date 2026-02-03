@@ -46,7 +46,7 @@ export const EdgeTypeSchema = Type.Union([
   Type.Literal('causes'),
   Type.Literal('setup_payoff'),
   Type.Literal('semantic'),
-  Type.Literal('semantic_suggestion'),  // Pending semantic wormhole (not yet accepted)
+  Type.Literal('semantic_suggestion'), // Pending semantic wormhole (not yet accepted)
   Type.Literal('mention'),
   Type.Literal('alias'),
 ]);
@@ -192,22 +192,25 @@ export type GraphMetrics = Static<typeof GraphMetricsSchema>;
 // Frontmatter Schema
 // ============================================================================
 
-export const FrontmatterSchema = Type.Object({
-  id: Type.Optional(Type.String()),
-  title: Type.Optional(Type.String()),
-  type: Type.Optional(NodeTypeSchema),
-  aliases: Type.Optional(Type.Array(Type.String())),
-  tags: Type.Optional(Type.Array(Type.String())),
-  created: Type.Optional(Type.String()),
-  updated: Type.Optional(Type.String()),
-  // Manuscript-specific fields
-  pov: Type.Optional(Type.String()),
-  scene_order: Type.Optional(Type.Number()),
-  timeline_position: Type.Optional(Type.String()),
-  characters: Type.Optional(Type.Array(Type.String())),
-  locations: Type.Optional(Type.Array(Type.String())),
-  // Allow additional fields
-}, { additionalProperties: true });
+export const FrontmatterSchema = Type.Object(
+  {
+    id: Type.Optional(Type.String()),
+    title: Type.Optional(Type.String()),
+    type: Type.Optional(NodeTypeSchema),
+    aliases: Type.Optional(Type.Array(Type.String())),
+    tags: Type.Optional(Type.Array(Type.String())),
+    created: Type.Optional(Type.String()),
+    updated: Type.Optional(Type.String()),
+    // Manuscript-specific fields
+    pov: Type.Optional(Type.String()),
+    scene_order: Type.Optional(Type.Number()),
+    timeline_position: Type.Optional(Type.String()),
+    characters: Type.Optional(Type.Array(Type.String())),
+    locations: Type.Optional(Type.Array(Type.String())),
+    // Allow additional fields
+  },
+  { additionalProperties: true }
+);
 
 export type Frontmatter = Static<typeof FrontmatterSchema>;
 
@@ -216,18 +219,18 @@ export type Frontmatter = Static<typeof FrontmatterSchema>;
 // ============================================================================
 
 export interface WikiLink {
-  raw: string;           // Original text including brackets
-  target: string;        // The link target (after id: prefix if present)
-  display: string;       // Display text (after | if present)
-  isIdLink: boolean;     // Whether it uses id: prefix
-  start: number;         // Start position in source
-  end: number;           // End position in source
+  raw: string; // Original text including brackets
+  target: string; // The link target (after id: prefix if present)
+  display: string; // Display text (after | if present)
+  isIdLink: boolean; // Whether it uses id: prefix
+  start: number; // Start position in source
+  end: number; // End position in source
 }
 
 export interface ResolvedLink extends WikiLink {
   resolvedNodeId: string | null;
   ambiguous: boolean;
-  candidates: string[];  // Node IDs if ambiguous
+  candidates: string[]; // Node IDs if ambiguous
 }
 
 // ============================================================================
@@ -237,7 +240,7 @@ export interface ResolvedLink extends WikiLink {
 export interface BacklinkResult {
   sourceNode: Node;
   edge: Edge;
-  context?: string;  // Surrounding text for context
+  context?: string; // Surrounding text for context
 }
 
 export interface NeighborResult {
@@ -250,7 +253,7 @@ export interface TraversalResult {
   nodeId: string;
   depth: number;
   score: number;
-  path: string[];  // Node IDs forming the path
+  path: string[]; // Node IDs forming the path
 }
 
 // ============================================================================
@@ -304,11 +307,16 @@ export interface SceneInfo {
 export interface CharacterKnowledge {
   characterId: string;
   knows: Map<string, { learnedAt: string; source: string }>;
-  present: string[];  // Scene IDs where character is present
+  present: string[]; // Scene IDs where character is present
 }
 
 export interface ContinuityIssue {
-  type: 'pov_leakage' | 'timeline_inconsistency' | 'missing_setup' | 'orphaned_payoff' | 'character_knowledge';
+  type:
+    | 'pov_leakage'
+    | 'timeline_inconsistency'
+    | 'missing_setup'
+    | 'orphaned_payoff'
+    | 'character_knowledge';
   severity: 'error' | 'warning' | 'info';
   nodeId: string;
   description: string;
@@ -316,11 +324,11 @@ export interface ContinuityIssue {
 }
 
 export interface ImpactAnalysis {
-  directImpact: string[];      // Directly affected node IDs
-  transitiveImpact: string[];  // Indirectly affected via graph
-  povImpact: string[];         // Scenes with same POV
-  timelineImpact: string[];    // Scenes in timeline range
-  characterImpact: string[];   // Characters whose knowledge changes
+  directImpact: string[]; // Directly affected node IDs
+  transitiveImpact: string[]; // Indirectly affected via graph
+  povImpact: string[]; // Scenes with same POV
+  timelineImpact: string[]; // Scenes in timeline range
+  characterImpact: string[]; // Characters whose knowledge changes
 }
 
 // ============================================================================

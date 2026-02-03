@@ -5,15 +5,8 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type {
-  ChapterGeneratorOptions,
-  GeneratorResult,
-} from './types.js';
-import {
-  buildNote,
-  writeNoteFile,
-  sanitizeFilename,
-} from './utils.js';
+import type { ChapterGeneratorOptions, GeneratorResult } from './types.js';
+import { buildNote, writeNoteFile, sanitizeFilename } from './utils.js';
 
 const CHAPTERS_SUBDIR = 'Chapters';
 
@@ -23,10 +16,10 @@ const CHAPTER_REGEX = /^##\s*Chapter\s+(\d+)(?:\s*[:\-–—]\s*(.+))?$/im;
 
 // Alternative patterns for different manuscript styles
 const ALT_CHAPTER_PATTERNS = [
-  /^#\s*Chapter\s+(\d+)(?:\s*[:\-–—]\s*(.+))?$/im,  // Single hash
+  /^#\s*Chapter\s+(\d+)(?:\s*[:\-–—]\s*(.+))?$/im, // Single hash
   /^###\s*Chapter\s+(\d+)(?:\s*[:\-–—]\s*(.+))?$/im, // Triple hash
-  /^Chapter\s+(\d+)(?:\s*[:\-–—]\s*(.+))?$/im,       // No hash
-  /^##\s+(\d+)\.?\s+(.+)$/im,                         // ## 1. Title
+  /^Chapter\s+(\d+)(?:\s*[:\-–—]\s*(.+))?$/im, // No hash
+  /^##\s+(\d+)\.?\s+(.+)$/im, // ## 1. Title
 ];
 
 interface ChapterData {
@@ -141,9 +134,7 @@ function getChapterFilename(chapter: ChapterData): string {
 /**
  * Generate chapter notes from a manuscript file
  */
-export async function generateChapters(
-  options: ChapterGeneratorOptions
-): Promise<GeneratorResult> {
+export async function generateChapters(options: ChapterGeneratorOptions): Promise<GeneratorResult> {
   const result: GeneratorResult = {
     created: [],
     skipped: [],
@@ -229,7 +220,7 @@ export function analyzeManuscript(manuscriptPath: string): {
   const totalLines = content.split('\n').length;
 
   return {
-    chapters: chapters.map(ch => ({
+    chapters: chapters.map((ch) => ({
       number: ch.number,
       title: ch.title,
       lines: ch.endLine - ch.startLine + 1,

@@ -1,4 +1,9 @@
-import type { Node, ImpactAnalysis, Frontmatter, ZettelScriptConfig } from '../../core/types/index.js';
+import type {
+  Node,
+  ImpactAnalysis,
+  Frontmatter,
+  ZettelScriptConfig,
+} from '../../core/types/index.js';
 import { DEFAULT_CONFIG } from '../../core/types/index.js';
 import { NodeRepository } from '../../storage/database/repositories/index.js';
 import * as fs from 'node:fs';
@@ -115,7 +120,7 @@ export class RewriteOrchestrator {
     // Fetch character nodes
     for (const charName of characterNames) {
       const nodes = await this.nodeRepo.findByTitle(charName);
-      const charNode = nodes.find(n => n.type === 'character');
+      const charNode = nodes.find((n) => n.type === 'character');
 
       if (charNode) {
         const charMeta = charNode.metadata as { description?: string } | undefined;
@@ -149,7 +154,7 @@ export class RewriteOrchestrator {
     // Get scenes within configured range of current (use half of impact range for context)
     const range = Math.ceil(this.config.impact.timelineRange / 2);
     const adjacentScenes = scenes
-      .filter(s => {
+      .filter((s) => {
         const meta = s.metadata as Frontmatter | undefined;
         const order = meta?.scene_order;
         return order !== undefined && Math.abs(order - sceneOrder) <= range && order !== sceneOrder;
@@ -191,7 +196,8 @@ export class RewriteOrchestrator {
     const directIds = this.impact.directImpact;
     const nodes = await this.nodeRepo.findByIds(directIds);
 
-    for (const node of nodes.slice(0, 10)) { // Limit to 10
+    for (const node of nodes.slice(0, 10)) {
+      // Limit to 10
       if (node.type === 'character') continue;
 
       const nodeContent = await this.readNodeContent(node);
@@ -214,11 +220,15 @@ export class RewriteOrchestrator {
     const constraints: string[] = [];
 
     if (sceneMetadata?.pov) {
-      constraints.push(`Maintain POV: ${sceneMetadata.pov} - only reveal information they would know`);
+      constraints.push(
+        `Maintain POV: ${sceneMetadata.pov} - only reveal information they would know`
+      );
     }
 
     if (sceneMetadata?.scene_order !== undefined) {
-      constraints.push(`Timeline position: Scene ${sceneMetadata.scene_order} - maintain continuity with adjacent scenes`);
+      constraints.push(
+        `Timeline position: Scene ${sceneMetadata.scene_order} - maintain continuity with adjacent scenes`
+      );
     }
 
     if (sceneMetadata?.locations?.length) {
@@ -247,30 +257,30 @@ export class RewriteOrchestrator {
 
     // Constraints
     if (context.constraints.length > 0) {
-      sections.push(`## Constraints\n\n${context.constraints.map(c => `- ${c}`).join('\n')}`);
+      sections.push(`## Constraints\n\n${context.constraints.map((c) => `- ${c}`).join('\n')}`);
     }
 
     // Characters
     if (context.characterContext.length > 0) {
-      const charSection = context.characterContext.map(c =>
-        `### ${c.name} (${c.role})\n\n${c.description}`
-      ).join('\n\n');
+      const charSection = context.characterContext
+        .map((c) => `### ${c.name} (${c.role})\n\n${c.description}`)
+        .join('\n\n');
       sections.push(`## Characters\n\n${charSection}`);
     }
 
     // Timeline
     if (context.timelineContext.length > 0) {
-      const timelineSection = context.timelineContext.map(t =>
-        `### Scene ${t.order}: ${t.title}\n\n${t.summary}`
-      ).join('\n\n');
+      const timelineSection = context.timelineContext
+        .map((t) => `### Scene ${t.order}: ${t.title}\n\n${t.summary}`)
+        .join('\n\n');
       sections.push(`## Timeline Context\n\n${timelineSection}`);
     }
 
     // Related content
     if (context.relatedContent.length > 0) {
-      const relatedSection = context.relatedContent.map(r =>
-        `### ${r.title} (${r.type})\n\n${r.excerpt}`
-      ).join('\n\n');
+      const relatedSection = context.relatedContent
+        .map((r) => `### ${r.title} (${r.type})\n\n${r.excerpt}`)
+        .join('\n\n');
       sections.push(`## Related Content\n\n${relatedSection}`);
     }
 

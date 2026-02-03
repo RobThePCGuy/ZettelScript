@@ -51,8 +51,8 @@ export const indexCommand = new Command('index')
       // Show verbose output
       if (options.verbose) {
         // Show unresolved links
-        const allUnresolved = result.indexed.flatMap(r =>
-          r.unresolved.map(u => ({ path: r.node.path, link: u.target }))
+        const allUnresolved = result.indexed.flatMap((r) =>
+          r.unresolved.map((u) => ({ path: r.node.path, link: u.target }))
         );
         if (allUnresolved.length > 0) {
           console.log(`\nUnresolved links (${allUnresolved.length}):`);
@@ -65,8 +65,8 @@ export const indexCommand = new Command('index')
         }
 
         // Show ambiguous links
-        const allAmbiguous = result.indexed.flatMap(r =>
-          r.ambiguous.map(a => ({ path: r.node.path, link: a.target }))
+        const allAmbiguous = result.indexed.flatMap((r) =>
+          r.ambiguous.map((a) => ({ path: r.node.path, link: a.target }))
         );
         if (allAmbiguous.length > 0) {
           console.log(`\nAmbiguous links (${allAmbiguous.length}):`);

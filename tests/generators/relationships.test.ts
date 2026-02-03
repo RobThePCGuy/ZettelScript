@@ -101,7 +101,7 @@ describe('RelationshipEngine', () => {
       const engine = new RelationshipEngine(kb);
 
       const rels = engine.getRelationshipsFor('char_001');
-      const allyRel = rels.find(r => r.targetId === 'char_002' && r.relationshipType === 'ally');
+      const allyRel = rels.find((r) => r.targetId === 'char_002' && r.relationshipType === 'ally');
 
       expect(allyRel).toBeDefined();
       expect(allyRel?.targetName).toBe('Beta Two');
@@ -116,7 +116,7 @@ describe('RelationshipEngine', () => {
       // Alpha is source, but Beta should also see this relationship
       const relsForBeta = engine.getRelationshipsFor('char_002');
       const allyRel = relsForBeta.find(
-        r => r.targetId === 'char_001' && r.relationshipType === 'ally'
+        (r) => r.targetId === 'char_001' && r.relationshipType === 'ally'
       );
 
       expect(allyRel).toBeDefined();
@@ -130,7 +130,9 @@ describe('RelationshipEngine', () => {
       const engine = new RelationshipEngine(kb);
 
       const rels = engine.getRelationshipsFor('char_001');
-      const ownsRel = rels.find(r => r.targetName === 'The Keystone' && r.relationshipType === 'owns');
+      const ownsRel = rels.find(
+        (r) => r.targetName === 'The Keystone' && r.relationshipType === 'owns'
+      );
 
       expect(ownsRel).toBeDefined();
       expect(ownsRel?.targetType).toBe('object');
@@ -142,7 +144,9 @@ describe('RelationshipEngine', () => {
       const engine = new RelationshipEngine(kb);
 
       const rels = engine.getRelationshipsFor('obj_001');
-      const holdsRel = rels.find(r => r.targetName === 'Alpha One' && r.relationshipType === 'holds');
+      const holdsRel = rels.find(
+        (r) => r.targetName === 'Alpha One' && r.relationshipType === 'holds'
+      );
 
       expect(holdsRel).toBeDefined();
       expect(holdsRel?.targetType).toBe('character');
@@ -155,7 +159,7 @@ describe('RelationshipEngine', () => {
 
       const rels = engine.getRelationshipsFor('obj_001');
       const formerRel = rels.find(
-        r => r.targetName === 'Gamma Antagonist' && r.relationshipType === 'formerly_held'
+        (r) => r.targetName === 'Gamma Antagonist' && r.relationshipType === 'formerly_held'
       );
 
       expect(formerRel).toBeDefined();
@@ -169,7 +173,7 @@ describe('RelationshipEngine', () => {
       const engine = new RelationshipEngine(kb, 2); // threshold of 2
 
       const rels = engine.getRelationshipsFor('char_001');
-      const coOccurrence = rels.filter(r => r.relationshipType === 'co_occurrence');
+      const coOccurrence = rels.filter((r) => r.relationshipType === 'co_occurrence');
 
       // Alpha is in chapters 1,2,3,4,5
       // Beta is in chapters 2,3,4,5 (4 shared)
@@ -178,7 +182,7 @@ describe('RelationshipEngine', () => {
       // The Void Realm is in chapters 3,5 (2 shared)
       expect(coOccurrence.length).toBeGreaterThan(0);
 
-      const betaCoOccur = coOccurrence.find(r => r.targetName === 'Beta Two');
+      const betaCoOccur = coOccurrence.find((r) => r.targetName === 'Beta Two');
       // Beta has explicit ally relationship, so should not appear as co_occurrence
       expect(betaCoOccur).toBeUndefined();
     });
@@ -191,7 +195,7 @@ describe('RelationshipEngine', () => {
 
       // Alpha and Beta have explicit ally relationship
       // Should not have a separate co_occurrence entry
-      const betaRels = rels.filter(r => r.targetName === 'Beta Two');
+      const betaRels = rels.filter((r) => r.targetName === 'Beta Two');
       expect(betaRels.length).toBe(1);
       expect(betaRels[0].relationshipType).toBe('ally');
     });
@@ -205,8 +209,8 @@ describe('RelationshipEngine', () => {
       const relsHigh = engineHigh.getRelationshipsFor('char_001');
 
       // Low threshold should find more co-occurrences
-      const coOccurLow = relsLow.filter(r => r.relationshipType === 'co_occurrence');
-      const coOccurHigh = relsHigh.filter(r => r.relationshipType === 'co_occurrence');
+      const coOccurLow = relsLow.filter((r) => r.relationshipType === 'co_occurrence');
+      const coOccurHigh = relsHigh.filter((r) => r.relationshipType === 'co_occurrence');
 
       expect(coOccurLow.length).toBeGreaterThan(coOccurHigh.length);
     });
@@ -234,7 +238,7 @@ describe('RelationshipEngine', () => {
       // Alpha is in chapter 1, event_001 is in chapter 1
       const rels = engine.getRelationshipsFor('char_001');
       const participatedRel = rels.find(
-        r => r.targetId === 'event_001' && r.relationshipType === 'participated'
+        (r) => r.targetId === 'event_001' && r.relationshipType === 'participated'
       );
 
       expect(participatedRel).toBeDefined();
@@ -249,11 +253,11 @@ describe('RelationshipEngine', () => {
 
       // event_001 is in chapter 1, Alpha and Gamma are in chapter 1
       const rels = engine.getRelationshipsFor('event_001');
-      const participants = rels.filter(r => r.relationshipType === 'participated');
+      const participants = rels.filter((r) => r.relationshipType === 'participated');
 
       expect(participants.length).toBe(2);
-      expect(participants.some(r => r.targetName === 'Alpha One')).toBe(true);
-      expect(participants.some(r => r.targetName === 'Gamma Antagonist')).toBe(true);
+      expect(participants.some((r) => r.targetName === 'Alpha One')).toBe(true);
+      expect(participants.some((r) => r.targetName === 'Gamma Antagonist')).toBe(true);
     });
   });
 
@@ -265,7 +269,7 @@ describe('RelationshipEngine', () => {
       // event_001 is in chapter 1, Central Facility is in chapters 1-5
       const rels = engine.getRelationshipsFor('event_001');
       const occurredAtRel = rels.find(
-        r => r.targetName === 'Central Facility' && r.relationshipType === 'occurred_at'
+        (r) => r.targetName === 'Central Facility' && r.relationshipType === 'occurred_at'
       );
 
       expect(occurredAtRel).toBeDefined();
@@ -279,7 +283,7 @@ describe('RelationshipEngine', () => {
 
       // Central Facility is in chapters 1-5, both events are in those chapters
       const rels = engine.getRelationshipsFor('loc_001');
-      const events = rels.filter(r => r.targetType === 'event');
+      const events = rels.filter((r) => r.targetType === 'event');
 
       expect(events.length).toBe(2);
     });
@@ -296,11 +300,15 @@ describe('RelationshipEngine', () => {
       const rels = engine.getRelationshipsFor('obj_001');
 
       // Should have a holds relationship with Alpha
-      const holdsAlpha = rels.find(r => r.targetName === 'Alpha One' && r.relationshipType === 'holds');
+      const holdsAlpha = rels.find(
+        (r) => r.targetName === 'Alpha One' && r.relationshipType === 'holds'
+      );
       expect(holdsAlpha).toBeDefined();
 
       // Should have formerly_held with Gamma
-      const formerlyGamma = rels.find(r => r.targetName === 'Gamma Antagonist' && r.relationshipType === 'formerly_held');
+      const formerlyGamma = rels.find(
+        (r) => r.targetName === 'Gamma Antagonist' && r.relationshipType === 'formerly_held'
+      );
       expect(formerlyGamma).toBeDefined();
 
       // Check co-occurrence includes derived chapter info
@@ -320,7 +328,7 @@ describe('RelationshipEngine', () => {
       // The Keystone is held by Alpha (chapters 1-5)
       // So we might see co-occurrence or the location sees the object
       // This verifies the derivation mechanism works
-      expect(locRels.some(r => r.targetType === 'object')).toBe(true);
+      expect(locRels.some((r) => r.targetType === 'object')).toBe(true);
     });
   });
 
@@ -353,7 +361,7 @@ describe('RelationshipEngine', () => {
       const engine = new RelationshipEngine(kb);
 
       const rels = engine.getRelationshipsFor('char_001');
-      const eventRel = rels.find(r => r.targetType === 'event');
+      const eventRel = rels.find((r) => r.targetType === 'event');
 
       expect(eventRel).toBeDefined();
       expect(eventRel?.linkTarget).toBe('Event-01-001');
@@ -365,8 +373,8 @@ describe('RelationshipEngine', () => {
       const engine = new RelationshipEngine(kb);
 
       const rels = engine.getRelationshipsFor('event_001');
-      const charRel = rels.find(r => r.targetType === 'character');
-      const locRel = rels.find(r => r.targetType === 'location');
+      const charRel = rels.find((r) => r.targetType === 'character');
+      const locRel = rels.find((r) => r.targetType === 'location');
 
       expect(charRel?.linkTarget).toBe(charRel?.targetName);
       expect(locRel?.linkTarget).toBe(locRel?.targetName);
@@ -388,7 +396,7 @@ describe('RelationshipEngine', () => {
       // The Keystone is held by "Alpha One", holder field uses exact name
       // but let's verify name normalization works by checking object resolution
       const rels = engine.getRelationshipsFor('obj_001');
-      const holdsRel = rels.find(r => r.relationshipType === 'holds');
+      const holdsRel = rels.find((r) => r.relationshipType === 'holds');
 
       expect(holdsRel).toBeDefined();
       expect(holdsRel?.targetName).toBe('Alpha One');

@@ -13,7 +13,7 @@ export const watchCommand = new Command('watch')
       console.log('Press Ctrl+C to stop.\n');
 
       const indexer = createIncrementalIndexer(ctx.vaultPath, ctx.pipeline, {
-        excludePatterns: ctx.config.vault.excludePatterns.map(p => `**/${p}`),
+        excludePatterns: ctx.config.vault.excludePatterns.map((p) => `**/${p}`),
       });
 
       indexer.on('ready', () => {
@@ -32,10 +32,10 @@ export const watchCommand = new Command('watch')
                 console.log(`  Links: ${edges.length}`);
               }
               if (unresolved.length > 0) {
-                console.log(`  Unresolved: ${unresolved.map(u => u.target).join(', ')}`);
+                console.log(`  Unresolved: ${unresolved.map((u) => u.target).join(', ')}`);
               }
               if (ambiguous.length > 0) {
-                console.log(`  Ambiguous: ${ambiguous.map(a => a.target).join(', ')}`);
+                console.log(`  Ambiguous: ${ambiguous.map((a) => a.target).join(', ')}`);
               }
             }
             break;

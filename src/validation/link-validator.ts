@@ -13,7 +13,7 @@ export interface AmbiguousLink {
   sourceId: string;
   sourcePath: string;
   targetText: string;
-  candidates: string[];  // Node IDs
+  candidates: string[]; // Node IDs
   candidateTitles: string[];
 }
 
@@ -51,7 +51,7 @@ export class LinkValidator {
 
     // Get all nodes
     const nodes = await this.nodeRepo.findAll();
-    const nodeMap = new Map(nodes.map(n => [n.nodeId, n]));
+    const nodeMap = new Map(nodes.map((n) => [n.nodeId, n]));
 
     // Get all explicit_link edges
     const edges = await this.edgeRepo.findByType('explicit_link');
@@ -67,7 +67,9 @@ export class LinkValidator {
 
       if (!targetNode) {
         // Target node missing - broken link
-        const attributes = edge.attributes as { displayText?: string; position?: { start: number; end: number } } | undefined;
+        const attributes = edge.attributes as
+          | { displayText?: string; position?: { start: number; end: number } }
+          | undefined;
         broken.push({
           sourceId: edge.sourceId,
           sourcePath: sourceNode.path,
@@ -112,7 +114,9 @@ export class LinkValidator {
       const targetNode = await this.nodeRepo.findById(edge.targetId);
 
       if (!targetNode) {
-        const attributes = edge.attributes as { displayText?: string; position?: { start: number; end: number } } | undefined;
+        const attributes = edge.attributes as
+          | { displayText?: string; position?: { start: number; end: number } }
+          | undefined;
         broken.push({
           sourceId: nodeId,
           sourcePath: node.path,
@@ -133,7 +137,7 @@ export class LinkValidator {
    */
   async findLinkers(targetNodeId: string): Promise<Node[]> {
     const edges = await this.edgeRepo.findBacklinks(targetNodeId);
-    const sourceIds = edges.map(e => e.sourceId);
+    const sourceIds = edges.map((e) => e.sourceId);
     return this.nodeRepo.findByIds(sourceIds);
   }
 

@@ -144,7 +144,7 @@ export class ConstellationRepository {
    */
   async findAll(): Promise<Constellation[]> {
     const rows = await this.db.select().from(constellations);
-    return rows.map(row => this.rowToConstellation(row));
+    return rows.map((row) => this.rowToConstellation(row));
   }
 
   /**
@@ -171,10 +171,7 @@ export class ConstellationRepository {
     if (input.cameraZoom !== undefined) updates.cameraZoom = input.cameraZoom;
     if (input.focusNodeIds !== undefined) updates.focusNodeIds = input.focusNodeIds;
 
-    await this.db
-      .update(constellations)
-      .set(updates)
-      .where(eq(constellations.constellationId, id));
+    await this.db.update(constellations).set(updates).where(eq(constellations.constellationId, id));
 
     return this.findById(id);
   }
@@ -194,9 +191,7 @@ export class ConstellationRepository {
    * Delete a constellation by name
    */
   async deleteByName(name: string): Promise<boolean> {
-    const result = await this.db
-      .delete(constellations)
-      .where(eq(constellations.name, name));
+    const result = await this.db.delete(constellations).where(eq(constellations.name, name));
 
     return (result as { changes?: number }).changes !== 0;
   }

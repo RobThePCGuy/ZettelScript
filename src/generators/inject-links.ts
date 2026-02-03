@@ -20,7 +20,11 @@ interface GlobOptions {
 /**
  * Simple glob pattern matching for file discovery
  */
-async function glob(basePath: string, pattern: string, options: GlobOptions = {}): Promise<string[]> {
+async function glob(
+  basePath: string,
+  pattern: string,
+  options: GlobOptions = {}
+): Promise<string[]> {
   const results: string[] = [];
   const ignore = options.ignore || [];
 
@@ -30,7 +34,7 @@ async function glob(basePath: string, pattern: string, options: GlobOptions = {}
     .replace(/\*\*/g, '{{GLOBSTAR}}')
     .replace(/\*/g, '[^/]*')
     .replace(/\?/g, '.')
-    .replace(/{{GLOBSTAR}}\//g, '(?:.*\\/)?')  // **/ matches zero or more dirs
+    .replace(/{{GLOBSTAR}}\//g, '(?:.*\\/)?') // **/ matches zero or more dirs
     .replace(/{{GLOBSTAR}}/g, '.*');
   const regex = new RegExp(`^${regexPattern}$`);
 
@@ -274,9 +278,7 @@ function injectLinksInFile(
         const posKey = `${match.start}-${match.end}`;
         if (!linkedPositions.has(posKey)) {
           // Check if this position overlaps with any existing replacement
-          const overlaps = allReplacements.some(
-            r => (match.start < r.end && match.end > r.start)
-          );
+          const overlaps = allReplacements.some((r) => match.start < r.end && match.end > r.start);
           if (!overlaps) {
             // For alias, link to canonical with display text
             match.replacement = `[[${canonical}|${match.original}]]`;
@@ -364,9 +366,7 @@ function buildEntityMap(kb: KBData): Map<string, string[]> {
 /**
  * Inject wikilinks into all matching files in a vault
  */
-export async function injectLinks(
-  options: InjectLinksOptions
-): Promise<InjectLinksResult> {
+export async function injectLinks(options: InjectLinksOptions): Promise<InjectLinksResult> {
   const result: InjectLinksResult = {
     modified: [],
     linksInjected: 0,
@@ -518,9 +518,10 @@ export async function previewLinkInjection(
       for (const name of allNames) {
         const matches = findEntityMatches(content, name, protectedRegions);
         for (const match of matches) {
-          const linked = name.toLowerCase() === canonical.toLowerCase()
-            ? `[[${canonical}]]`
-            : `[[${canonical}|${match.original}]]`;
+          const linked =
+            name.toLowerCase() === canonical.toLowerCase()
+              ? `[[${canonical}]]`
+              : `[[${canonical}|${match.original}]]`;
           filePreview.push({
             original: match.original,
             linked,
@@ -531,7 +532,10 @@ export async function previewLinkInjection(
     }
 
     if (filePreview.length > 0) {
-      previews.set(file, filePreview.sort((a, b) => a.position - b.position));
+      previews.set(
+        file,
+        filePreview.sort((a, b) => a.position - b.position)
+      );
     }
   }
 

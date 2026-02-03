@@ -86,9 +86,9 @@ export class GraphEngine {
 
     if (edges.length === 0) return [];
 
-    const sourceIds = edges.map(e => e.sourceId);
+    const sourceIds = edges.map((e) => e.sourceId);
     const sourceNodes = await this.nodeRepo.findByIds(sourceIds);
-    const nodeMap = new Map(sourceNodes.map(n => [n.nodeId, n]));
+    const nodeMap = new Map(sourceNodes.map((n) => [n.nodeId, n]));
 
     const results: BacklinkResult[] = [];
     for (const edge of edges) {
@@ -144,7 +144,7 @@ export class GraphEngine {
 
     if (edges.length === 0) return [];
 
-    const targetIds = edges.map(e => e.targetId);
+    const targetIds = edges.map((e) => e.targetId);
     return this.nodeRepo.findByIds(targetIds);
   }
 
@@ -156,7 +156,7 @@ export class GraphEngine {
 
     if (edges.length === 0) return [];
 
-    const sourceIds = edges.map(e => e.sourceId);
+    const sourceIds = edges.map((e) => e.sourceId);
     return this.nodeRepo.findByIds(sourceIds);
   }
 
@@ -228,9 +228,7 @@ export class GraphEngine {
         const outgoing = await this.edgeRepo.findOutgoing(nodeId, edgeTypes);
 
         // Optionally include incoming edges
-        const incoming = includeIncoming
-          ? await this.edgeRepo.findIncoming(nodeId, edgeTypes)
-          : [];
+        const incoming = includeIncoming ? await this.edgeRepo.findIncoming(nodeId, edgeTypes) : [];
 
         const allEdges = [...outgoing, ...incoming];
 
@@ -313,7 +311,8 @@ export class GraphEngine {
     endId: string,
     options?: KShortestPathsOptions
   ): Promise<{ paths: PathResult[]; reason: string }> {
-    const edgeTypes = options?.edgeTypes ?? ['explicit_link', 'sequence', 'causes', 'semantic'] as EdgeType[];
+    const edgeTypes =
+      options?.edgeTypes ?? (['explicit_link', 'sequence', 'causes', 'semantic'] as EdgeType[]);
 
     // Fetch all relevant edges
     const edges = await this.edgeRepo.findAll(edgeTypes);
@@ -338,7 +337,7 @@ export class GraphEngine {
       ...(edgeTypes && { edgeTypes }),
     });
 
-    return result.some(r => r.nodeId === nodeId2);
+    return result.some((r) => r.nodeId === nodeId2);
   }
 
   // ============================================================================
@@ -361,7 +360,7 @@ export class GraphEngine {
       includeIncoming: true,
     });
 
-    const nodeIds = traversal.map(t => t.nodeId);
+    const nodeIds = traversal.map((t) => t.nodeId);
     const nodes = await this.nodeRepo.findByIds(nodeIds);
 
     // Get all edges between these nodes
@@ -422,10 +421,12 @@ export class GraphEngine {
   /**
    * Find nodes with high in-degree (potential hubs)
    */
-  async findHighInDegreeNodes(threshold?: number): Promise<Array<{
-    node: Node;
-    inDegree: number;
-  }>> {
+  async findHighInDegreeNodes(threshold?: number): Promise<
+    Array<{
+      node: Node;
+      inDegree: number;
+    }>
+  > {
     const minThreshold = threshold ?? this.config.moc?.defaultHubThreshold ?? 5;
     const allNodes = await this.nodeRepo.findAll();
     const results: Array<{ node: Node; inDegree: number }> = [];

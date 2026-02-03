@@ -1,7 +1,11 @@
 import { Command } from 'commander';
 import * as path from 'node:path';
 import { findVaultRoot, Spinner } from '../utils.js';
-import { injectLinks, previewLinkInjection, type InjectLinksOptions } from '../../generators/index.js';
+import {
+  injectLinks,
+  previewLinkInjection,
+  type InjectLinksOptions,
+} from '../../generators/index.js';
 
 export const injectLinksCommand = new Command('inject-links')
   .description('Add wikilinks to notes based on entity names from KB')
@@ -11,14 +15,17 @@ export const injectLinksCommand = new Command('inject-links')
   .option('-n, --dry-run', 'Show changes without modifying files')
   .option('--preview', 'Show detailed preview of all changes')
   .option('-v, --verbose', 'Show detailed output')
-  .addHelpText('after', `
+  .addHelpText(
+    'after',
+    `
 Examples:
   zettel inject-links                    # Process all .md files using KB entities
   zettel inject-links -n                 # Dry run to see what would change
   zettel inject-links --preview          # Show detailed preview of all changes
   zettel inject-links -e "Ryan" "Kevin"  # Only link specific entities
   zettel inject-links -g "Chapters/*.md" # Only process chapter files
-`)
+`
+  )
   .action(async (options) => {
     try {
       // Resolve vault path
@@ -58,7 +65,9 @@ Examples:
           }
         }
 
-        console.log(`\nTotal: ${previews.size} files, ${Array.from(previews.values()).reduce((sum, c) => sum + c.length, 0)} links`);
+        console.log(
+          `\nTotal: ${previews.size} files, ${Array.from(previews.values()).reduce((sum, c) => sum + c.length, 0)} links`
+        );
         console.log('\nRun without --preview to apply changes.');
         return;
       }

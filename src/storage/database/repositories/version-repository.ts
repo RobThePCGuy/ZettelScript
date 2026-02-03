@@ -78,10 +78,7 @@ export class VersionRepository {
     const result = await this.db
       .select()
       .from(versions)
-      .where(and(
-        eq(versions.nodeId, nodeId),
-        eq(versions.contentHash, contentHash)
-      ))
+      .where(and(eq(versions.nodeId, nodeId), eq(versions.contentHash, contentHash)))
       .limit(1);
 
     return result[0] ? this.rowToVersion(result[0]) : null;
@@ -143,9 +140,7 @@ export class VersionRepository {
    * Delete all versions for a node
    */
   async deleteForNode(nodeId: string): Promise<number> {
-    const result = await this.db
-      .delete(versions)
-      .where(eq(versions.nodeId, nodeId));
+    const result = await this.db.delete(versions).where(eq(versions.nodeId, nodeId));
 
     return result.changes;
   }
@@ -154,9 +149,7 @@ export class VersionRepository {
    * Count versions
    */
   async count(): Promise<number> {
-    const result = await this.db
-      .select({ count: sql<number>`count(*)` })
-      .from(versions);
+    const result = await this.db.select({ count: sql<number>`count(*)` }).from(versions);
 
     return result[0]?.count ?? 0;
   }
@@ -173,7 +166,7 @@ export class VersionRepository {
       .from(versions)
       .groupBy(versions.nodeId);
 
-    return new Map(result.map(r => [r.nodeId, r.count]));
+    return new Map(result.map((r) => [r.nodeId, r.count]));
   }
 
   /**

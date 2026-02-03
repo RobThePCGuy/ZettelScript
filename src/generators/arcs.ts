@@ -106,7 +106,9 @@ function buildThreadContent(thread: ArcLedgerThread): string {
   parts.push(section('Related Notes'));
   parts.push('```dataview\n');
   parts.push('LIST FROM #arc\n');
-  parts.push(`WHERE contains(file.outlinks, this.file.link) OR contains(tags, "${thread.thread_id}")\n`);
+  parts.push(
+    `WHERE contains(file.outlinks, this.file.link) OR contains(tags, "${thread.thread_id}")\n`
+  );
   parts.push('```\n\n');
 
   return parts.join('');
@@ -238,9 +240,7 @@ function getStatusIcon(status: string): string {
 /**
  * Generate arc notes from arc-ledger data
  */
-export async function generateArcs(
-  options: GeneratorOptions
-): Promise<GeneratorResult> {
+export async function generateArcs(options: GeneratorOptions): Promise<GeneratorResult> {
   const result: GeneratorResult = {
     created: [],
     skipped: [],

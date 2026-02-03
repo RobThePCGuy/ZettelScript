@@ -50,14 +50,13 @@ export class ImpactAnalyzer {
     const transitiveImpact = await this.getTransitiveImpact(sceneNodeId, directImpact);
 
     // POV impact: other scenes with the same POV
-    const povImpact = metadata?.pov
-      ? await this.getPovImpact(metadata.pov, sceneNodeId)
-      : [];
+    const povImpact = metadata?.pov ? await this.getPovImpact(metadata.pov, sceneNodeId) : [];
 
     // Timeline impact: adjacent scenes in timeline
-    const timelineImpact = metadata?.scene_order !== undefined
-      ? await this.getTimelineImpact(metadata.scene_order, sceneNodeId)
-      : [];
+    const timelineImpact =
+      metadata?.scene_order !== undefined
+        ? await this.getTimelineImpact(metadata.scene_order, sceneNodeId)
+        : [];
 
     // Character impact: characters whose knowledge might change
     const characterImpact = await this.getCharacterImpact(sceneNodeId, metadata);
@@ -94,10 +93,7 @@ export class ImpactAnalyzer {
   /**
    * Get transitively impacted nodes via graph expansion
    */
-  private async getTransitiveImpact(
-    nodeId: string,
-    directImpact: string[]
-  ): Promise<string[]> {
+  private async getTransitiveImpact(nodeId: string, directImpact: string[]): Promise<string[]> {
     const expansion = await this.graphEngine.expandGraph({
       seedNodes: [{ nodeId, score: 1 }],
       maxDepth: this.config.impact.maxTransitiveDepth,
@@ -109,9 +105,7 @@ export class ImpactAnalyzer {
     directSet.add(nodeId);
 
     // Return nodes that are transitively reachable but not direct
-    return expansion
-      .filter(e => e.depth > 1 && !directSet.has(e.nodeId))
-      .map(e => e.nodeId);
+    return expansion.filter((e) => e.depth > 1 && !directSet.has(e.nodeId)).map((e) => e.nodeId);
   }
 
   /**
@@ -121,11 +115,11 @@ export class ImpactAnalyzer {
     const scenes = await this.nodeRepo.findByType('scene');
 
     return scenes
-      .filter(s => {
+      .filter((s) => {
         const meta = s.metadata as Frontmatter | undefined;
         return meta?.pov === povCharacter && s.nodeId !== excludeNodeId;
       })
-      .map(s => s.nodeId);
+      .map((s) => s.nodeId);
   }
 
   /**
@@ -137,13 +131,13 @@ export class ImpactAnalyzer {
     // Get scenes within configured range of the current scene order
     const range = this.config.impact.timelineRange;
     return scenes
-      .filter(s => {
+      .filter((s) => {
         const meta = s.metadata as Frontmatter | undefined;
         const order = meta?.scene_order;
         if (order === undefined || s.nodeId === excludeNodeId) return false;
         return Math.abs(order - sceneOrder) <= range;
       })
-      .map(s => s.nodeId);
+      .map((s) => s.nodeId);
   }
 
   /**
@@ -222,7 +216,9 @@ export class ImpactAnalyzer {
     }
 
     if (impact.characterImpact.length > 0) {
-      recommendations.push(`Verify character knowledge for: ${impact.characterImpact.slice(0, 3).join(', ')}`);
+      recommendations.push(
+        `Verify character knowledge for: ${impact.characterImpact.slice(0, 3).join(', ')}`
+      );
     }
 
     if (impact.transitiveImpact.length > 10) {

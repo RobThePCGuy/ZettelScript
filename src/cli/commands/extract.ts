@@ -1,11 +1,46 @@
 import { Command } from 'commander';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import * as readline from 'node:readline';
 import { initContext, Spinner, printTable } from '../utils.js';
 import { EntityExtractor, type ExtractedEntity } from '../../extraction/index.js';
-import { OllamaLLMProvider, getOllamaModelInfo } from '../../llm/provider.js';
+import {
+  OllamaLLMProvider,
+  getOllamaModelInfo,
+  checkOllamaRunning,
+  checkOllamaModelExists,
+  pullOllamaModel,
+  listOllamaModels,
+} from '../../llm/provider.js';
 import { nanoid } from 'nanoid';
 import { stringify as stringifyYaml } from 'yaml';
+
+/**
+ * Prompt user for yes/no confirmation
+ */
+async function promptYesNo(question: string): Promise<boolean> {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  return new Promise((resolve) => {
+    rl.question(`${question} (y/n) `, (answer) => {
+      rl.close();
+      resolve(answer.toLowerCase().startsWith('y'));
+    });
+  });
+}
+
+/**
+ * Format bytes as human-readable string
+ */
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
 
 export const extractCommand = new Command('extract')
   .description('Extract entities (characters, locations, etc.) from prose')
@@ -42,10 +77,12 @@ export const extractCommand = new Command('extract')
             const fullPath = path.join(dir, entry.name);
 
             // Skip excluded patterns
-            if (ctx.config.vault.excludePatterns.some(p => {
-              const pattern = p.replace('**/', '').replace('/**', '');
-              return entry.name === pattern || fullPath.includes(pattern);
-            })) {
+            if (
+              ctx.config.vault.excludePatterns.some((p) => {
+                const pattern = p.replace('**/', '').replace('/**', '');
+                return entry.name === pattern || fullPath.includes(pattern);
+              })
+            ) {
               continue;
             }
 
@@ -76,6 +113,109 @@ export const extractCommand = new Command('extract')
 
       console.log(`Processing ${filesToProcess.length} file(s)...\n`);
 
+      // Check Ollama is running
+      const ollamaRunning = await checkOllamaRunning();
+      if (!ollamaRunning) {
+        console.error('Error: Ollama is not running.');
+        console.error('\nTo start Ollama:');
+        console.error('  1. Install from https://ollama.ai');
+        console.error('  2. Run: ollama serve');
+        ctx.connectionManager.close();
+        process.exit(1);
+      }
+
+      // Check if model exists
+      const modelExists = await checkOllamaModelExists(options.model);
+      if (!modelExists) {
+        console.log(`Model '${options.model}' is not installed.`);
+
+        // Show available models
+        const availableModels = await listOllamaModels();
+        if (availableModels.length > 0) {
+          console.log('\nInstalled models:');
+          for (const m of availableModels.slice(0, 10)) {
+            console.log(`  - ${m}`);
+          }
+          if (availableModels.length > 10) {
+            console.log(`  ... and ${availableModels.length - 10} more`);
+          }
+        }
+
+        console.log('');
+        const shouldDownload = await promptYesNo(`Download '${options.model}' now?`);
+
+        if (shouldDownload) {
+          console.log(`\nDownloading ${options.model}...`);
+          let lastStatus = '';
+
+          try {
+            for await (const progress of pullOllamaModel(options.model)) {
+              // Show download progress
+              if (progress.status !== lastStatus) {
+                if (progress.completed !== undefined && progress.total !== undefined) {
+                  const percent = ((progress.completed / progress.total) * 100).toFixed(1);
+                  const completed = formatBytes(progress.completed);
+                  const total = formatBytes(progress.total);
+                  process.stdout.write(
+                    `\r${progress.status}: ${completed} / ${total} (${percent}%)    `
+                  );
+                } else {
+                  process.stdout.write(`\r${progress.status}...    `);
+                }
+                lastStatus = progress.status;
+              } else if (progress.completed !== undefined && progress.total !== undefined) {
+                const percent = ((progress.completed / progress.total) * 100).toFixed(1);
+                const completed = formatBytes(progress.completed);
+                const total = formatBytes(progress.total);
+                process.stdout.write(
+                  `\r${progress.status}: ${completed} / ${total} (${percent}%)    `
+                );
+              }
+            }
+            console.log('\nDownload complete!\n');
+          } catch (err) {
+            console.error(
+              `\nFailed to download model: ${err instanceof Error ? err.message : err}`
+            );
+            ctx.connectionManager.close();
+            process.exit(1);
+          }
+        } else {
+          // Suggest alternatives
+          console.log('\n--- Recommended models for entity extraction ---');
+          console.log('');
+          console.log('  Good context + speed:');
+          console.log('    qwen2.5:7b        (~4.7 GB) - Default, good balance');
+          console.log('    llama3.1:8b       (~4.7 GB) - Strong general purpose');
+          console.log('    mistral:7b        (~4.1 GB) - Fast, good for structured output');
+          console.log('');
+          console.log('  Larger context (for big documents):');
+          console.log('    qwen2.5:14b       (~9.0 GB) - Better accuracy, slower');
+          console.log('    llama3.1:70b      (~40 GB)  - Best quality, needs GPU');
+          console.log('');
+          console.log('  Smaller/faster (less accurate):');
+          console.log('    qwen2.5:3b        (~2.0 GB) - Quick, limited context');
+          console.log('    phi3:mini         (~2.2 GB) - Lightweight option');
+
+          // If they have models installed, suggest using one
+          if (availableModels.length > 0) {
+            console.log('');
+            console.log('--- Or use one of your installed models ---');
+            console.log('');
+            for (const m of availableModels.slice(0, 5)) {
+              console.log(`  zettel extract --model ${m} --all`);
+            }
+          }
+
+          console.log('');
+          console.log('To download a model:');
+          console.log(`  ollama pull <model-name>`);
+          console.log('');
+          ctx.connectionManager.close();
+          return;
+        }
+      }
+
       // Create LLM provider
       const llmProvider = new OllamaLLMProvider({
         provider: 'ollama',
@@ -88,7 +228,9 @@ export const extractCommand = new Command('extract')
         if (modelInfo) {
           console.log(`Model: ${options.model}`);
           console.log(`  Context length: ${modelInfo.contextLength}`);
-          console.log(`  Max output tokens: ${Math.min(Math.floor(modelInfo.contextLength / 4), 8192)}`);
+          console.log(
+            `  Max output tokens: ${Math.min(Math.floor(modelInfo.contextLength / 4), 8192)}`
+          );
           if (modelInfo.parameterSize) console.log(`  Parameters: ${modelInfo.parameterSize}`);
         }
       }
@@ -156,8 +298,9 @@ export const extractCommand = new Command('extract')
       }
 
       // Sort by mentions
-      const sortedEntities = Array.from(allEntities.values())
-        .sort((a, b) => b.mentions - a.mentions);
+      const sortedEntities = Array.from(allEntities.values()).sort(
+        (a, b) => b.mentions - a.mentions
+      );
 
       // Display results
       console.log('\n' + '='.repeat(50));
@@ -174,12 +317,14 @@ export const extractCommand = new Command('extract')
 
       for (const [type, entities] of byType) {
         console.log(`\n${type.toUpperCase()}S (${entities.length}):`);
-        const rows = entities.slice(0, 15).map(e => [
-          e.name,
-          e.aliases.slice(0, 3).join(', ') || '-',
-          e.mentions.toString(),
-          e.description.slice(0, 50) + (e.description.length > 50 ? '...' : ''),
-        ]);
+        const rows = entities
+          .slice(0, 15)
+          .map((e) => [
+            e.name,
+            e.aliases.slice(0, 3).join(', ') || '-',
+            e.mentions.toString(),
+            e.description.slice(0, 50) + (e.description.length > 50 ? '...' : ''),
+          ]);
         printTable(['Name', 'Aliases', 'Refs', 'Description'], rows);
 
         if (entities.length > 15) {
@@ -210,15 +355,20 @@ export const extractCommand = new Command('extract')
           // Skip low-mention entities
           if (entity.mentions < 2) continue;
 
-          const typeDir = entity.type === 'character' ? 'characters'
-            : entity.type === 'location' ? 'locations'
-            : entity.type === 'object' ? 'objects'
-            : 'events';
+          const typeDir =
+            entity.type === 'character'
+              ? 'characters'
+              : entity.type === 'location'
+                ? 'locations'
+                : entity.type === 'object'
+                  ? 'objects'
+                  : 'events';
 
-          const fileName = entity.name
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, '-')
-            .replace(/^-|-$/g, '') + '.md';
+          const fileName =
+            entity.name
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, '-')
+              .replace(/^-|-$/g, '') + '.md';
 
           const filePath = path.join(outputDir, typeDir, fileName);
 
@@ -253,7 +403,7 @@ ${entity.description}
 ## Appearances
 
 ${Array.from(entityToFiles.get(entity.name.toLowerCase()) || [])
-  .map(f => `- [[${path.basename(f, '.md')}]]`)
+  .map((f) => `- [[${path.basename(f, '.md')}]]`)
   .join('\n')}
 `;
 

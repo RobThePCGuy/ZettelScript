@@ -53,7 +53,10 @@ export function extractWikilinks(
 
   // Filter out links that are inside exclusion zones
   // (but keep the wikilinks themselves as valid - they create new exclusion zones)
-  const links = filterExcludedMatches(rawLinks, exclusionZones.filter(z => z.type !== 'existing_link'));
+  const links = filterExcludedMatches(
+    rawLinks,
+    exclusionZones.filter((z) => z.type !== 'existing_link')
+  );
 
   return { links, exclusionZones };
 }
@@ -63,7 +66,7 @@ export function extractWikilinks(
  */
 export function extractLinkTargets(content: string): string[] {
   const { links } = extractWikilinks(content);
-  return links.map(link => link.target);
+  return links.map((link) => link.target);
 }
 
 /**
@@ -112,7 +115,7 @@ export function insertWikilink(
  */
 export function getUniqueTargets(content: string): Set<string> {
   const { links } = extractWikilinks(content);
-  return new Set(links.map(link => link.target));
+  return new Set(links.map((link) => link.target));
 }
 
 /**
@@ -122,9 +125,7 @@ export function getUniqueTargets(content: string): Set<string> {
  * - Case-insensitive comparison done separately
  */
 export function normalizeTarget(target: string): string {
-  return target
-    .trim()
-    .replace(/\s+/g, ' ');
+  return target.trim().replace(/\s+/g, ' ');
 }
 
 /**

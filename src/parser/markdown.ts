@@ -33,19 +33,13 @@ export interface ParsedMarkdown {
  * Create the unified markdown processor
  */
 function createProcessor() {
-  return unified()
-    .use(remarkParse)
-    .use(remarkFrontmatter, ['yaml'])
-    .use(remarkStringify);
+  return unified().use(remarkParse).use(remarkFrontmatter, ['yaml']).use(remarkStringify);
 }
 
 /**
  * Parse a markdown document into structured data
  */
-export function parseMarkdown(
-  source: string,
-  filePath: string
-): ParsedMarkdown {
+export function parseMarkdown(source: string, filePath: string): ParsedMarkdown {
   // Parse frontmatter first
   const { frontmatter, content, contentStartOffset } = parseFrontmatter(source, filePath);
 
@@ -127,7 +121,7 @@ function getTextContent(node: Content): string {
   }
 
   if ('children' in node && Array.isArray(node.children)) {
-    return node.children.map(child => getTextContent(child as Content)).join('');
+    return node.children.map((child) => getTextContent(child as Content)).join('');
   }
 
   return '';
@@ -154,14 +148,14 @@ export function extractPlainText(source: string): string {
     }
 
     if ('children' in node && Array.isArray(node.children)) {
-      return node.children.map(child => getText(child as Content)).join(' ');
+      return node.children.map((child) => getText(child as Content)).join(' ');
     }
 
     return '';
   }
 
   return ast.children
-    .map(node => getText(node))
+    .map((node) => getText(node))
     .join('\n')
     .replace(/\s+/g, ' ')
     .trim();
@@ -189,13 +183,15 @@ export function splitIntoSections(parsed: ParsedMarkdown): Array<{
 
   if (parsed.headings.length === 0) {
     // No headings - entire content is one section
-    return [{
-      heading: null,
-      level: 0,
-      content: source,
-      start: parsed.contentStartOffset,
-      end: parsed.contentStartOffset + source.length,
-    }];
+    return [
+      {
+        heading: null,
+        level: 0,
+        content: source,
+        start: parsed.contentStartOffset,
+        end: parsed.contentStartOffset + source.length,
+      },
+    ];
   }
 
   // Content before first heading

@@ -110,10 +110,7 @@ export async function createDirectory(dirPath: string): Promise<void> {
 /**
  * Delete a directory
  */
-export async function deleteDirectory(
-  dirPath: string,
-  recursive: boolean = false
-): Promise<void> {
+export async function deleteDirectory(dirPath: string, recursive: boolean = false): Promise<void> {
   try {
     await fs.promises.rm(dirPath, { recursive, force: true });
   } catch (error) {
@@ -124,10 +121,7 @@ export async function deleteDirectory(
 /**
  * Create a backup of a file
  */
-export async function backupFile(
-  filePath: string,
-  backupDir?: string
-): Promise<string> {
+export async function backupFile(filePath: string, backupDir?: string): Promise<string> {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   const ext = path.extname(filePath);
   const base = path.basename(filePath, ext);
@@ -142,10 +136,7 @@ export async function backupFile(
 /**
  * Atomic write (write to temp then rename)
  */
-export async function atomicWrite(
-  filePath: string,
-  content: string
-): Promise<void> {
+export async function atomicWrite(filePath: string, content: string): Promise<void> {
   const tempPath = `${filePath}.tmp.${Date.now()}`;
 
   try {

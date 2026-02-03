@@ -1,7 +1,11 @@
 import { eq, and, or, sql } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { DrizzleDB } from '../connection.js';
-import { wormholeRejections, type WormholeRejectionRow, type NewWormholeRejectionRow } from '../schema.js';
+import {
+  wormholeRejections,
+  type WormholeRejectionRow,
+  type NewWormholeRejectionRow,
+} from '../schema.js';
 
 /**
  * Interface for a wormhole rejection
@@ -74,12 +78,14 @@ export class WormholeRepository {
     const result = await this.db
       .select()
       .from(wormholeRejections)
-      .where(and(
-        eq(wormholeRejections.sourceId, normalizedSourceId),
-        eq(wormholeRejections.targetId, normalizedTargetId),
-        eq(wormholeRejections.sourceContentHash, normalizedSourceHash),
-        eq(wormholeRejections.targetContentHash, normalizedTargetHash)
-      ))
+      .where(
+        and(
+          eq(wormholeRejections.sourceId, normalizedSourceId),
+          eq(wormholeRejections.targetId, normalizedTargetId),
+          eq(wormholeRejections.sourceContentHash, normalizedSourceHash),
+          eq(wormholeRejections.targetContentHash, normalizedTargetHash)
+        )
+      )
       .limit(1);
 
     return result.length > 0;
@@ -96,10 +102,12 @@ export class WormholeRepository {
     const result = await this.db
       .select()
       .from(wormholeRejections)
-      .where(and(
-        eq(wormholeRejections.sourceId, normalizedSourceId),
-        eq(wormholeRejections.targetId, normalizedTargetId)
-      ))
+      .where(
+        and(
+          eq(wormholeRejections.sourceId, normalizedSourceId),
+          eq(wormholeRejections.targetId, normalizedTargetId)
+        )
+      )
       .limit(1);
 
     return result.length > 0;
@@ -110,7 +118,7 @@ export class WormholeRepository {
    */
   async findAll(): Promise<WormholeRejection[]> {
     const result = await this.db.select().from(wormholeRejections);
-    return result.map(row => this.rowToRejection(row));
+    return result.map((row) => this.rowToRejection(row));
   }
 
   /**
@@ -120,12 +128,9 @@ export class WormholeRepository {
     const result = await this.db
       .select()
       .from(wormholeRejections)
-      .where(or(
-        eq(wormholeRejections.sourceId, nodeId),
-        eq(wormholeRejections.targetId, nodeId)
-      ));
+      .where(or(eq(wormholeRejections.sourceId, nodeId), eq(wormholeRejections.targetId, nodeId)));
 
-    return result.map(row => this.rowToRejection(row));
+    return result.map((row) => this.rowToRejection(row));
   }
 
   /**
@@ -145,10 +150,12 @@ export class WormholeRepository {
 
     await this.db
       .delete(wormholeRejections)
-      .where(and(
-        eq(wormholeRejections.sourceId, normalizedSourceId),
-        eq(wormholeRejections.targetId, normalizedTargetId)
-      ));
+      .where(
+        and(
+          eq(wormholeRejections.sourceId, normalizedSourceId),
+          eq(wormholeRejections.targetId, normalizedTargetId)
+        )
+      );
   }
 
   /**
@@ -157,10 +164,7 @@ export class WormholeRepository {
   async deleteForNode(nodeId: string): Promise<number> {
     const result = await this.db
       .delete(wormholeRejections)
-      .where(or(
-        eq(wormholeRejections.sourceId, nodeId),
-        eq(wormholeRejections.targetId, nodeId)
-      ));
+      .where(or(eq(wormholeRejections.sourceId, nodeId), eq(wormholeRejections.targetId, nodeId)));
 
     return result.changes;
   }
@@ -177,9 +181,7 @@ export class WormholeRepository {
    * Count rejections
    */
   async count(): Promise<number> {
-    const result = await this.db
-      .select({ count: sql<number>`count(*)` })
-      .from(wormholeRejections);
+    const result = await this.db.select({ count: sql<number>`count(*)` }).from(wormholeRejections);
 
     return result[0]?.count ?? 0;
   }

@@ -1,7 +1,12 @@
 import { eq, inArray, sql } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { DrizzleDB } from '../connection.js';
-import { nodeEmbeddings, nodes, type NodeEmbeddingRow, type NewNodeEmbeddingRow } from '../schema.js';
+import {
+  nodeEmbeddings,
+  nodes,
+  type NodeEmbeddingRow,
+  type NewNodeEmbeddingRow,
+} from '../schema.js';
 
 /**
  * Interface for a node's embedding data
@@ -96,7 +101,7 @@ export class EmbeddingRepository {
    */
   async findAll(): Promise<NodeEmbedding[]> {
     const result = await this.db.select().from(nodeEmbeddings);
-    return result.map(row => this.rowToEmbedding(row));
+    return result.map((row) => this.rowToEmbedding(row));
   }
 
   /**
@@ -108,7 +113,7 @@ export class EmbeddingRepository {
       .from(nodeEmbeddings)
       .where(eq(nodeEmbeddings.model, model));
 
-    return result.map(row => this.rowToEmbedding(row));
+    return result.map((row) => this.rowToEmbedding(row));
   }
 
   /**
@@ -122,7 +127,7 @@ export class EmbeddingRepository {
       .from(nodeEmbeddings)
       .where(inArray(nodeEmbeddings.nodeId, nodeIds));
 
-    return result.map(row => this.rowToEmbedding(row));
+    return result.map((row) => this.rowToEmbedding(row));
   }
 
   /**
@@ -148,7 +153,7 @@ export class EmbeddingRepository {
       })
       .from(nodeEmbeddings);
 
-    const embeddingMap = new Map(embeddings.map(e => [e.nodeId, e.contentHash]));
+    const embeddingMap = new Map(embeddings.map((e) => [e.nodeId, e.contentHash]));
 
     const dirtyNodeIds: string[] = [];
     for (const node of allNodes) {
@@ -206,9 +211,7 @@ export class EmbeddingRepository {
    * Delete all embeddings for a model
    */
   async deleteByModel(model: string): Promise<number> {
-    const result = await this.db
-      .delete(nodeEmbeddings)
-      .where(eq(nodeEmbeddings.model, model));
+    const result = await this.db.delete(nodeEmbeddings).where(eq(nodeEmbeddings.model, model));
 
     return result.changes;
   }
@@ -217,9 +220,7 @@ export class EmbeddingRepository {
    * Count embeddings
    */
   async count(): Promise<number> {
-    const result = await this.db
-      .select({ count: sql<number>`count(*)` })
-      .from(nodeEmbeddings);
+    const result = await this.db.select({ count: sql<number>`count(*)` }).from(nodeEmbeddings);
 
     return result[0]?.count ?? 0;
   }

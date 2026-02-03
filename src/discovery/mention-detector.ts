@@ -131,7 +131,7 @@ export class MentionDetector {
       if (titleLower.length < 2) continue;
 
       // Skip if this is the source node
-      const isSourceNode = nodes.some(n => n.nodeId === sourceNodeId);
+      const isSourceNode = nodes.some((n) => n.nodeId === sourceNodeId);
       if (isSourceNode) continue;
 
       // Build boundary-aware regex
@@ -174,7 +174,7 @@ export class MentionDetector {
       if (aliasLower.length < 2) continue;
 
       // Skip if this is the source node
-      const isSourceNode = nodes.some(n => n.nodeId === sourceNodeId);
+      const isSourceNode = nodes.some((n) => n.nodeId === sourceNodeId);
       if (isSourceNode) continue;
 
       // Build boundary-aware regex
@@ -231,7 +231,7 @@ export class MentionDetector {
    * Check if a range is in an exclusion zone
    */
   private isInExclusionZone(start: number, end: number, zones: ExclusionZone[]): boolean {
-    return zones.some(zone => start < zone.end && end > zone.start);
+    return zones.some((zone) => start < zone.end && end > zone.start);
   }
 
   /**
@@ -245,7 +245,7 @@ export class MentionDetector {
     // Sort by start position, then by length (descending)
     matches.sort((a, b) => {
       if (a.start !== b.start) return a.start - b.start;
-      return (b.end - b.start) - (a.end - a.start);
+      return b.end - b.start - (a.end - a.start);
     });
 
     const result: DetectedMention[] = [];

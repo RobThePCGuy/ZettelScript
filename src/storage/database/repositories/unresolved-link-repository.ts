@@ -41,8 +41,8 @@ export class UnresolvedLinkRepository {
       .orderBy(sql`COUNT(*) DESC`);
 
     return result
-      .filter(row => row.targetText && row.targetText.trim() !== '')
-      .map(row => ({
+      .filter((row) => row.targetText && row.targetText.trim() !== '')
+      .map((row) => ({
         targetText: row.targetText,
         sourceIds: row.sourceIds ? row.sourceIds.split(',') : [],
         referenceCount: row.referenceCount,
@@ -68,8 +68,8 @@ export class UnresolvedLinkRepository {
       .orderBy(sql`COUNT(*) DESC`);
 
     return result
-      .filter(row => row.targetText && row.targetText.trim() !== '')
-      .map(row => ({
+      .filter((row) => row.targetText && row.targetText.trim() !== '')
+      .map((row) => ({
         targetText: row.targetText,
         sourceIds: row.sourceIds ? row.sourceIds.split(',') : [],
         referenceCount: row.referenceCount,
@@ -128,7 +128,7 @@ export class UnresolvedLinkRepository {
     // For each ghost, get the most recent referencer's updatedAt
     const ghostsWithRecency = await Promise.all(
       result
-        .filter(row => row.targetText && row.targetText.trim() !== '')
+        .filter((row) => row.targetText && row.targetText.trim() !== '')
         .map(async (row) => {
           const sourceIds = row.sourceIds ? row.sourceIds.split(',') : [];
 
@@ -140,16 +140,18 @@ export class UnresolvedLinkRepository {
                 maxUpdatedAt: sql<string>`MAX(${nodes.updatedAt})`,
               })
               .from(nodes)
-              .where(sql`${nodes.nodeId} IN (${sql.join(sourceIds.map(id => sql`${id}`), sql`, `)})`);
+              .where(
+                sql`${nodes.nodeId} IN (${sql.join(
+                  sourceIds.map((id) => sql`${id}`),
+                  sql`, `
+                )})`
+              );
 
             mostRecentReferencerUpdate = referencerResult[0]?.maxUpdatedAt ?? null;
           }
 
           // Use the more recent of link creation or referencer update
-          const mostRecentRef = [
-            row.mostRecentLinkCreated,
-            mostRecentReferencerUpdate,
-          ]
+          const mostRecentRef = [row.mostRecentLinkCreated, mostRecentReferencerUpdate]
             .filter((t): t is string => t !== null)
             .sort()
             .reverse()[0];

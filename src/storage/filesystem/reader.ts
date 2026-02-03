@@ -23,14 +23,7 @@ export interface WalkOptions {
 }
 
 const DEFAULT_EXTENSIONS = ['.md', '.markdown'];
-const DEFAULT_EXCLUDE = [
-  'node_modules',
-  '.git',
-  '.zettelscript',
-  '.obsidian',
-  '.vscode',
-  '.idea',
-];
+const DEFAULT_EXCLUDE = ['node_modules', '.git', '.zettelscript', '.obsidian', '.vscode', '.idea'];
 
 /**
  * Calculate content hash (SHA-256)
@@ -73,9 +66,7 @@ function shouldExclude(relativePath: string, excludePatterns: string[]): boolean
   for (const pattern of excludePatterns) {
     // Simple glob matching
     if (pattern.includes('*')) {
-      const regex = new RegExp(
-        '^' + pattern.replace(/\*/g, '.*').replace(/\?/g, '.') + '$'
-      );
+      const regex = new RegExp('^' + pattern.replace(/\*/g, '.*').replace(/\?/g, '.') + '$');
       if (regex.test(relativePath)) return true;
     } else {
       // Direct match or prefix match
@@ -89,7 +80,7 @@ function shouldExclude(relativePath: string, excludePatterns: string[]): boolean
 
       // Check if any path segment matches
       const segments = relativePath.split(/[/\\]/);
-      if (segments.some(s => s === pattern)) return true;
+      if (segments.some((s) => s === pattern)) return true;
     }
   }
   return false;
@@ -189,10 +180,7 @@ export async function getFileStats(filePath: string): Promise<fs.Stats | null> {
 /**
  * Compare file modification time with stored time
  */
-export async function hasFileChanged(
-  filePath: string,
-  storedHash: string
-): Promise<boolean> {
+export async function hasFileChanged(filePath: string, storedHash: string): Promise<boolean> {
   try {
     const content = await fs.promises.readFile(filePath, 'utf-8');
     const currentHash = hashContent(content);

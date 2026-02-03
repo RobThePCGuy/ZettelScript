@@ -35,7 +35,7 @@ const RECONNECT_GRACE_MS = 30 * 1000;
 
 export interface VisualizeServerOptions {
   ctx: CLIContext;
-  onClose?: () => void;
+  onClose?: (() => void) | undefined;
 }
 
 export interface ServerInfo {
@@ -64,12 +64,15 @@ export class VisualizeServer {
   private token: string;
   private tokenExpiry: number;
   private sessions: Map<string, ClientSession> = new Map();
-  private recentCreations: Map<string, { newNodeId: string; title: string; createdAt: string }> = new Map();
+  private recentCreations: Map<string, { newNodeId: string; title: string; createdAt: string }> =
+    new Map();
   private onClose?: () => void;
 
   constructor(options: VisualizeServerOptions) {
     this.ctx = options.ctx;
-    this.onClose = options.onClose;
+    if (options.onClose !== undefined) {
+      this.onClose = options.onClose;
+    }
 
     // Generate auth token
     this.token = generateToken();
@@ -106,9 +109,7 @@ export class VisualizeServer {
         'https://127.0.0.1',
       ];
 
-      const originValid = validOrigins.some(v =>
-        origin === v || origin.startsWith(v + ':')
-      );
+      const originValid = validOrigins.some((v) => origin === v || origin.startsWith(v + ':'));
 
       if (!originValid) {
         console.error(`[WS] Rejected connection from origin: ${origin}`);
@@ -208,7 +209,7 @@ export class VisualizeServer {
         break;
 
       default:
-        this.sendError(session, `Unknown message type: ${message.type}`);
+        this.sendError(session, `Unknown message type: ${(message as { type: string }).type}`);
     }
   }
 
@@ -441,7 +442,14 @@ export class VisualizeServer {
   private async handleLinkToExisting(
     session: ClientSession,
     message: CreateFromGhostMessage,
-    existingNode: { nodeId: string; title: string; path: string; type: string; createdAt: string; updatedAt: string }
+    existingNode: {
+      nodeId: string;
+      title: string;
+      path: string;
+      type: string;
+      createdAt: string;
+      updatedAt: string;
+    }
   ): Promise<void> {
     const { ghostId, title } = message;
 
@@ -507,13 +515,15 @@ export class VisualizeServer {
     targetNodeId: string,
     targetText: string
   ): Promise<Array<{ edgeId: string; sourceId: string; targetId: string; edgeType: string }>> {
-    const edges: Array<{ edgeId: string; sourceId: string; targetId: string; edgeType: string }> = [];
+    const edges: Array<{ edgeId: string; sourceId: string; targetId: string; edgeType: string }> =
+      [];
 
     // Get unresolved links for this target text
     const ghostNodes = await this.ctx.unresolvedLinkRepository.getGhostNodes();
-    const ghostNode = ghostNodes.find(g =>
-      `ghost:${g.targetText}` === ghostId ||
-      g.targetText.toLowerCase() === targetText.toLowerCase()
+    const ghostNode = ghostNodes.find(
+      (g) =>
+        `ghost:${g.targetText}` === ghostId ||
+        g.targetText.toLowerCase() === targetText.toLowerCase()
     );
 
     if (!ghostNode) {
@@ -567,7 +577,7 @@ export class VisualizeServer {
     // Get current unresolved links
     const ghostNodes = await this.ctx.unresolvedLinkRepository.getGhostNodes();
 
-    const unresolvedList: GhostNodeInfo[] = ghostNodes.map(g => ({
+    const unresolvedList: GhostNodeInfo[] = ghostNodes.map((g) => ({
       ghostId: `ghost:${g.targetText}`,
       title: g.targetText,
       referenceCount: g.referenceCount,
@@ -576,14 +586,12 @@ export class VisualizeServer {
     }));
 
     // Get recent creations from this session
-    const recentCreations = Array.from(this.recentCreations.entries()).map(
-      ([ghostId, info]) => ({
-        ghostId,
-        newNodeId: info.newNodeId,
-        title: info.title,
-        createdAt: info.createdAt,
-      })
-    );
+    const recentCreations = Array.from(this.recentCreations.entries()).map(([ghostId, info]) => ({
+      ghostId,
+      newNodeId: info.newNodeId,
+      title: info.title,
+      createdAt: info.createdAt,
+    }));
 
     this.send(session, {
       type: 'sync_response',
@@ -598,9 +606,9 @@ export class VisualizeServer {
   private sanitizeFilename(name: string): string {
     return name
       .replace(/[<>:"/\\|?*]/g, '') // Remove invalid characters
-      .replace(/\s+/g, ' ')          // Normalize whitespace
+      .replace(/\s+/g, ' ') // Normalize whitespace
       .trim()
-      .slice(0, 200);                 // Limit length
+      .slice(0, 200); // Limit length
   }
 
   /**
@@ -616,11 +624,14 @@ export class VisualizeServer {
    * Send an error message
    */
   private sendError(session: ClientSession, message: string, ghostId?: string): void {
-    this.send(session, {
+    const errorMsg: { type: 'error'; message: string; ghostId?: string } = {
       type: 'error',
       message,
-      ghostId,
-    });
+    };
+    if (ghostId !== undefined) {
+      errorMsg.ghostId = ghostId;
+    }
+    this.send(session, errorMsg);
   }
 
   /**

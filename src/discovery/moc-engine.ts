@@ -67,9 +67,9 @@ export class MOCEngine {
     });
 
     // Fetch node details for expanded nodes
-    const expandedIds = expansion.filter(e => e.nodeId !== nodeId).map(e => e.nodeId);
+    const expandedIds = expansion.filter((e) => e.nodeId !== nodeId).map((e) => e.nodeId);
     const expandedNodes = await this.nodeRepo.findByIds(expandedIds);
-    const nodeMap = new Map(expandedNodes.map(n => [n.nodeId, n]));
+    const nodeMap = new Map(expandedNodes.map((n) => [n.nodeId, n]));
 
     for (const exp of expansion) {
       if (exp.nodeId === nodeId) continue;
@@ -151,7 +151,7 @@ export class MOCEngine {
     const allNodes = await this.nodeRepo.findAll();
 
     // Filter nodes with this tag
-    const nodesWithTag = allNodes.filter(node => {
+    const nodesWithTag = allNodes.filter((node) => {
       const metadata = node.metadata as { tags?: string[] } | undefined;
       return metadata?.tags?.includes(tag);
     });
@@ -197,7 +197,7 @@ export class MOCEngine {
 
     const hubs = await this.graphEngine.findHighInDegreeNodes(hubThreshold);
 
-    const entries: MOCEntry[] = hubs.map(h => ({
+    const entries: MOCEntry[] = hubs.map((h) => ({
       nodeId: h.node.nodeId,
       title: h.node.title,
       type: h.node.type,

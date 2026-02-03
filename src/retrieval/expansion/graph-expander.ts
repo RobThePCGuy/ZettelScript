@@ -136,8 +136,7 @@ export class GraphExpander {
     }
 
     // Convert to array and sort by score
-    return Array.from(accumulated.values())
-      .sort((a, b) => b.score - a.score);
+    return Array.from(accumulated.values()).sort((a, b) => b.score - a.score);
   }
 
   /**
@@ -239,8 +238,7 @@ export class GraphExpander {
       frontier = newFrontier;
     }
 
-    return Array.from(accumulated.values())
-      .sort((a, b) => b.score - a.score);
+    return Array.from(accumulated.values()).sort((a, b) => b.score - a.score);
   }
 
   /**

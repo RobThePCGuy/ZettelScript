@@ -2,7 +2,11 @@ import type { Node, Edge, WikiLink, NodeType } from '../core/types/index.js';
 import { parseMarkdown, type ParsedMarkdown } from '../parser/markdown.js';
 import { createLinkResolver, type LinkResolver } from '../parser/resolver.js';
 import type { FileInfo } from '../storage/filesystem/reader.js';
-import { NodeRepository, EdgeRepository, VersionRepository } from '../storage/database/repositories/index.js';
+import {
+  NodeRepository,
+  EdgeRepository,
+  VersionRepository,
+} from '../storage/database/repositories/index.js';
 
 export interface IndexingResult {
   node: Node;
@@ -88,10 +92,7 @@ export class IndexingPipeline {
     await this.nodeRepo.setAliases(node.nodeId, parsed.aliases);
 
     // Resolve links and create edges
-    const { links, edges, unresolved, ambiguous } = await this.processLinks(
-      node,
-      parsed.links
-    );
+    const { links, edges, unresolved, ambiguous } = await this.processLinks(node, parsed.links);
 
     return { node, links, edges, unresolved, ambiguous };
   }
@@ -232,10 +233,7 @@ export class IndexingPipeline {
         await this.createVersionIfNeeded(node, file.contentHash);
 
         // Process links
-        const { links, edges, unresolved, ambiguous } = await this.processLinks(
-          node,
-          parsed.links
-        );
+        const { links, edges, unresolved, ambiguous } = await this.processLinks(node, parsed.links);
 
         indexed.push({ node, links, edges, unresolved, ambiguous });
         totalEdges += edges.length;

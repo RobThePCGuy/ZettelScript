@@ -87,16 +87,14 @@ export class LinkResolver {
 
     // Multiple matches - ambiguous
     // Try to disambiguate by exact title match
-    const exactMatch = candidates.find(c =>
-      targetsMatch(c.title, normalizedTarget)
-    );
+    const exactMatch = candidates.find((c) => targetsMatch(c.title, normalizedTarget));
 
     if (exactMatch) {
       return {
         ...link,
         resolvedNodeId: exactMatch.nodeId,
         ambiguous: false,
-        candidates: candidates.map(c => c.nodeId),
+        candidates: candidates.map((c) => c.nodeId),
       };
     }
 
@@ -105,7 +103,7 @@ export class LinkResolver {
       ...link,
       resolvedNodeId: null,
       ambiguous: true,
-      candidates: candidates.map(c => c.nodeId),
+      candidates: candidates.map((c) => c.nodeId),
     };
   }
 
@@ -153,13 +151,11 @@ export class LinkResolver {
 /**
  * Create a link resolver with repository functions
  */
-export function createLinkResolver(
-  nodeRepository: {
-    findByTitle: (title: string) => Promise<Node[]>;
-    findById: (nodeId: string) => Promise<Node | null>;
-    findByTitleOrAlias: (text: string) => Promise<Node[]>;
-  }
-): LinkResolver {
+export function createLinkResolver(nodeRepository: {
+  findByTitle: (title: string) => Promise<Node[]>;
+  findById: (nodeId: string) => Promise<Node | null>;
+  findByTitleOrAlias: (text: string) => Promise<Node[]>;
+}): LinkResolver {
   return new LinkResolver({
     findByTitle: nodeRepository.findByTitle.bind(nodeRepository),
     findById: nodeRepository.findById.bind(nodeRepository),
@@ -247,16 +243,14 @@ export class InMemoryLinkResolver {
     }
 
     // Try exact title match for disambiguation
-    const exactMatch = candidates.find(c =>
-      targetsMatch(c.title, link.target)
-    );
+    const exactMatch = candidates.find((c) => targetsMatch(c.title, link.target));
 
     if (exactMatch) {
       return {
         ...link,
         resolvedNodeId: exactMatch.nodeId,
         ambiguous: false,
-        candidates: candidates.map(c => c.nodeId),
+        candidates: candidates.map((c) => c.nodeId),
       };
     }
 
@@ -264,7 +258,7 @@ export class InMemoryLinkResolver {
       ...link,
       resolvedNodeId: null,
       ambiguous: true,
-      candidates: candidates.map(c => c.nodeId),
+      candidates: candidates.map((c) => c.nodeId),
     };
   }
 

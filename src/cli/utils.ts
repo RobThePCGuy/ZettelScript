@@ -2,7 +2,17 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { ConnectionManager } from '../storage/database/connection.js';
-import { NodeRepository, EdgeRepository, VersionRepository, ChunkRepository, MentionRepository, UnresolvedLinkRepository, ConstellationRepository, EmbeddingRepository, WormholeRepository } from '../storage/database/repositories/index.js';
+import {
+  NodeRepository,
+  EdgeRepository,
+  VersionRepository,
+  ChunkRepository,
+  MentionRepository,
+  UnresolvedLinkRepository,
+  ConstellationRepository,
+  EmbeddingRepository,
+  WormholeRepository,
+} from '../storage/database/repositories/index.js';
 import { IndexingPipeline } from '../indexer/pipeline.js';
 import { GraphEngine } from '../core/graph/engine.js';
 import type { ZettelScriptConfig } from '../core/types/index.js';
@@ -125,9 +135,7 @@ export async function initContext(vaultPath?: string): Promise<CLIContext> {
   const resolvedPath = vaultPath ? path.resolve(vaultPath) : findVaultRoot();
 
   if (!resolvedPath) {
-    throw new Error(
-      'Not in a ZettelScript vault. Run "zettel init" to create one.'
-    );
+    throw new Error('Not in a ZettelScript vault. Run "zettel init" to create one.');
   }
 
   // Load config
@@ -260,14 +268,12 @@ export function printTable(
 
   // Calculate column widths
   const widths = headers.map((h, i) => {
-    const values = [h, ...rows.map(r => r[i] || '')];
-    return Math.max(...values.map(v => v.length));
+    const values = [h, ...rows.map((r) => r[i] || '')];
+    return Math.max(...values.map((v) => v.length));
   });
 
   // Print header
-  const headerLine = headers
-    .map((h, i) => h.padEnd(widths[i] ?? 0))
-    .join(' '.repeat(padding));
+  const headerLine = headers.map((h, i) => h.padEnd(widths[i] ?? 0)).join(' '.repeat(padding));
   console.log(headerLine);
   console.log('-'.repeat(headerLine.length));
 

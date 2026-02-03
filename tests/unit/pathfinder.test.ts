@@ -29,22 +29,18 @@ function createEdge(
 describe('Pathfinder', () => {
   describe('buildAdjacencyLists', () => {
     it('should build forward and backward adjacency lists', () => {
-      const edges = [
-        createEdge('A', 'B'),
-        createEdge('B', 'C'),
-        createEdge('A', 'C'),
-      ];
+      const edges = [createEdge('A', 'B'), createEdge('B', 'C'), createEdge('A', 'C')];
 
       const { forward, backward } = buildAdjacencyLists(edges);
 
       // Forward adjacency
-      expect(forward.get('A')?.map(e => e.nodeId)).toEqual(['B', 'C']);
-      expect(forward.get('B')?.map(e => e.nodeId)).toEqual(['C']);
+      expect(forward.get('A')?.map((e) => e.nodeId)).toEqual(['B', 'C']);
+      expect(forward.get('B')?.map((e) => e.nodeId)).toEqual(['C']);
       expect(forward.get('C')).toBeUndefined();
 
       // Backward adjacency
-      expect(backward.get('B')?.map(e => e.nodeId)).toEqual(['A']);
-      expect(backward.get('C')?.map(e => e.nodeId)).toEqual(['B', 'A']);
+      expect(backward.get('B')?.map((e) => e.nodeId)).toEqual(['A']);
+      expect(backward.get('C')?.map((e) => e.nodeId)).toEqual(['B', 'A']);
       expect(backward.get('A')).toBeUndefined();
     });
 
@@ -57,18 +53,14 @@ describe('Pathfinder', () => {
 
       const { forward } = buildAdjacencyLists(edges, ['explicit_link', 'sequence']);
 
-      expect(forward.get('A')?.map(e => e.nodeId)).toEqual(['B']);
-      expect(forward.get('B')?.map(e => e.nodeId)).toEqual(['C']);
+      expect(forward.get('A')?.map((e) => e.nodeId)).toEqual(['B']);
+      expect(forward.get('B')?.map((e) => e.nodeId)).toEqual(['C']);
     });
   });
 
   describe('bidirectionalBFS', () => {
     it('should find shortest path in linear graph', () => {
-      const edges = [
-        createEdge('A', 'B'),
-        createEdge('B', 'C'),
-        createEdge('C', 'D'),
-      ];
+      const edges = [createEdge('A', 'B'), createEdge('B', 'C'), createEdge('C', 'D')];
       const { forward, backward } = buildAdjacencyLists(edges);
 
       const result = bidirectionalBFS('A', 'D', forward, backward, 10);
@@ -109,10 +101,7 @@ describe('Pathfinder', () => {
     });
 
     it('should return null when no path exists', () => {
-      const edges = [
-        createEdge('A', 'B'),
-        createEdge('C', 'D'),
-      ];
+      const edges = [createEdge('A', 'B'), createEdge('C', 'D')];
       const { forward, backward } = buildAdjacencyLists(edges);
 
       const result = bidirectionalBFS('A', 'D', forward, backward, 10);
@@ -176,10 +165,7 @@ describe('Pathfinder', () => {
 
   describe('findKShortestPaths', () => {
     it('should find single path when k=1', () => {
-      const edges = [
-        createEdge('A', 'B'),
-        createEdge('B', 'C'),
-      ];
+      const edges = [createEdge('A', 'B'), createEdge('B', 'C')];
 
       const { paths, reason } = findKShortestPaths('A', 'C', edges, { k: 1 });
 
@@ -202,14 +188,11 @@ describe('Pathfinder', () => {
 
       expect(paths.length).toBe(2);
       // Both paths should be length 2
-      expect(paths.every(p => p.hopCount === 2)).toBe(true);
+      expect(paths.every((p) => p.hopCount === 2)).toBe(true);
     });
 
     it('should return empty array when no path exists', () => {
-      const edges = [
-        createEdge('A', 'B'),
-        createEdge('C', 'D'),
-      ];
+      const edges = [createEdge('A', 'B'), createEdge('C', 'D')];
 
       const { paths, reason } = findKShortestPaths('A', 'D', edges, { k: 3 });
 
@@ -230,7 +213,7 @@ describe('Pathfinder', () => {
 
       const { paths } = findKShortestPaths('A', 'D', edges, {
         k: 3,
-        maxExtraHops: 0
+        maxExtraHops: 0,
       });
 
       // Should only find the 2-hop path
@@ -250,7 +233,7 @@ describe('Pathfinder', () => {
 
       const { paths } = findKShortestPaths('A', 'C', edges, {
         k: 2,
-        maxExtraHops: 1
+        maxExtraHops: 1,
       });
 
       // First path should be shortest
@@ -260,7 +243,7 @@ describe('Pathfinder', () => {
     it('should filter by edge types', () => {
       const edges = [
         createEdge('A', 'B', 'explicit_link'),
-        createEdge('B', 'C', 'hierarchy'),  // Should be excluded
+        createEdge('B', 'C', 'hierarchy'), // Should be excluded
         createEdge('A', 'D', 'explicit_link'),
         createEdge('D', 'C', 'explicit_link'),
       ];
@@ -332,11 +315,7 @@ describe('Pathfinder', () => {
 
   describe('simpleBFS', () => {
     it('should find shortest path', () => {
-      const edges = [
-        createEdge('A', 'B'),
-        createEdge('B', 'C'),
-        createEdge('C', 'D'),
-      ];
+      const edges = [createEdge('A', 'B'), createEdge('B', 'C'), createEdge('C', 'D')];
       const { forward } = buildAdjacencyLists(edges);
 
       const path = simpleBFS('A', 'D', forward);

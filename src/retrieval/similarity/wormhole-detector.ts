@@ -4,7 +4,7 @@ import {
   type WormholeDetectorOptions,
   DEFAULT_WORMHOLE_OPTIONS,
 } from './similarity.js';
-import type { EmbeddingRepository, NodeEmbedding } from '../../storage/database/repositories/embedding-repository.js';
+import type { EmbeddingRepository } from '../../storage/database/repositories/embedding-repository.js';
 import type { EdgeRepository } from '../../storage/database/repositories/edge-repository.js';
 import type { WormholeRepository } from '../../storage/database/repositories/wormhole-repository.js';
 import type { NodeRepository } from '../../storage/database/repositories/node-repository.js';
@@ -64,10 +64,10 @@ export class WormholeDetector {
     const candidates: WormholeCandidate[] = [];
 
     for (let i = 0; i < embeddings.length; i++) {
-      const embA = embeddings[i];
+      const embA = embeddings[i]!;
 
       for (let j = i + 1; j < embeddings.length; j++) {
-        const embB = embeddings[j];
+        const embB = embeddings[j]!;
 
         // Skip if already linked
         if (existingEdges.has(`${embA.nodeId}:${embB.nodeId}`)) {
@@ -254,7 +254,7 @@ export class WormholeDetector {
 
     return {
       suggestionCount: suggestions.length,
-      acceptedCount: accepted.filter(e => e.provenance === 'user_approved').length,
+      acceptedCount: accepted.filter((e) => e.provenance === 'user_approved').length,
       rejectionCount,
       embeddingCount,
       embeddedNodeCount: embeddingCount, // Same as embeddingCount since 1:1

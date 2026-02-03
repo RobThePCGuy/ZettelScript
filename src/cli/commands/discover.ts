@@ -50,7 +50,7 @@ export const discoverCommand = new Command('discover')
       } else if (options.all) {
         // Check all nodes
         const allNodes = await ctx.nodeRepository.findAll();
-        nodesToCheck = allNodes.map(n => ({ nodeId: n.nodeId, path: n.path, title: n.title }));
+        nodesToCheck = allNodes.map((n) => ({ nodeId: n.nodeId, path: n.path, title: n.title }));
       } else {
         console.log('Specify --node <id> or --all to discover mentions.');
         ctx.connectionManager.close();
@@ -69,14 +69,14 @@ export const discoverCommand = new Command('discover')
         const ranked = await ranker.rank(mentions);
 
         // Filter by threshold
-        const filtered = ranked.filter(m => m.confidence >= threshold);
+        const filtered = ranked.filter((m) => m.confidence >= threshold);
 
         if (filtered.length === 0) continue;
 
         console.log(`\n${title} (${path}):`);
 
         const display = filtered.slice(0, limit);
-        const rows = display.map(m => [
+        const rows = display.map((m) => [
           m.surfaceText,
           m.targetTitle || m.targetId,
           (m.confidence * 100).toFixed(0) + '%',
@@ -110,7 +110,7 @@ export const discoverCommand = new Command('discover')
               action as 'approve' | 'reject' | 'defer'
             );
 
-            const approvedCount = results.filter(r => r.action === 'approve').length;
+            const approvedCount = results.filter((r) => r.action === 'approve').length;
             if (approvedCount > 0) {
               console.log(`  Batch ${action}: ${approvedCount} mention(s)`);
             }
@@ -122,21 +122,25 @@ export const discoverCommand = new Command('discover')
             });
 
             if (!approver.isTTY()) {
-              console.warn('\nNot running in interactive mode (non-TTY). Use --batch flag for non-interactive approval.');
+              console.warn(
+                '\nNot running in interactive mode (non-TTY). Use --batch flag for non-interactive approval.'
+              );
             } else {
               console.log('\nInteractive approval mode:');
               const results = await approver.approveAll(display);
 
-              const approved = results.filter(r => r.action === 'approve').length;
-              const rejected = results.filter(r => r.action === 'reject').length;
-              const deferred = results.filter(r => r.action === 'defer').length;
+              const approved = results.filter((r) => r.action === 'approve').length;
+              const rejected = results.filter((r) => r.action === 'reject').length;
+              const deferred = results.filter((r) => r.action === 'defer').length;
 
               if (approved > 0 || rejected > 0 || deferred > 0) {
-                console.log(`\nApproved: ${approved}, Rejected: ${rejected}, Deferred: ${deferred}`);
+                console.log(
+                  `\nApproved: ${approved}, Rejected: ${rejected}, Deferred: ${deferred}`
+                );
               }
 
               // Check if user quit early
-              if (results.some(r => r.action === 'quit')) {
+              if (results.some((r) => r.action === 'quit')) {
                 console.log('Approval cancelled.');
                 ctx.connectionManager.close();
                 return;

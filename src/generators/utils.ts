@@ -16,21 +16,23 @@ import type { KBData, ArcLedger, WorldRulesData } from './types.js';
  * Removes or replaces characters that are unsafe in filenames
  */
 export function sanitizeFilename(name: string): string {
-  return name
-    // Replace Windows/Unix unsafe characters
-    .replace(/[<>:"/\\|?*]/g, '')
-    // Replace multiple spaces with single space
-    .replace(/\s+/g, ' ')
-    // Trim whitespace
-    .trim()
-    // Replace spaces with hyphens for cleaner URLs
-    .replace(/\s/g, '-')
-    // Remove any remaining problematic characters
-    .replace(/[^\w\-().]/g, '')
-    // Collapse multiple hyphens
-    .replace(/-+/g, '-')
-    // Remove leading/trailing hyphens
-    .replace(/^-+|-+$/g, '');
+  return (
+    name
+      // Replace Windows/Unix unsafe characters
+      .replace(/[<>:"/\\|?*]/g, '')
+      // Replace multiple spaces with single space
+      .replace(/\s+/g, ' ')
+      // Trim whitespace
+      .trim()
+      // Replace spaces with hyphens for cleaner URLs
+      .replace(/\s/g, '-')
+      // Remove any remaining problematic characters
+      .replace(/[^\w\-().]/g, '')
+      // Collapse multiple hyphens
+      .replace(/-+/g, '-')
+      // Remove leading/trailing hyphens
+      .replace(/^-+|-+$/g, '')
+  );
 }
 
 /**
@@ -69,10 +71,7 @@ export function buildFrontmatter(data: Record<string, unknown>): string {
 /**
  * Build a complete note with frontmatter and content
  */
-export function buildNote(
-  frontmatter: Record<string, unknown>,
-  content: string
-): string {
+export function buildNote(frontmatter: Record<string, unknown>, content: string): string {
   const fm = buildFrontmatter(frontmatter);
   return `${fm}${content}`;
 }
@@ -258,7 +257,7 @@ export function wikilink(target: string, display?: string): string {
  * Create a list of wikilinks
  */
 export function wikilinkList(items: string[]): string {
-  return items.map(item => `- ${wikilink(item)}`).join('\n');
+  return items.map((item) => `- ${wikilink(item)}`).join('\n');
 }
 
 /**
@@ -293,7 +292,10 @@ export function section(title: string, level: number = 2): string {
  * Create a blockquote
  */
 export function blockquote(text: string): string {
-  return text.split('\n').map(line => `> ${line}`).join('\n');
+  return text
+    .split('\n')
+    .map((line) => `> ${line}`)
+    .join('\n');
 }
 
 /**

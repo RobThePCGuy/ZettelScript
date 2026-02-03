@@ -59,7 +59,7 @@ export class ContinuityChecker {
     }
 
     // Extract scene info
-    const sceneInfos = scenes.map(s => this.extractSceneInfo(s));
+    const sceneInfos = scenes.map((s) => this.extractSceneInfo(s));
 
     // POV validation
     if (this.config.validatePov) {
@@ -83,10 +83,12 @@ export class ContinuityChecker {
       issues,
       stats: {
         scenesChecked: scenes.length,
-        povIssues: issues.filter(i => i.type === 'pov_leakage').length,
-        timelineIssues: issues.filter(i => i.type === 'timeline_inconsistency').length,
-        setupPayoffIssues: issues.filter(i => i.type === 'missing_setup' || i.type === 'orphaned_payoff').length,
-        knowledgeIssues: issues.filter(i => i.type === 'character_knowledge').length,
+        povIssues: issues.filter((i) => i.type === 'pov_leakage').length,
+        timelineIssues: issues.filter((i) => i.type === 'timeline_inconsistency').length,
+        setupPayoffIssues: issues.filter(
+          (i) => i.type === 'missing_setup' || i.type === 'orphaned_payoff'
+        ).length,
+        knowledgeIssues: issues.filter((i) => i.type === 'character_knowledge').length,
       },
     };
   }
@@ -123,7 +125,7 @@ export class ContinuityChecker {
     const characterKnowledge = new Map<string, Set<string>>();
 
     for (const scene of sortedScenes) {
-      const sceneNode = scenes.find(s => s.nodeId === scene.nodeId);
+      const sceneNode = scenes.find((s) => s.nodeId === scene.nodeId);
       if (!sceneNode) continue;
 
       if (!scene.pov) {
@@ -183,9 +185,9 @@ export class ContinuityChecker {
     const issues: ContinuityIssue[] = [];
 
     // Check for missing scene_order
-    const withoutOrder = sceneInfos.filter(s => s.sceneOrder === Infinity);
+    const withoutOrder = sceneInfos.filter((s) => s.sceneOrder === Infinity);
     for (const scene of withoutOrder) {
-      const sceneNode = scenes.find(s => s.nodeId === scene.nodeId);
+      const sceneNode = scenes.find((s) => s.nodeId === scene.nodeId);
       issues.push({
         type: 'timeline_inconsistency',
         severity: 'warning',
@@ -208,7 +210,7 @@ export class ContinuityChecker {
     for (const [order, nodeIds] of orderCounts) {
       if (nodeIds.length > 1) {
         for (const nodeId of nodeIds) {
-          const sceneNode = scenes.find(s => s.nodeId === nodeId);
+          const sceneNode = scenes.find((s) => s.nodeId === nodeId);
           issues.push({
             type: 'timeline_inconsistency',
             severity: 'error',
@@ -222,7 +224,7 @@ export class ContinuityChecker {
 
     // Check for large gaps in scene_order
     const orderedScenes = sceneInfos
-      .filter(s => s.sceneOrder !== Infinity)
+      .filter((s) => s.sceneOrder !== Infinity)
       .sort((a, b) => a.sceneOrder - b.sceneOrder);
 
     for (let i = 1; i < orderedScenes.length; i++) {
@@ -265,7 +267,7 @@ export class ContinuityChecker {
 
     // Check for setups without payoffs
     for (const setupId of setups) {
-      const hasPayoff = setupPayoffEdges.some(e => e.sourceId === setupId);
+      const hasPayoff = setupPayoffEdges.some((e) => e.sourceId === setupId);
       if (!hasPayoff) {
         const node = await this.nodeRepo.findById(setupId);
         if (node) {
@@ -282,7 +284,7 @@ export class ContinuityChecker {
 
     // Check for payoffs without setups
     for (const payoffId of payoffs) {
-      const hasSetup = setupPayoffEdges.some(e => e.targetId === payoffId);
+      const hasSetup = setupPayoffEdges.some((e) => e.targetId === payoffId);
       if (!hasSetup) {
         const node = await this.nodeRepo.findById(payoffId);
         if (node) {
@@ -322,7 +324,7 @@ export class ContinuityChecker {
 
       // Check if this scene connects to the information
       const edges = await this.edgeRepo.findOutgoing(scene.nodeId);
-      if (edges.some(e => e.targetId === informationNodeId)) {
+      if (edges.some((e) => e.targetId === informationNodeId)) {
         return true;
       }
     }

@@ -39,11 +39,14 @@ describe('injectLinks', () => {
 
   it('should avoid frontmatter', async () => {
     const testFile = path.join(OUTPUT_DIR, 'test.md');
-    await fs.promises.writeFile(testFile, `---
+    await fs.promises.writeFile(
+      testFile,
+      `---
 title: Alpha
 ---
 
-Alpha met Beta.`);
+Alpha met Beta.`
+    );
 
     await injectLinks({
       vaultPath: OUTPUT_DIR,
@@ -59,13 +62,16 @@ Alpha met Beta.`);
 
   it('should avoid code blocks', async () => {
     const testFile = path.join(OUTPUT_DIR, 'test.md');
-    await fs.promises.writeFile(testFile, `# Test
+    await fs.promises.writeFile(
+      testFile,
+      `# Test
 
 \`\`\`
 Alpha code
 \`\`\`
 
-Alpha text`);
+Alpha text`
+    );
 
     await injectLinks({
       vaultPath: OUTPUT_DIR,
@@ -93,9 +99,12 @@ Alpha text`);
 
   it('should avoid headers', async () => {
     const testFile = path.join(OUTPUT_DIR, 'test.md');
-    await fs.promises.writeFile(testFile, `# Alpha Header
+    await fs.promises.writeFile(
+      testFile,
+      `# Alpha Header
 
-Alpha in body.`);
+Alpha in body.`
+    );
 
     await injectLinks({
       vaultPath: OUTPUT_DIR,

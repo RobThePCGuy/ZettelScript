@@ -14,10 +14,7 @@ export interface ParsedDocument {
 /**
  * Parse frontmatter from a markdown document
  */
-export function parseFrontmatter(
-  source: string,
-  filePath: string
-): ParsedDocument {
+export function parseFrontmatter(source: string, filePath: string): ParsedDocument {
   const match = source.match(FRONTMATTER_REGEX);
 
   if (!match) {
@@ -48,13 +45,9 @@ export function parseFrontmatter(
       contentStartOffset: fullMatch.length,
     };
   } catch (error) {
-    throw new ParseError(
-      `Invalid YAML frontmatter: ${error}`,
-      filePath,
-      undefined,
-      undefined,
-      { yaml: yamlContent }
-    );
+    throw new ParseError(`Invalid YAML frontmatter: ${error}`, filePath, undefined, undefined, {
+      yaml: yamlContent,
+    });
   }
 }
 
@@ -85,9 +78,7 @@ export function extractTitle(
 /**
  * Extract node type from frontmatter
  */
-export function extractNodeType(
-  frontmatter: Frontmatter | null
-): string {
+export function extractNodeType(frontmatter: Frontmatter | null): string {
   if (frontmatter?.type) {
     return frontmatter.type;
   }
@@ -103,7 +94,7 @@ export function extractAliases(frontmatter: Frontmatter | null): string[] {
   }
 
   if (Array.isArray(frontmatter.aliases)) {
-    return frontmatter.aliases.filter(a => typeof a === 'string');
+    return frontmatter.aliases.filter((a) => typeof a === 'string');
   }
 
   return [];
@@ -145,8 +136,16 @@ export function validateFrontmatter(frontmatter: Frontmatter): {
 
   // Check type is valid if present
   const validTypes = [
-    'note', 'scene', 'character', 'location', 'object',
-    'event', 'concept', 'moc', 'timeline', 'draft'
+    'note',
+    'scene',
+    'character',
+    'location',
+    'object',
+    'event',
+    'concept',
+    'moc',
+    'timeline',
+    'draft',
   ];
 
   if (frontmatter.type && !validTypes.includes(frontmatter.type)) {

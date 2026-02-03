@@ -1,5 +1,15 @@
-import type { Chunk, Node, RetrievalQuery, RetrievalResult, EdgeType } from '../../core/types/index.js';
-import { NodeRepository, EdgeRepository, ChunkRepository } from '../../storage/database/repositories/index.js';
+import type {
+  Chunk,
+  Node,
+  RetrievalQuery,
+  RetrievalResult,
+  EdgeType,
+} from '../../core/types/index.js';
+import {
+  NodeRepository,
+  EdgeRepository,
+  ChunkRepository,
+} from '../../storage/database/repositories/index.js';
 import type { GraphEngine } from '../../core/graph/engine.js';
 import { GraphExpander, type ExpandedNode } from '../expansion/graph-expander.js';
 import { reciprocalRankFusion, type RankedItem } from '../fusion/rrf.js';
@@ -62,7 +72,11 @@ export class ContextAssembler {
     const expansionOptions = {
       maxDepth: query.expansion?.maxDepth ?? this.config.expansionMaxDepth,
       budget: query.expansion?.budget ?? this.config.expansionBudget,
-      edgeTypes: (query.expansion?.edgeTypes ?? ['explicit_link', 'sequence', 'hierarchy']) as EdgeType[],
+      edgeTypes: (query.expansion?.edgeTypes ?? [
+        'explicit_link',
+        'sequence',
+        'hierarchy',
+      ]) as EdgeType[],
       decayFactor: query.expansion?.decayFactor ?? 0.7,
       includeIncoming: true,
     };
@@ -82,7 +96,7 @@ export class ContextAssembler {
     const provenance = this.buildProvenance(fusedChunks);
 
     return {
-      chunks: fusedChunks.map(sc => ({
+      chunks: fusedChunks.map((sc) => ({
         chunk: sc.chunk,
         node: sc.node,
         score: sc.score,
@@ -104,18 +118,18 @@ export class ContextAssembler {
     }
 
     // Fetch full chunk and node data
-    const chunkIds = ftsResults.map(r => r.chunkId);
+    const chunkIds = ftsResults.map((r) => r.chunkId);
     const chunks = await this.chunkRepo.findByIds(chunkIds);
-    const chunkMap = new Map(chunks.map(c => [c.chunkId, c]));
+    const chunkMap = new Map(chunks.map((c) => [c.chunkId, c]));
 
-    const nodeIds = [...new Set(ftsResults.map(r => r.nodeId))];
+    const nodeIds = [...new Set(ftsResults.map((r) => r.nodeId))];
     const nodes = await this.nodeRepo.findByIds(nodeIds);
-    const nodeMap = new Map(nodes.map(n => [n.nodeId, n]));
+    const nodeMap = new Map(nodes.map((n) => [n.nodeId, n]));
 
     const results: ScoredChunk[] = [];
 
     // Normalize scores
-    const maxScore = Math.max(...ftsResults.map(r => Math.abs(r.score)));
+    const maxScore = Math.max(...ftsResults.map((r) => Math.abs(r.score)));
 
     for (const fts of ftsResults) {
       const chunk = chunkMap.get(fts.chunkId);
@@ -143,7 +157,7 @@ export class ContextAssembler {
   ): Promise<ScoredChunk[]> {
     if (!filters) return chunks;
 
-    return chunks.filter(sc => {
+    return chunks.filter((sc) => {
       // Filter by node type
       if (filters.nodeTypes && !filters.nodeTypes.includes(sc.node.type)) {
         return false;
@@ -223,13 +237,13 @@ export class ContextAssembler {
     maxResults: number
   ): ScoredChunk[] {
     // Convert to ranked items
-    const lexicalItems: RankedItem[] = lexical.map(sc => ({
+    const lexicalItems: RankedItem[] = lexical.map((sc) => ({
       id: sc.chunk.chunkId,
       score: sc.score,
       source: 'lexical',
     }));
 
-    const graphItems: RankedItem[] = graph.map(sc => ({
+    const graphItems: RankedItem[] = graph.map((sc) => ({
       id: sc.chunk.chunkId,
       score: sc.score,
       source: 'graph',
@@ -299,7 +313,7 @@ export class ContextAssembler {
       // Sort chunks by offset
       nodeChunkList.sort((a, b) => a.chunk.offsetStart - b.chunk.offsetStart);
 
-      const chunkTexts = nodeChunkList.map(sc => sc.chunk.text);
+      const chunkTexts = nodeChunkList.map((sc) => sc.chunk.text);
       const combinedText = chunkTexts.join('\n\n');
 
       sections.push(`## ${node.title}\n\n${combinedText}`);
@@ -328,8 +342,7 @@ export class ContextAssembler {
     }
 
     // Normalize contributions
-    const totalScore = Array.from(nodeContributions.values())
-      .reduce((sum, n) => sum + n.score, 0);
+    const totalScore = Array.from(nodeContributions.values()).reduce((sum, n) => sum + n.score, 0);
 
     return Array.from(nodeContributions.entries())
       .map(([nodeId, data]) => ({

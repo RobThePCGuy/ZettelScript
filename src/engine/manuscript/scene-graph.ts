@@ -32,7 +32,7 @@ export class SceneGraph {
   async load(): Promise<void> {
     const sceneNodes = await this.nodeRepo.findByType('scene');
 
-    this.scenes = sceneNodes.map(node => this.nodeToSceneNode(node));
+    this.scenes = sceneNodes.map((node) => this.nodeToSceneNode(node));
 
     // Build indexes
     this.scenesByOrder.clear();
@@ -81,7 +81,7 @@ export class SceneGraph {
    */
   getScenesBefore(sceneOrder: number): SceneNode[] {
     return this.scenes
-      .filter(s => s.sceneOrder < sceneOrder)
+      .filter((s) => s.sceneOrder < sceneOrder)
       .sort((a, b) => a.sceneOrder - b.sceneOrder);
   }
 
@@ -90,7 +90,7 @@ export class SceneGraph {
    */
   getScenesAfter(sceneOrder: number): SceneNode[] {
     return this.scenes
-      .filter(s => s.sceneOrder > sceneOrder && s.sceneOrder !== Infinity)
+      .filter((s) => s.sceneOrder > sceneOrder && s.sceneOrder !== Infinity)
       .sort((a, b) => a.sceneOrder - b.sceneOrder);
   }
 
@@ -101,13 +101,13 @@ export class SceneGraph {
     previous: SceneNode | null;
     next: SceneNode | null;
   } {
-    const ordered = this.getScenesInOrder().filter(s => s.sceneOrder !== Infinity);
+    const ordered = this.getScenesInOrder().filter((s) => s.sceneOrder !== Infinity);
 
-    const index = ordered.findIndex(s => s.sceneOrder === sceneOrder);
+    const index = ordered.findIndex((s) => s.sceneOrder === sceneOrder);
 
     return {
-      previous: index > 0 ? ordered[index - 1] ?? null : null,
-      next: index < ordered.length - 1 ? ordered[index + 1] ?? null : null,
+      previous: index > 0 ? (ordered[index - 1] ?? null) : null,
+      next: index < ordered.length - 1 ? (ordered[index + 1] ?? null) : null,
     };
   }
 
@@ -122,8 +122,8 @@ export class SceneGraph {
    * Get scenes where a character is present
    */
   getScenesWithCharacter(characterName: string): SceneNode[] {
-    return this.scenes.filter(s =>
-      s.characters.includes(characterName) || s.pov === characterName
+    return this.scenes.filter(
+      (s) => s.characters.includes(characterName) || s.pov === characterName
     );
   }
 
@@ -131,14 +131,14 @@ export class SceneGraph {
    * Get scenes at a location
    */
   getScenesAtLocation(locationName: string): SceneNode[] {
-    return this.scenes.filter(s => s.locations.includes(locationName));
+    return this.scenes.filter((s) => s.locations.includes(locationName));
   }
 
   /**
    * Get the POV character for a scene
    */
   getPov(sceneNodeId: string): string | null {
-    const scene = this.scenes.find(s => s.nodeId === sceneNodeId);
+    const scene = this.scenes.find((s) => s.nodeId === sceneNodeId);
     return scene?.pov ?? null;
   }
 
@@ -153,7 +153,7 @@ export class SceneGraph {
    * Get scene by node ID
    */
   getScene(nodeId: string): SceneNode | null {
-    return this.scenes.find(s => s.nodeId === nodeId) ?? null;
+    return this.scenes.find((s) => s.nodeId === nodeId) ?? null;
   }
 
   /**
@@ -197,7 +197,9 @@ export class SceneGraph {
     }
 
     // Check for participation edges
-    const participationEdges = await this.edgeRepo.findOutgoing(informationNodeId, ['participation']);
+    const participationEdges = await this.edgeRepo.findOutgoing(informationNodeId, [
+      'participation',
+    ]);
     for (const edge of participationEdges) {
       const targetNode = await this.nodeRepo.findById(edge.targetId);
       if (targetNode?.title === povCharacter) {
@@ -234,7 +236,7 @@ export class SceneGraph {
    * Get orphan scenes (no scene_order)
    */
   getOrphanScenes(): SceneNode[] {
-    return this.scenes.filter(s => s.sceneOrder === Infinity);
+    return this.scenes.filter((s) => s.sceneOrder === Infinity);
   }
 
   /**

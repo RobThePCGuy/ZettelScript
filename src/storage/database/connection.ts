@@ -122,7 +122,9 @@ export class ConnectionManager {
     // Check current schema version
     let currentVersion = 0;
     try {
-      const result = this.sqlite.prepare('SELECT version FROM schema_version LIMIT 1').get() as { version: number } | undefined;
+      const result = this.sqlite.prepare('SELECT version FROM schema_version LIMIT 1').get() as
+        | { version: number }
+        | undefined;
       if (result) {
         currentVersion = result.version;
       }
@@ -374,9 +376,15 @@ export class ConnectionManager {
   } {
     const sqlite = this.getSqlite();
 
-    const nodeCount = (sqlite.prepare('SELECT COUNT(*) as count FROM nodes').get() as { count: number }).count;
-    const edgeCount = (sqlite.prepare('SELECT COUNT(*) as count FROM edges').get() as { count: number }).count;
-    const chunkCount = (sqlite.prepare('SELECT COUNT(*) as count FROM chunks').get() as { count: number }).count;
+    const nodeCount = (
+      sqlite.prepare('SELECT COUNT(*) as count FROM nodes').get() as { count: number }
+    ).count;
+    const edgeCount = (
+      sqlite.prepare('SELECT COUNT(*) as count FROM edges').get() as { count: number }
+    ).count;
+    const chunkCount = (
+      sqlite.prepare('SELECT COUNT(*) as count FROM chunks').get() as { count: number }
+    ).count;
 
     const stats = fs.statSync(this.dbPath);
 

@@ -141,14 +141,14 @@ export class ButterflyLog {
    * Get entries for a specific node
    */
   getEntriesForNode(nodeId: string): ChangeEntry[] {
-    return this.entries.filter(e => e.nodeId === nodeId);
+    return this.entries.filter((e) => e.nodeId === nodeId);
   }
 
   /**
    * Get entries within a time range
    */
   getEntriesInRange(startTime: Date, endTime: Date): ChangeEntry[] {
-    return this.entries.filter(e => {
+    return this.entries.filter((e) => {
       const time = new Date(e.timestamp);
       return time >= startTime && time <= endTime;
     });
@@ -166,7 +166,7 @@ export class ButterflyLog {
    * Get entry by ID
    */
   getEntry(changeId: string): ChangeEntry | null {
-    return this.entries.find(e => e.changeId === changeId) ?? null;
+    return this.entries.find((e) => e.changeId === changeId) ?? null;
   }
 
   /**
@@ -223,10 +223,14 @@ export class ButterflyLog {
    * Export log to JSON
    */
   export(): string {
-    return JSON.stringify({
-      exportedAt: new Date().toISOString(),
-      entries: this.entries,
-    }, null, 2);
+    return JSON.stringify(
+      {
+        exportedAt: new Date().toISOString(),
+        entries: this.entries,
+      },
+      null,
+      2
+    );
   }
 
   /**

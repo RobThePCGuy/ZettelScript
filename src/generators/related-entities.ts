@@ -129,9 +129,7 @@ function buildRelationshipLine(rel: ComputedRelationship): string {
 /**
  * Build the Related Entities section for a note
  */
-export function buildRelatedEntitiesSection(
-  relationships: ComputedRelationship[]
-): string {
+export function buildRelatedEntitiesSection(relationships: ComputedRelationship[]): string {
   if (relationships.length === 0) {
     return '';
   }
@@ -180,9 +178,7 @@ export function buildRelatedEntitiesSection(
  * Check if Related Entities section should be included
  * Returns true by default unless explicitly disabled
  */
-export function shouldIncludeRelatedEntities(
-  includeRelatedEntities?: boolean
-): boolean {
+export function shouldIncludeRelatedEntities(includeRelatedEntities?: boolean): boolean {
   // Default to true if not specified
   return includeRelatedEntities !== false;
 }

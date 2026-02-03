@@ -199,22 +199,15 @@ function mergeZones(zones: ExclusionZone[]): ExclusionZone[] {
 /**
  * Check if a position is within an exclusion zone
  */
-export function isInExclusionZone(
-  position: number,
-  zones: ExclusionZone[]
-): boolean {
-  return zones.some(zone => position >= zone.start && position < zone.end);
+export function isInExclusionZone(position: number, zones: ExclusionZone[]): boolean {
+  return zones.some((zone) => position >= zone.start && position < zone.end);
 }
 
 /**
  * Check if a range overlaps with any exclusion zone
  */
-export function overlapsExclusionZone(
-  start: number,
-  end: number,
-  zones: ExclusionZone[]
-): boolean {
-  return zones.some(zone => start < zone.end && end > zone.start);
+export function overlapsExclusionZone(start: number, end: number, zones: ExclusionZone[]): boolean {
+  return zones.some((zone) => start < zone.end && end > zone.start);
 }
 
 /**
@@ -224,7 +217,7 @@ export function filterExcludedMatches<T extends { start: number; end: number }>(
   matches: T[],
   zones: ExclusionZone[]
 ): T[] {
-  return matches.filter(match => !overlapsExclusionZone(match.start, match.end, zones));
+  return matches.filter((match) => !overlapsExclusionZone(match.start, match.end, zones));
 }
 
 /**
