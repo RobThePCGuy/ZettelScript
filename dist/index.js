@@ -38,6 +38,8 @@ var EdgeTypeSchema = Type.Union([
   Type.Literal("causes"),
   Type.Literal("setup_payoff"),
   Type.Literal("semantic"),
+  Type.Literal("semantic_suggestion"),
+  // Pending semantic wormhole (not yet accepted)
   Type.Literal("mention"),
   Type.Literal("alias")
 ]);
@@ -230,6 +232,334 @@ var DEFAULT_CONFIG = {
   }
 };
 
+// src/core/graph/pathfinder.ts
+var EDGE_PENALTIES = {
+  explicit_link: 0,
+  sequence: 0.1,
+  causes: 0.2,
+  semantic: 0.3,
+  semantic_suggestion: 0.5
+};
+var DEFAULT_EDGE_PENALTY = 0.3;
+function buildAdjacencyLists(edges2, edgeTypes) {
+  const forward = /* @__PURE__ */ new Map();
+  const backward = /* @__PURE__ */ new Map();
+  const typeSet = edgeTypes ? new Set(edgeTypes) : null;
+  for (const edge of edges2) {
+    if (typeSet && !typeSet.has(edge.edgeType)) continue;
+    if (!forward.has(edge.sourceId)) {
+      forward.set(edge.sourceId, []);
+    }
+    forward.get(edge.sourceId).push({
+      nodeId: edge.targetId,
+      edgeType: edge.edgeType
+    });
+    if (!backward.has(edge.targetId)) {
+      backward.set(edge.targetId, []);
+    }
+    backward.get(edge.targetId).push({
+      nodeId: edge.sourceId,
+      edgeType: edge.edgeType
+    });
+  }
+  return { forward, backward };
+}
+function bidirectionalBFS(startId, endId, forward, backward, maxDepth, disabledEdges, disabledNodes) {
+  if (startId === endId) {
+    return { path: [startId], edges: [] };
+  }
+  if (disabledNodes?.has(startId) || disabledNodes?.has(endId)) {
+    return null;
+  }
+  const forwardVisited = /* @__PURE__ */ new Map();
+  forwardVisited.set(startId, { parent: null, edgeType: null });
+  let forwardQueue = [startId];
+  let forwardDepth = 0;
+  const backwardVisited = /* @__PURE__ */ new Map();
+  backwardVisited.set(endId, { parent: null, edgeType: null });
+  let backwardQueue = [endId];
+  let backwardDepth = 0;
+  let bestDistance = Infinity;
+  let meetingNode = null;
+  while ((forwardQueue.length > 0 || backwardQueue.length > 0) && forwardDepth + backwardDepth < bestDistance) {
+    if (forwardDepth + backwardDepth >= maxDepth * 2) break;
+    const expandForward = forwardQueue.length > 0 && (backwardQueue.length === 0 || forwardQueue.length <= backwardQueue.length);
+    if (expandForward && forwardQueue.length > 0) {
+      const nextQueue = [];
+      forwardDepth++;
+      if (forwardDepth > bestDistance) break;
+      for (const nodeId of forwardQueue) {
+        const neighbors = forward.get(nodeId) || [];
+        for (const { nodeId: neighborId, edgeType } of neighbors) {
+          if (disabledNodes?.has(neighborId)) continue;
+          const edgeKey = `${nodeId}->${neighborId}`;
+          if (disabledEdges?.has(edgeKey)) continue;
+          if (!forwardVisited.has(neighborId)) {
+            forwardVisited.set(neighborId, { parent: nodeId, edgeType });
+            nextQueue.push(neighborId);
+            if (backwardVisited.has(neighborId)) {
+              const totalDist = forwardDepth + backwardDepth;
+              if (totalDist < bestDistance) {
+                bestDistance = totalDist;
+                meetingNode = neighborId;
+              }
+            }
+          }
+        }
+      }
+      forwardQueue = nextQueue;
+    } else if (backwardQueue.length > 0) {
+      const nextQueue = [];
+      backwardDepth++;
+      if (backwardDepth > bestDistance) break;
+      for (const nodeId of backwardQueue) {
+        const neighbors = backward.get(nodeId) || [];
+        for (const { nodeId: neighborId, edgeType } of neighbors) {
+          if (disabledNodes?.has(neighborId)) continue;
+          const edgeKey = `${neighborId}->${nodeId}`;
+          if (disabledEdges?.has(edgeKey)) continue;
+          if (!backwardVisited.has(neighborId)) {
+            backwardVisited.set(neighborId, { parent: nodeId, edgeType });
+            nextQueue.push(neighborId);
+            if (forwardVisited.has(neighborId)) {
+              const totalDist = forwardDepth + backwardDepth;
+              if (totalDist < bestDistance) {
+                bestDistance = totalDist;
+                meetingNode = neighborId;
+              }
+            }
+          }
+        }
+      }
+      backwardQueue = nextQueue;
+    } else {
+      break;
+    }
+  }
+  if (!meetingNode) {
+    return null;
+  }
+  const pathToMeeting = [];
+  const edgesToMeeting = [];
+  let current = meetingNode;
+  while (current !== null) {
+    pathToMeeting.unshift(current);
+    const info = forwardVisited.get(current);
+    if (info?.edgeType) {
+      edgesToMeeting.unshift(info.edgeType);
+    }
+    current = info?.parent ?? null;
+  }
+  const pathFromMeeting = [];
+  const edgesFromMeeting = [];
+  current = backwardVisited.get(meetingNode)?.parent ?? null;
+  while (current !== null) {
+    pathFromMeeting.push(current);
+    const info = backwardVisited.get(current);
+    const prevNode = pathFromMeeting.length > 1 ? pathFromMeeting[pathFromMeeting.length - 2] : meetingNode;
+    const prevInfo = backwardVisited.get(prevNode);
+    if (prevInfo?.edgeType) {
+      edgesFromMeeting.push(prevInfo.edgeType);
+    }
+    current = info?.parent ?? null;
+  }
+  const path2 = [...pathToMeeting, ...pathFromMeeting];
+  const edges2 = [...edgesToMeeting, ...edgesFromMeeting];
+  return { path: path2, edges: edges2 };
+}
+function calculateJaccardOverlap(pathA, pathB, excludeEndpoints = false) {
+  let nodesA = new Set(pathA);
+  let nodesB = new Set(pathB);
+  if (excludeEndpoints && pathA.length >= 2 && pathB.length >= 2) {
+    nodesA = new Set(pathA.slice(1, -1));
+    nodesB = new Set(pathB.slice(1, -1));
+  }
+  if (nodesA.size === 0 && nodesB.size === 0) {
+    return 1;
+  }
+  const intersection = new Set([...nodesA].filter((x) => nodesB.has(x)));
+  const union = /* @__PURE__ */ new Set([...nodesA, ...nodesB]);
+  if (union.size === 0) return 1;
+  return intersection.size / union.size;
+}
+function calculatePathScore(edges2) {
+  const hopCount = edges2.length;
+  let penalty = 0;
+  for (const edgeType of edges2) {
+    penalty += EDGE_PENALTIES[edgeType] ?? DEFAULT_EDGE_PENALTY;
+  }
+  return hopCount + penalty;
+}
+function isSimplePath(path2) {
+  const seen = /* @__PURE__ */ new Set();
+  for (const nodeId of path2) {
+    if (seen.has(nodeId)) return false;
+    seen.add(nodeId);
+  }
+  return true;
+}
+function findKShortestPaths(startId, endId, edges2, options = {}) {
+  const {
+    k = 3,
+    edgeTypes = ["explicit_link", "sequence", "causes", "semantic"],
+    maxDepth = 15,
+    overlapThreshold = 0.7,
+    maxCandidates = 100,
+    maxExtraHops = 2
+  } = options;
+  const { forward, backward } = buildAdjacencyLists(edges2, edgeTypes);
+  const firstResult = bidirectionalBFS(startId, endId, forward, backward, maxDepth);
+  if (!firstResult) {
+    return { paths: [], reason: "no_path" };
+  }
+  const shortestHopCount = firstResult.path.length - 1;
+  const maxAllowedHops = shortestHopCount + maxExtraHops;
+  const results = [{
+    path: firstResult.path,
+    edges: firstResult.edges,
+    hopCount: shortestHopCount,
+    score: calculatePathScore(firstResult.edges)
+  }];
+  const candidates = [];
+  const seenPaths = /* @__PURE__ */ new Set([firstResult.path.join("|")]);
+  for (let i = 0; i < results.length && results.length < k; i++) {
+    const resultItem = results[i];
+    const currentPath = resultItem.path;
+    for (let spurIndex = 0; spurIndex < currentPath.length - 1; spurIndex++) {
+      const spurNode = currentPath[spurIndex];
+      const rootPath = currentPath.slice(0, spurIndex + 1);
+      const rootEdges = resultItem.edges.slice(0, spurIndex);
+      const disabledEdges = /* @__PURE__ */ new Set();
+      const disabledNodes = /* @__PURE__ */ new Set();
+      for (const result of results) {
+        if (result.path.length > spurIndex) {
+          const matchesRoot = rootPath.every((node, idx) => result.path[idx] === node);
+          if (matchesRoot && spurIndex < result.path.length - 1) {
+            const edgeKey = `${result.path[spurIndex]}->${result.path[spurIndex + 1]}`;
+            disabledEdges.add(edgeKey);
+          }
+        }
+      }
+      for (let j = 0; j < rootPath.length - 1; j++) {
+        const nodeToDisable = rootPath[j];
+        if (nodeToDisable) {
+          disabledNodes.add(nodeToDisable);
+        }
+      }
+      const spurResult = bidirectionalBFS(
+        spurNode,
+        endId,
+        forward,
+        backward,
+        maxDepth - spurIndex,
+        disabledEdges,
+        disabledNodes
+      );
+      if (spurResult && spurResult.path.length > 1) {
+        const totalPath = [...rootPath.slice(0, -1), ...spurResult.path];
+        const totalEdges = [...rootEdges, ...spurResult.edges];
+        const pathKey = totalPath.join("|");
+        if (!seenPaths.has(pathKey) && isSimplePath(totalPath) && totalPath.length - 1 <= maxAllowedHops) {
+          seenPaths.add(pathKey);
+          candidates.push({
+            path: totalPath,
+            edges: totalEdges,
+            score: calculatePathScore(totalEdges)
+          });
+        }
+      }
+      if (candidates.length > maxCandidates) {
+        candidates.sort((a, b) => {
+          const hopDiff = a.path.length - 1 - (b.path.length - 1);
+          if (hopDiff !== 0) return hopDiff;
+          const scoreDiff = a.score - b.score;
+          if (scoreDiff !== 0) return scoreDiff;
+          return a.path.join("|").localeCompare(b.path.join("|"));
+        });
+        candidates.length = maxCandidates;
+      }
+    }
+    if (candidates.length > 0) {
+      candidates.sort((a, b) => {
+        const hopDiff = a.path.length - 1 - (b.path.length - 1);
+        if (hopDiff !== 0) return hopDiff;
+        const scoreDiff = a.score - b.score;
+        if (scoreDiff !== 0) return scoreDiff;
+        return a.path.join("|").localeCompare(b.path.join("|"));
+      });
+      let addedIndex = -1;
+      for (let j = 0; j < candidates.length; j++) {
+        const candidate = candidates[j];
+        let tooSimilar = false;
+        for (const accepted of results) {
+          const overlap = calculateJaccardOverlap(
+            candidate.path,
+            accepted.path,
+            candidate.path.length <= 4 || accepted.path.length <= 4
+          );
+          if (overlap > overlapThreshold) {
+            tooSimilar = true;
+            break;
+          }
+        }
+        if (!tooSimilar) {
+          results.push({
+            path: candidate.path,
+            edges: candidate.edges,
+            hopCount: candidate.path.length - 1,
+            score: candidate.score
+          });
+          addedIndex = j;
+          break;
+        }
+      }
+      if (addedIndex >= 0) {
+        candidates.splice(addedIndex, 1);
+      }
+    }
+  }
+  let reason = "found_all";
+  if (results.length < k) {
+    if (candidates.length === 0) {
+      reason = "exhausted_candidates";
+    } else {
+      reason = "diversity_filter";
+    }
+  }
+  return { paths: results, reason };
+}
+function simpleBFS(startId, endId, forward, maxDepth = 15) {
+  if (startId === endId) return [startId];
+  const visited = /* @__PURE__ */ new Map();
+  visited.set(startId, null);
+  let queue = [startId];
+  let depth = 0;
+  while (queue.length > 0 && depth < maxDepth) {
+    const nextQueue = [];
+    depth++;
+    for (const nodeId of queue) {
+      const neighbors = forward.get(nodeId) || [];
+      for (const { nodeId: neighborId } of neighbors) {
+        if (neighborId === endId) {
+          const path2 = [endId, nodeId];
+          let current = nodeId;
+          while (visited.get(current) !== null) {
+            current = visited.get(current);
+            path2.push(current);
+          }
+          return path2.reverse();
+        }
+        if (!visited.has(neighborId)) {
+          visited.set(neighborId, nodeId);
+          nextQueue.push(neighborId);
+        }
+      }
+    }
+    queue = nextQueue;
+  }
+  return null;
+}
+
 // src/core/graph/engine.ts
 var GraphEngine = class {
   nodeRepo;
@@ -420,32 +750,28 @@ var GraphEngine = class {
   // Path Finding
   // ============================================================================
   /**
-   * Find shortest path between two nodes (BFS)
+   * Find shortest path between two nodes using optimized BFS
    */
   async findShortestPath(startId, endId, edgeTypes) {
     if (startId === endId) return [startId];
-    const visited = /* @__PURE__ */ new Set([startId]);
-    const queue = [
-      { nodeId: startId, path: [startId] }
-    ];
-    while (queue.length > 0) {
-      const current = queue.shift();
-      if (!current) break;
-      const edges2 = await this.edgeRepo.findOutgoing(current.nodeId, edgeTypes);
-      for (const edge of edges2) {
-        if (edge.targetId === endId) {
-          return [...current.path, endId];
-        }
-        if (!visited.has(edge.targetId)) {
-          visited.add(edge.targetId);
-          queue.push({
-            nodeId: edge.targetId,
-            path: [...current.path, edge.targetId]
-          });
-        }
-      }
-    }
-    return null;
+    const edges2 = await this.edgeRepo.findAll(edgeTypes);
+    const { forward } = buildAdjacencyLists(edges2, edgeTypes);
+    return simpleBFS(startId, endId, forward, this.config.graph.defaultMaxDepth * 5);
+  }
+  /**
+   * Find K shortest diverse paths between two nodes
+   *
+   * Uses Yen's algorithm with Jaccard diversity filtering.
+   *
+   * @param startId - Starting node ID
+   * @param endId - Ending node ID
+   * @param options - Search options
+   * @returns Array of path results and reason for stopping
+   */
+  async findKShortestPaths(startId, endId, options) {
+    const edgeTypes = options?.edgeTypes ?? ["explicit_link", "sequence", "causes", "semantic"];
+    const edges2 = await this.edgeRepo.findAll(edgeTypes);
+    return findKShortestPaths(startId, endId, edges2, options);
   }
   /**
    * Check if two nodes are connected
@@ -686,13 +1012,16 @@ var schema_exports = {};
 __export(schema_exports, {
   aliases: () => aliases,
   chunks: () => chunks,
+  constellations: () => constellations,
   edges: () => edges,
   graphMetrics: () => graphMetrics,
   mentionCandidates: () => mentionCandidates,
+  nodeEmbeddings: () => nodeEmbeddings,
   nodes: () => nodes,
   proposals: () => proposals,
   unresolvedLinks: () => unresolvedLinks,
-  versions: () => versions
+  versions: () => versions,
+  wormholeRejections: () => wormholeRejections
 });
 import { sqliteTable, text, real, integer, index } from "drizzle-orm/sqlite-core";
 var nodes = sqliteTable("nodes", {
@@ -803,6 +1132,55 @@ var unresolvedLinks = sqliteTable("unresolved_links", {
   index("idx_unresolved_source").on(table.sourceId),
   index("idx_unresolved_target").on(table.targetText)
 ]);
+var constellations = sqliteTable("constellations", {
+  constellationId: text("constellation_id").primaryKey(),
+  name: text("name").notNull().unique(),
+  description: text("description"),
+  // Filter state (JSON arrays)
+  hiddenNodeTypes: text("hidden_node_types", { mode: "json" }),
+  hiddenEdgeTypes: text("hidden_edge_types", { mode: "json" }),
+  // Ghost node config
+  showGhosts: integer("show_ghosts").notNull().default(1),
+  ghostThreshold: integer("ghost_threshold").notNull().default(1),
+  // Camera state
+  cameraX: real("camera_x"),
+  cameraY: real("camera_y"),
+  cameraZoom: real("camera_zoom"),
+  // Focus nodes (seed nodes for the view)
+  focusNodeIds: text("focus_node_ids", { mode: "json" }),
+  // Timestamps
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull()
+}, (table) => [
+  index("idx_constellations_name").on(table.name)
+]);
+var nodeEmbeddings = sqliteTable("node_embeddings", {
+  embeddingId: text("embedding_id").primaryKey(),
+  nodeId: text("node_id").notNull().unique().references(() => nodes.nodeId, { onDelete: "cascade" }),
+  embedding: text("embedding", { mode: "json" }).notNull(),
+  // Float array as JSON
+  model: text("model").notNull(),
+  // e.g., 'openai:text-embedding-3-small'
+  dimensions: integer("dimensions").notNull(),
+  contentHash: text("content_hash").notNull(),
+  // To detect when recompute is needed
+  computedAt: text("computed_at").notNull()
+}, (table) => [
+  index("idx_embeddings_node").on(table.nodeId),
+  index("idx_embeddings_model").on(table.model)
+]);
+var wormholeRejections = sqliteTable("wormhole_rejections", {
+  rejectionId: text("rejection_id").primaryKey(),
+  sourceId: text("source_id").notNull().references(() => nodes.nodeId, { onDelete: "cascade" }),
+  targetId: text("target_id").notNull().references(() => nodes.nodeId, { onDelete: "cascade" }),
+  sourceContentHash: text("source_content_hash").notNull(),
+  targetContentHash: text("target_content_hash").notNull(),
+  rejectedAt: text("rejected_at").notNull()
+}, (table) => [
+  index("idx_rejections_source").on(table.sourceId),
+  index("idx_rejections_target").on(table.targetId),
+  index("idx_rejections_pair").on(table.sourceId, table.targetId)
+]);
 
 // src/storage/database/connection.ts
 import * as fs from "fs";
@@ -831,7 +1209,7 @@ CREATE TRIGGER IF NOT EXISTS chunks_au AFTER UPDATE ON chunks BEGIN
   VALUES (new.chunk_id, new.node_id, new.text);
 END;
 `;
-var SCHEMA_VERSION = 1;
+var SCHEMA_VERSION = 2;
 var ConnectionManager = class _ConnectionManager {
   static instance = null;
   sqlite = null;
@@ -1008,6 +1386,44 @@ var ConnectionManager = class _ConnectionManager {
         created_at TEXT NOT NULL
       );
 
+      -- Constellations (saved graph views)
+      CREATE TABLE IF NOT EXISTS constellations (
+        constellation_id TEXT PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE,
+        description TEXT,
+        hidden_node_types TEXT,
+        hidden_edge_types TEXT,
+        show_ghosts INTEGER NOT NULL DEFAULT 1,
+        ghost_threshold INTEGER NOT NULL DEFAULT 1,
+        camera_x REAL,
+        camera_y REAL,
+        camera_zoom REAL,
+        focus_node_ids TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      -- Node embeddings (for semantic wormholes)
+      CREATE TABLE IF NOT EXISTS node_embeddings (
+        embedding_id TEXT PRIMARY KEY,
+        node_id TEXT NOT NULL UNIQUE REFERENCES nodes(node_id) ON DELETE CASCADE,
+        embedding TEXT NOT NULL,
+        model TEXT NOT NULL,
+        dimensions INTEGER NOT NULL,
+        content_hash TEXT NOT NULL,
+        computed_at TEXT NOT NULL
+      );
+
+      -- Wormhole rejections (tracks rejected semantic suggestions)
+      CREATE TABLE IF NOT EXISTS wormhole_rejections (
+        rejection_id TEXT PRIMARY KEY,
+        source_id TEXT NOT NULL REFERENCES nodes(node_id) ON DELETE CASCADE,
+        target_id TEXT NOT NULL REFERENCES nodes(node_id) ON DELETE CASCADE,
+        source_content_hash TEXT NOT NULL,
+        target_content_hash TEXT NOT NULL,
+        rejected_at TEXT NOT NULL
+      );
+
       -- Performance indexes
       CREATE INDEX IF NOT EXISTS idx_nodes_title ON nodes(title COLLATE NOCASE);
       CREATE INDEX IF NOT EXISTS idx_nodes_type ON nodes(type);
@@ -1029,6 +1445,12 @@ var ConnectionManager = class _ConnectionManager {
       CREATE INDEX IF NOT EXISTS idx_proposals_status ON proposals(status);
       CREATE INDEX IF NOT EXISTS idx_unresolved_source ON unresolved_links(source_id);
       CREATE INDEX IF NOT EXISTS idx_unresolved_target ON unresolved_links(target_text);
+      CREATE INDEX IF NOT EXISTS idx_constellations_name ON constellations(name);
+      CREATE INDEX IF NOT EXISTS idx_embeddings_node ON node_embeddings(node_id);
+      CREATE INDEX IF NOT EXISTS idx_embeddings_model ON node_embeddings(model);
+      CREATE INDEX IF NOT EXISTS idx_rejections_source ON wormhole_rejections(source_id);
+      CREATE INDEX IF NOT EXISTS idx_rejections_target ON wormhole_rejections(target_id);
+      CREATE INDEX IF NOT EXISTS idx_rejections_pair ON wormhole_rejections(source_id, target_id);
     `);
     this.sqlite.exec(FTS5_SCHEMA);
     this.sqlite.exec(FTS5_TRIGGERS);

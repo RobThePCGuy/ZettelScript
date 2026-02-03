@@ -14,6 +14,10 @@ import { generateCommand } from './commands/generate.js';
 import { injectLinksCommand } from './commands/inject-links.js';
 import { visualizeCommand } from './commands/visualize.js';
 import { setupCommand } from './commands/setup.js';
+import { constellationCommand } from './commands/constellation.js';
+import { embedCommand } from './commands/embed.js';
+import { wormholeCommand } from './commands/wormhole.js';
+import { pathCommand } from './commands/path.js';
 
 const program = new Command();
 
@@ -36,6 +40,10 @@ program.addCommand(generateCommand);
 program.addCommand(injectLinksCommand);
 program.addCommand(visualizeCommand);
 program.addCommand(setupCommand);
+program.addCommand(constellationCommand);
+program.addCommand(embedCommand);
+program.addCommand(wormholeCommand);
+program.addCommand(pathCommand);
 
 // Parse arguments
 program.parse();

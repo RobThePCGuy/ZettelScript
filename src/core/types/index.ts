@@ -46,6 +46,7 @@ export const EdgeTypeSchema = Type.Union([
   Type.Literal('causes'),
   Type.Literal('setup_payoff'),
   Type.Literal('semantic'),
+  Type.Literal('semantic_suggestion'),  // Pending semantic wormhole (not yet accepted)
   Type.Literal('mention'),
   Type.Literal('alias'),
 ]);

@@ -36,7 +36,8 @@ END;
 `;
 
 // Schema version for migrations
-const SCHEMA_VERSION = 1;
+// Increment this when adding new tables or making schema changes
+const SCHEMA_VERSION = 2;
 
 /**
  * Database connection manager for ZettelScript
@@ -238,6 +239,44 @@ export class ConnectionManager {
         created_at TEXT NOT NULL
       );
 
+      -- Constellations (saved graph views)
+      CREATE TABLE IF NOT EXISTS constellations (
+        constellation_id TEXT PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE,
+        description TEXT,
+        hidden_node_types TEXT,
+        hidden_edge_types TEXT,
+        show_ghosts INTEGER NOT NULL DEFAULT 1,
+        ghost_threshold INTEGER NOT NULL DEFAULT 1,
+        camera_x REAL,
+        camera_y REAL,
+        camera_zoom REAL,
+        focus_node_ids TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      -- Node embeddings (for semantic wormholes)
+      CREATE TABLE IF NOT EXISTS node_embeddings (
+        embedding_id TEXT PRIMARY KEY,
+        node_id TEXT NOT NULL UNIQUE REFERENCES nodes(node_id) ON DELETE CASCADE,
+        embedding TEXT NOT NULL,
+        model TEXT NOT NULL,
+        dimensions INTEGER NOT NULL,
+        content_hash TEXT NOT NULL,
+        computed_at TEXT NOT NULL
+      );
+
+      -- Wormhole rejections (tracks rejected semantic suggestions)
+      CREATE TABLE IF NOT EXISTS wormhole_rejections (
+        rejection_id TEXT PRIMARY KEY,
+        source_id TEXT NOT NULL REFERENCES nodes(node_id) ON DELETE CASCADE,
+        target_id TEXT NOT NULL REFERENCES nodes(node_id) ON DELETE CASCADE,
+        source_content_hash TEXT NOT NULL,
+        target_content_hash TEXT NOT NULL,
+        rejected_at TEXT NOT NULL
+      );
+
       -- Performance indexes
       CREATE INDEX IF NOT EXISTS idx_nodes_title ON nodes(title COLLATE NOCASE);
       CREATE INDEX IF NOT EXISTS idx_nodes_type ON nodes(type);
@@ -259,6 +298,12 @@ export class ConnectionManager {
       CREATE INDEX IF NOT EXISTS idx_proposals_status ON proposals(status);
       CREATE INDEX IF NOT EXISTS idx_unresolved_source ON unresolved_links(source_id);
       CREATE INDEX IF NOT EXISTS idx_unresolved_target ON unresolved_links(target_text);
+      CREATE INDEX IF NOT EXISTS idx_constellations_name ON constellations(name);
+      CREATE INDEX IF NOT EXISTS idx_embeddings_node ON node_embeddings(node_id);
+      CREATE INDEX IF NOT EXISTS idx_embeddings_model ON node_embeddings(model);
+      CREATE INDEX IF NOT EXISTS idx_rejections_source ON wormhole_rejections(source_id);
+      CREATE INDEX IF NOT EXISTS idx_rejections_target ON wormhole_rejections(target_id);
+      CREATE INDEX IF NOT EXISTS idx_rejections_pair ON wormhole_rejections(source_id, target_id);
     `);
 
     // Create FTS5 virtual table
