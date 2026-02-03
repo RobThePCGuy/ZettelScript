@@ -5933,20 +5933,76 @@ var OpenAILLMProvider = class {
     return data.choices?.[0]?.message?.content ?? "";
   }
 };
+async function getOllamaModelInfo(model, baseUrl = "http://localhost:11434") {
+  try {
+    const response = await fetch(`${baseUrl}/api/show`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: model })
+    });
+    if (!response.ok) return null;
+    const data = await response.json();
+    let contextLength = 2048;
+    if (data.model_info) {
+      for (const [key, value] of Object.entries(data.model_info)) {
+        if (key.includes("context_length") && typeof value === "number") {
+          contextLength = value;
+          break;
+        }
+      }
+    }
+    return {
+      contextLength,
+      parameterSize: data.details?.parameter_size,
+      family: data.details?.family
+    };
+  } catch {
+    return null;
+  }
+}
 var OllamaLLMProvider = class {
   name = "ollama";
   baseUrl;
   model;
-  defaultMaxTokens;
+  configuredMaxTokens;
+  dynamicMaxTokens;
   defaultTemperature;
+  modelInfoPromise = null;
   constructor(config) {
     this.baseUrl = config.baseUrl ?? "http://localhost:11434";
     this.model = config.model;
-    this.defaultMaxTokens = config.maxTokens ?? 2048;
+    this.configuredMaxTokens = config.maxTokens;
     this.defaultTemperature = config.temperature ?? 0.7;
+  }
+  /**
+   * Lazy-load model info to get context length for dynamic max tokens
+   */
+  async ensureModelInfo() {
+    if (this.dynamicMaxTokens !== void 0) return;
+    if (!this.modelInfoPromise) {
+      this.modelInfoPromise = (async () => {
+        const info = await getOllamaModelInfo(this.model, this.baseUrl);
+        if (info) {
+          this.dynamicMaxTokens = Math.min(Math.floor(info.contextLength / 4), 8192);
+        } else {
+          this.dynamicMaxTokens = 2048;
+        }
+      })();
+    }
+    await this.modelInfoPromise;
+  }
+  /**
+   * Get the effective max tokens (configured > dynamic > fallback)
+   */
+  async getMaxTokens(override) {
+    if (override !== void 0) return override;
+    if (this.configuredMaxTokens !== void 0) return this.configuredMaxTokens;
+    await this.ensureModelInfo();
+    return this.dynamicMaxTokens ?? 2048;
   }
   async complete(prompt, options) {
     const temperature = options?.temperature ?? this.defaultTemperature;
+    const maxTokens = await this.getMaxTokens(options?.maxTokens);
     const response = await fetch(`${this.baseUrl}/api/generate`, {
       method: "POST",
       headers: {
@@ -5958,7 +6014,7 @@ var OllamaLLMProvider = class {
         stream: false,
         options: {
           temperature,
-          num_predict: options?.maxTokens ?? this.defaultMaxTokens
+          num_predict: maxTokens
         }
       })
     });
@@ -6378,8 +6434,11 @@ var EntityExtractor = class {
     }
     try {
       return JSON.parse(jsonText);
-    } catch {
+    } catch (e) {
       console.error("Failed to parse JSON:", jsonText.slice(0, 200));
+      console.error("Full response length:", jsonText.length);
+      console.error("Last 100 chars:", jsonText.slice(-100));
+      console.error("Parse error:", e instanceof Error ? e.message : e);
       return {};
     }
   }
@@ -6388,7 +6447,7 @@ var EntityExtractor = class {
 // src/cli/commands/extract.ts
 import { nanoid as nanoid6 } from "nanoid";
 import { stringify as stringifyYaml4 } from "yaml";
-var extractCommand = new Command9("extract").description("Extract entities (characters, locations, etc.) from prose").option("-f, --file <path>", "Extract from specific file").option("--all", "Extract from all markdown files").option("-m, --model <model>", "Ollama model to use", "llama3.2:3b").option("--dry-run", "Show what would be extracted without creating files").option("-o, --output <dir>", "Output directory for entity files").option("-v, --verbose", "Show detailed output").action(async (options) => {
+var extractCommand = new Command9("extract").description("Extract entities (characters, locations, etc.) from prose").option("-f, --file <path>", "Extract from specific file").option("--all", "Extract from all markdown files").option("-m, --model <model>", "Ollama model to use", "qwen2.5:7b").option("--dry-run", "Show what would be extracted without creating files").option("-o, --output <dir>", "Output directory for entity files").option("-v, --verbose", "Show detailed output").action(async (options) => {
   try {
     const ctx = await initContext();
     let filesToProcess = [];
@@ -6440,6 +6499,15 @@ var extractCommand = new Command9("extract").description("Extract entities (char
       model: options.model,
       baseUrl: "http://localhost:11434"
     });
+    if (options.verbose) {
+      const modelInfo = await getOllamaModelInfo(options.model);
+      if (modelInfo) {
+        console.log(`Model: ${options.model}`);
+        console.log(`  Context length: ${modelInfo.contextLength}`);
+        console.log(`  Max output tokens: ${Math.min(Math.floor(modelInfo.contextLength / 4), 8192)}`);
+        if (modelInfo.parameterSize) console.log(`  Parameters: ${modelInfo.parameterSize}`);
+      }
+    }
     const extractor = new EntityExtractor({
       llmProvider,
       chunkSize: 6e3

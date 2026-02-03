@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { initContext, Spinner, printTable } from '../utils.js';
 import { EntityExtractor, type ExtractedEntity } from '../../extraction/index.js';
-import { OllamaLLMProvider } from '../../llm/provider.js';
+import { OllamaLLMProvider, getOllamaModelInfo } from '../../llm/provider.js';
 import { nanoid } from 'nanoid';
 import { stringify as stringifyYaml } from 'yaml';
 
@@ -11,7 +11,7 @@ export const extractCommand = new Command('extract')
   .description('Extract entities (characters, locations, etc.) from prose')
   .option('-f, --file <path>', 'Extract from specific file')
   .option('--all', 'Extract from all markdown files')
-  .option('-m, --model <model>', 'Ollama model to use', 'llama3.2:3b')
+  .option('-m, --model <model>', 'Ollama model to use', 'qwen2.5:7b')
   .option('--dry-run', 'Show what would be extracted without creating files')
   .option('-o, --output <dir>', 'Output directory for entity files')
   .option('-v, --verbose', 'Show detailed output')
@@ -82,6 +82,16 @@ export const extractCommand = new Command('extract')
         model: options.model,
         baseUrl: 'http://localhost:11434',
       });
+
+      if (options.verbose) {
+        const modelInfo = await getOllamaModelInfo(options.model);
+        if (modelInfo) {
+          console.log(`Model: ${options.model}`);
+          console.log(`  Context length: ${modelInfo.contextLength}`);
+          console.log(`  Max output tokens: ${Math.min(Math.floor(modelInfo.contextLength / 4), 8192)}`);
+          if (modelInfo.parameterSize) console.log(`  Parameters: ${modelInfo.parameterSize}`);
+        }
+      }
 
       const extractor = new EntityExtractor({
         llmProvider,

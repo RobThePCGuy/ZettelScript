@@ -293,8 +293,11 @@ export class EntityExtractor {
 
     try {
       return JSON.parse(jsonText);
-    } catch {
+    } catch (e) {
       console.error('Failed to parse JSON:', jsonText.slice(0, 200));
+      console.error('Full response length:', jsonText.length);
+      console.error('Last 100 chars:', jsonText.slice(-100));
+      console.error('Parse error:', e instanceof Error ? e.message : e);
       return {};
     }
   }
