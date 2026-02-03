@@ -909,8 +909,8 @@ var NodeRepository = class {
   /**
    * Find a node by path
    */
-  async findByPath(path18) {
-    const result = await this.db.select().from(nodes).where(eq(nodes.path, path18)).limit(1);
+  async findByPath(path19) {
+    const result = await this.db.select().from(nodes).where(eq(nodes.path, path19)).limit(1);
     return result[0] ? this.rowToNode(result[0]) : null;
   }
   /**
@@ -2936,8 +2936,8 @@ var IndexingPipeline = class {
   /**
    * Remove a node by path
    */
-  async removeByPath(path18) {
-    const node = await this.nodeRepo.findByPath(path18);
+  async removeByPath(path19) {
+    const node = await this.nodeRepo.findByPath(path19);
     if (node) {
       await this.removeNode(node.nodeId);
     }
@@ -3097,9 +3097,9 @@ function bidirectionalBFS(startId, endId, forward, backward, maxDepth, disabledE
     }
     current = info?.parent ?? null;
   }
-  const path18 = [...pathToMeeting, ...pathFromMeeting];
+  const path19 = [...pathToMeeting, ...pathFromMeeting];
   const edges2 = [...edgesToMeeting, ...edgesFromMeeting];
-  return { path: path18, edges: edges2 };
+  return { path: path19, edges: edges2 };
 }
 function calculateJaccardOverlap(pathA, pathB, excludeEndpoints = false) {
   let nodesA = new Set(pathA);
@@ -3124,9 +3124,9 @@ function calculatePathScore(edges2) {
   }
   return hopCount + penalty;
 }
-function isSimplePath(path18) {
+function isSimplePath(path19) {
   const seen = /* @__PURE__ */ new Set();
-  for (const nodeId of path18) {
+  for (const nodeId of path19) {
     if (seen.has(nodeId)) return false;
     seen.add(nodeId);
   }
@@ -3277,13 +3277,13 @@ function simpleBFS(startId, endId, forward, maxDepth = 15) {
       const neighbors = forward.get(nodeId) || [];
       for (const { nodeId: neighborId } of neighbors) {
         if (neighborId === endId) {
-          const path18 = [endId, nodeId];
+          const path19 = [endId, nodeId];
           let current = nodeId;
           while (visited.get(current) !== null) {
             current = visited.get(current);
-            path18.push(current);
+            path19.push(current);
           }
-          return path18.reverse();
+          return path19.reverse();
         }
         if (!visited.has(neighborId)) {
           visited.set(neighborId, nodeId);
@@ -3312,8 +3312,8 @@ var GraphEngine = class {
   async getNode(nodeId) {
     return this.nodeRepo.findById(nodeId);
   }
-  async getNodeByPath(path18) {
-    return this.nodeRepo.findByPath(path18);
+  async getNodeByPath(path19) {
+    return this.nodeRepo.findByPath(path19);
   }
   async getNodeByTitle(title) {
     return this.nodeRepo.findByTitle(title);
@@ -4060,10 +4060,10 @@ var indexCommand = new Command2("index").description("Index all markdown files i
     let lastProgress = 0;
     const result = await fullIndex(ctx.pipeline, ctx.vaultPath, {
       excludePatterns: ctx.config.vault.excludePatterns,
-      onProgress: (current, total, path18) => {
+      onProgress: (current, total, path19) => {
         if (current > lastProgress) {
           lastProgress = current;
-          spinner.update(`Indexing ${current}/${total}: ${path18}`);
+          spinner.update(`Indexing ${current}/${total}: ${path19}`);
         }
       }
     });
@@ -4524,22 +4524,22 @@ queryCommand.command("path <from> <to>").description("Find shortest path between
     }
     console.log(`Path from "${fromNode.title}" to "${toNode.title}":
 `);
-    const path18 = await ctx.graphEngine.findShortestPath(fromNode.nodeId, toNode.nodeId);
-    if (!path18) {
+    const path19 = await ctx.graphEngine.findShortestPath(fromNode.nodeId, toNode.nodeId);
+    if (!path19) {
       console.log("No path found.");
     } else {
-      const pathNodes = await ctx.nodeRepository.findByIds(path18);
+      const pathNodes = await ctx.nodeRepository.findByIds(path19);
       const nodeMap = new Map(pathNodes.map((n) => [n.nodeId, n]));
-      for (let i = 0; i < path18.length; i++) {
-        const nodeId = path18[i];
+      for (let i = 0; i < path19.length; i++) {
+        const nodeId = path19[i];
         if (nodeId) {
           const node = nodeMap.get(nodeId);
-          const prefix = i === 0 ? "\u2192" : i === path18.length - 1 ? "\u25C9" : "\u2193";
+          const prefix = i === 0 ? "\u2192" : i === path19.length - 1 ? "\u25C9" : "\u2193";
           console.log(`  ${prefix} ${node?.title || nodeId}`);
         }
       }
       console.log(`
-Path length: ${path18.length - 1} hops`);
+Path length: ${path19.length - 1} hops`);
     }
     ctx.connectionManager.close();
   } catch (error) {
@@ -5897,14 +5897,14 @@ var discoverCommand = new Command6("discover").description("Find unlinked mentio
       return;
     }
     let totalMentions = 0;
-    for (const { nodeId, path: path18, title } of nodesToCheck) {
+    for (const { nodeId, path: path19, title } of nodesToCheck) {
       const mentions = await detector.detectInNode(nodeId);
       if (mentions.length === 0) continue;
       const ranked = await ranker.rank(mentions);
       const filtered = ranked.filter((m) => m.confidence >= threshold);
       if (filtered.length === 0) continue;
       console.log(`
-${title} (${path18}):`);
+${title} (${path19}):`);
       const display = filtered.slice(0, limit);
       const rows = display.map((m) => [
         m.surfaceText,
@@ -6884,6 +6884,9 @@ var OpenAILLMProvider = class {
     this.defaultMaxTokens = config.maxTokens ?? 2048;
     this.defaultTemperature = config.temperature ?? 0.7;
   }
+  get modelName() {
+    return this.model;
+  }
   async complete(prompt, options) {
     const maxTokens = options?.maxTokens ?? this.defaultMaxTokens;
     const temperature = options?.temperature ?? this.defaultTemperature;
@@ -7014,6 +7017,9 @@ var OllamaLLMProvider = class {
     this.model = config.model;
     this.configuredMaxTokens = config.maxTokens;
     this.defaultTemperature = config.temperature ?? 0.7;
+  }
+  get modelName() {
+    return this.model;
   }
   /**
    * Lazy-load model info to get context length for dynamic max tokens
@@ -7281,11 +7287,195 @@ Rewrite goal: ${options.goal}
 
 // src/cli/commands/extract.ts
 import { Command as Command9 } from "commander";
-import * as fs7 from "fs";
-import * as path8 from "path";
+import * as fs8 from "fs";
+import * as path9 from "path";
 import * as readline2 from "readline";
 
 // src/extraction/entity-extractor.ts
+import * as fs7 from "fs";
+import * as path8 from "path";
+
+// src/extraction/json-parser.ts
+import { jsonrepair } from "jsonrepair";
+function parseJSONWithFallbacks(raw) {
+  const cleaned = cleanupRaw(raw);
+  const errors = {};
+  const strict = tryStrictParse(cleaned);
+  if (strict.ok && strict.value !== void 0) {
+    return { ok: true, mode: "strict", values: [strict.value] };
+  }
+  if (strict.error) errors.strict = strict.error;
+  const repaired = tryRepairParse(cleaned);
+  if (repaired.ok && repaired.value !== void 0) {
+    return { ok: true, mode: "repaired", values: [repaired.value] };
+  }
+  if (repaired.error) errors.repaired = repaired.error;
+  const salvaged = trySalvageParse(cleaned);
+  if (salvaged.ok && salvaged.values && salvaged.values.length > 0) {
+    return {
+      ok: true,
+      mode: "salvaged",
+      values: salvaged.values,
+      warnings: salvaged.warnings
+    };
+  }
+  return {
+    ok: false,
+    mode: "salvaged",
+    error: salvaged.error ?? "No valid JSON found",
+    errors,
+    rawSnippet: cleaned.slice(0, 500),
+    repairedSnippet: repaired.repairedText?.slice(0, 500),
+    attemptedRepair: true,
+    islandsFound: salvaged.islandsFound
+  };
+}
+function cleanupRaw(raw) {
+  let text2 = raw.trim();
+  if (text2.startsWith("```")) {
+    text2 = text2.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
+  }
+  const objStart = text2.indexOf("{");
+  const arrStart = text2.indexOf("[");
+  let start;
+  let closeChar;
+  if (objStart === -1 && arrStart === -1) {
+    return text2;
+  } else if (objStart === -1) {
+    start = arrStart;
+    closeChar = "]";
+  } else if (arrStart === -1) {
+    start = objStart;
+    closeChar = "}";
+  } else if (objStart < arrStart) {
+    start = objStart;
+    closeChar = "}";
+  } else {
+    start = arrStart;
+    closeChar = "]";
+  }
+  const end = text2.lastIndexOf(closeChar);
+  if (end > start) {
+    text2 = text2.slice(start, end + 1);
+  }
+  return text2;
+}
+function tryStrictParse(text2) {
+  try {
+    const value = JSON.parse(text2);
+    return { ok: true, value };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : String(e)
+    };
+  }
+}
+function tryRepairParse(text2) {
+  let repairedText;
+  try {
+    repairedText = jsonrepair(text2);
+  } catch (e) {
+    return {
+      ok: false,
+      error: `Repair failed: ${e instanceof Error ? e.message : String(e)}`
+    };
+  }
+  try {
+    const value = JSON.parse(repairedText);
+    return { ok: true, value, repairedText };
+  } catch (e) {
+    return {
+      ok: false,
+      error: `Parse after repair failed: ${e instanceof Error ? e.message : String(e)}`,
+      repairedText
+    };
+  }
+}
+function trySalvageParse(text2) {
+  const islands = findJSONIslands(text2);
+  const values = [];
+  let failed = 0;
+  for (const island of islands) {
+    const strict = tryStrictParse(island);
+    if (strict.ok && isNonEmptyObjectOrArray(strict.value)) {
+      values.push(strict.value);
+      continue;
+    }
+    const repaired = tryRepairParse(island);
+    if (repaired.ok && isNonEmptyObjectOrArray(repaired.value)) {
+      values.push(repaired.value);
+      continue;
+    }
+    failed++;
+  }
+  if (values.length > 0) {
+    const warnings = [];
+    if (islands.length > 1 || failed > 0) {
+      warnings.push(`salvage: used ${values.length}/${islands.length} islands`);
+    }
+    return {
+      ok: true,
+      values,
+      warnings: warnings.length > 0 ? warnings : void 0,
+      islandsFound: islands.length
+    };
+  }
+  return {
+    ok: false,
+    error: islands.length === 0 ? "No JSON islands found" : `All ${islands.length} islands failed to parse`,
+    islandsFound: islands.length
+  };
+}
+function findJSONIslands(text2) {
+  const islands = [];
+  const stack = [];
+  let start = -1;
+  let inString = false;
+  let escapeNext = false;
+  for (let i = 0; i < text2.length; i++) {
+    const char = text2[i];
+    if (escapeNext) {
+      escapeNext = false;
+      continue;
+    }
+    if (char === "\\" && inString) {
+      escapeNext = true;
+      continue;
+    }
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (char === "{" || char === "[") {
+      if (stack.length === 0) start = i;
+      stack.push(char === "{" ? "}" : "]");
+    } else if (char === "}" || char === "]") {
+      if (stack.length > 0 && stack[stack.length - 1] === char) {
+        stack.pop();
+        if (stack.length === 0 && start !== -1) {
+          const island = text2.slice(start, i + 1);
+          if (island.length >= 20) {
+            islands.push(island);
+          }
+          start = -1;
+        }
+      }
+    }
+  }
+  return islands;
+}
+function isNonEmptyObjectOrArray(value) {
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === "object" && value !== null) {
+    return Object.keys(value).length > 0;
+  }
+  return false;
+}
+
+// src/extraction/entity-extractor.ts
+var VERSION = "0.4.2";
 var EXTRACTION_PROMPT = `You are an entity extractor for fiction manuscripts. Analyze the following text and extract all named entities.
 
 Return ONLY valid JSON in this exact format (no markdown, no explanation):
@@ -7315,16 +7505,57 @@ Rules:
 
 TEXT TO ANALYZE:
 `;
+function isValidExtractionResponse(candidate) {
+  if (typeof candidate !== "object" || candidate === null) return false;
+  const obj = candidate;
+  const allowedKeys = ["characters", "locations", "objects", "events"];
+  for (const key of allowedKeys) {
+    if (key in obj && !Array.isArray(obj[key])) return false;
+  }
+  return allowedKeys.some((key) => Array.isArray(obj[key]) && obj[key].length > 0);
+}
+function isValidEntity(obj) {
+  if (typeof obj !== "object" || obj === null) return false;
+  const candidate = obj;
+  return typeof candidate.name === "string" && candidate.name.trim().length > 0;
+}
+function normalizeAliases(raw) {
+  let aliases2;
+  if (typeof raw === "string") {
+    aliases2 = [raw.trim()];
+  } else if (Array.isArray(raw)) {
+    aliases2 = raw.filter((s) => typeof s === "string").map((s) => s.trim());
+  } else {
+    aliases2 = [];
+  }
+  const seen = /* @__PURE__ */ new Set();
+  return aliases2.filter((a) => {
+    if (!a) return false;
+    const lower = a.toLowerCase();
+    if (seen.has(lower)) return false;
+    seen.add(lower);
+    return true;
+  });
+}
+function normalizeDescription(raw) {
+  return typeof raw === "string" ? raw.trim() : "";
+}
 var EntityExtractor = class {
   llm;
   chunkSize;
   overlapSize;
   maxTokens;
+  outputDir;
+  verbose;
+  quiet;
   constructor(options) {
     this.llm = options.llmProvider;
     this.chunkSize = options.chunkSize ?? 8e3;
     this.overlapSize = options.overlapSize ?? 500;
     this.maxTokens = options.maxTokens ?? 4096;
+    this.outputDir = options.outputDir ?? process.cwd();
+    this.verbose = options.verbose ?? false;
+    this.quiet = options.quiet ?? false;
   }
   /**
    * Extract entities from a full manuscript
@@ -7332,30 +7563,118 @@ var EntityExtractor = class {
   async extractFromText(text2, onProgress) {
     const chunks2 = this.chunkText(text2);
     const allEntities = /* @__PURE__ */ new Map();
-    for (let i = 0; i < chunks2.length; i++) {
-      const chunk = chunks2[i];
+    const badChunks = [];
+    const stats = {
+      total: chunks2.length,
+      strict: 0,
+      repaired: 0,
+      salvaged: 0,
+      parsedEmpty: 0,
+      failed: 0,
+      entitiesByType: {},
+      entitiesByMode: { strict: 0, repaired: 0, salvaged: 0 }
+    };
+    for (let chunkIndex = 0; chunkIndex < chunks2.length; chunkIndex++) {
+      const chunk = chunks2[chunkIndex];
       if (!chunk) continue;
-      if (onProgress) onProgress(i + 1, chunks2.length);
-      const chunkEntities = await this.extractEntitiesFromChunk(chunk.text);
-      for (const entity of chunkEntities) {
-        const key = this.normalizeEntityKey(entity.name);
-        const existing = allEntities.get(key);
-        if (existing) {
-          existing.aliases = [.../* @__PURE__ */ new Set([...existing.aliases, ...entity.aliases])];
-          existing.mentions += 1;
-          if (entity.description.length > existing.description.length) {
-            existing.description = entity.description;
+      if (onProgress) onProgress(chunkIndex + 1, chunks2.length);
+      try {
+        const response = await this.llm.complete(EXTRACTION_PROMPT + chunk.text, {
+          temperature: 0.1,
+          maxTokens: this.maxTokens
+        });
+        const result = parseJSONWithFallbacks(response);
+        if (result.ok) {
+          let entitiesFromChunk = 0;
+          for (let islandIndex = 0; islandIndex < result.values.length; islandIndex++) {
+            const candidate = result.values[islandIndex];
+            if (!isValidExtractionResponse(candidate)) continue;
+            const entities = this.extractEntitiesFromCandidate(candidate, {
+              parseMode: result.mode,
+              chunkIndex,
+              islandIndex: result.mode === "salvaged" ? islandIndex : void 0
+            });
+            entitiesFromChunk += entities.length;
+            this.mergeEntities(allEntities, entities, stats);
+          }
+          if (entitiesFromChunk > 0) {
+            stats[result.mode]++;
+            if (this.verbose && !this.quiet) {
+              const extra = result.mode === "salvaged" && result.warnings ? ` (${result.warnings[0]})` : result.mode !== "strict" ? ` (${result.mode})` : "";
+              console.log(
+                `Chunk ${chunkIndex + 1}/${chunks2.length}: ${entitiesFromChunk} entities${extra}`
+              );
+            }
+          } else {
+            stats.parsedEmpty++;
+            if (this.verbose && !this.quiet) {
+              console.log(
+                `Chunk ${chunkIndex + 1}/${chunks2.length}: 0 entities (parsed but empty)`
+              );
+            }
           }
         } else {
-          allEntities.set(key, { ...entity, mentions: 1 });
+          stats.failed++;
+          badChunks.push({
+            chunkIndex,
+            phase: result.mode,
+            error: result.error,
+            errors: result.errors,
+            rawSnippet: result.rawSnippet,
+            repairedSnippet: result.repairedSnippet,
+            attemptedRepair: result.attemptedRepair,
+            islandsFound: result.islandsFound,
+            model: this.llm.modelName,
+            extractorVersion: VERSION,
+            timestamp: (/* @__PURE__ */ new Date()).toISOString()
+          });
+          if (this.verbose && !this.quiet) {
+            console.log(
+              `Chunk ${chunkIndex + 1}/${chunks2.length}: parse failed -> bad-chunks.jsonl`
+            );
+          }
+        }
+      } catch (error) {
+        stats.failed++;
+        if (!this.quiet) {
+          console.error(`Chunk ${chunkIndex + 1}/${chunks2.length}: LLM error:`, error);
         }
       }
+    }
+    let badChunksPath;
+    if (badChunks.length > 0) {
+      badChunksPath = await this.writeBadChunks(badChunks);
     }
     const scenes = await this.extractScenes(text2, chunks2);
     return {
       entities: Array.from(allEntities.values()).sort((a, b) => b.mentions - a.mentions),
-      scenes
+      scenes,
+      stats,
+      badChunksPath
     };
+  }
+  /**
+   * Print extraction summary to console
+   */
+  printSummary(result) {
+    if (this.quiet) return;
+    const { stats, badChunksPath, entities } = result;
+    console.log("\nEntity extraction complete:");
+    console.log(`  Chunks processed: ${stats.total}`);
+    console.log("  Parse results:");
+    console.log(`    - strict:      ${stats.strict} chunks`);
+    console.log(`    - repaired:    ${stats.repaired} chunks`);
+    console.log(`    - salvaged:    ${stats.salvaged} chunks`);
+    console.log(`    - parsedEmpty: ${stats.parsedEmpty} chunks`);
+    console.log(`    - failed:      ${stats.failed} chunks`);
+    console.log(`  Entities extracted: ${entities.length}`);
+    for (const [type, count] of Object.entries(stats.entitiesByType)) {
+      console.log(`    - ${type}s: ${count}`);
+    }
+    if (badChunksPath) {
+      console.log(`
+  Failed chunks logged to: ${badChunksPath}`);
+    }
   }
   chunkText(text2) {
     const chunks2 = [];
@@ -7381,71 +7700,56 @@ var EntityExtractor = class {
     }
     return chunks2;
   }
-  async extractEntitiesFromChunk(text2) {
-    const prompt = EXTRACTION_PROMPT + text2;
-    try {
-      const response = await this.llm.complete(prompt, {
-        temperature: 0.1,
-        maxTokens: this.maxTokens
-      });
-      const parsed = this.parseJSON(response);
-      const entities = [];
-      if (Array.isArray(parsed.characters)) {
-        for (const c of parsed.characters) {
-          if (c.name) {
-            entities.push({
-              name: c.name,
-              type: "character",
-              aliases: Array.isArray(c.aliases) ? c.aliases : [],
-              description: c.description || "",
-              mentions: 1
-            });
-          }
-        }
+  extractEntitiesFromCandidate(response, provenance) {
+    const entities = [];
+    const typeMap = [
+      { key: "characters", type: "character" },
+      { key: "locations", type: "location" },
+      { key: "objects", type: "object" },
+      { key: "events", type: "event" }
+    ];
+    for (const { key, type } of typeMap) {
+      const items = response[key];
+      if (!Array.isArray(items)) continue;
+      for (const item of items) {
+        if (!isValidEntity(item)) continue;
+        const raw = item;
+        entities.push({
+          name: raw.name.trim(),
+          type,
+          aliases: normalizeAliases(raw.aliases),
+          description: normalizeDescription(raw.description),
+          mentions: 1,
+          parseMode: provenance.parseMode,
+          chunkIndex: provenance.chunkIndex,
+          islandIndex: provenance.islandIndex
+        });
       }
-      if (Array.isArray(parsed.locations)) {
-        for (const l of parsed.locations) {
-          if (l.name) {
-            entities.push({
-              name: l.name,
-              type: "location",
-              aliases: Array.isArray(l.aliases) ? l.aliases : [],
-              description: l.description || "",
-              mentions: 1
-            });
-          }
+    }
+    return entities;
+  }
+  mergeEntities(allEntities, newEntities, stats) {
+    for (const entity of newEntities) {
+      const key = this.normalizeEntityKey(entity.name);
+      const existing = allEntities.get(key);
+      if (existing) {
+        const combinedAliases = [...existing.aliases, ...entity.aliases];
+        const seen = /* @__PURE__ */ new Set();
+        existing.aliases = combinedAliases.filter((a) => {
+          const lower = a.toLowerCase();
+          if (seen.has(lower)) return false;
+          seen.add(lower);
+          return true;
+        });
+        existing.mentions += 1;
+        if (entity.description.length > existing.description.length) {
+          existing.description = entity.description;
         }
+      } else {
+        allEntities.set(key, { ...entity });
+        stats.entitiesByType[entity.type] = (stats.entitiesByType[entity.type] || 0) + 1;
+        stats.entitiesByMode[entity.parseMode]++;
       }
-      if (Array.isArray(parsed.objects)) {
-        for (const o of parsed.objects) {
-          if (o.name) {
-            entities.push({
-              name: o.name,
-              type: "object",
-              aliases: Array.isArray(o.aliases) ? o.aliases : [],
-              description: o.description || "",
-              mentions: 1
-            });
-          }
-        }
-      }
-      if (Array.isArray(parsed.events)) {
-        for (const e of parsed.events) {
-          if (e.name) {
-            entities.push({
-              name: e.name,
-              type: "event",
-              aliases: Array.isArray(e.aliases) ? e.aliases : [],
-              description: e.description || "",
-              mentions: 1
-            });
-          }
-        }
-      }
-      return entities;
-    } catch (error) {
-      console.error("Entity extraction failed for chunk:", error);
-      return [];
     }
   }
   async extractScenes(_fullText, chunks2) {
@@ -7460,7 +7764,6 @@ var EntityExtractor = class {
             summary: "",
             startOffset: chunk.start + match.index,
             endOffset: chunk.start + match.index + 1e3,
-            // Approximate
             entities: []
           });
         }
@@ -7471,25 +7774,11 @@ var EntityExtractor = class {
   normalizeEntityKey(name) {
     return name.toLowerCase().replace(/[^a-z0-9]/g, "");
   }
-  parseJSON(text2) {
-    let jsonText = text2.trim();
-    if (jsonText.startsWith("```")) {
-      jsonText = jsonText.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
-    }
-    const start = jsonText.indexOf("{");
-    const end = jsonText.lastIndexOf("}");
-    if (start !== -1 && end !== -1 && end > start) {
-      jsonText = jsonText.slice(start, end + 1);
-    }
-    try {
-      return JSON.parse(jsonText);
-    } catch (e) {
-      console.error("Failed to parse JSON:", jsonText.slice(0, 200));
-      console.error("Full response length:", jsonText.length);
-      console.error("Last 100 chars:", jsonText.slice(-100));
-      console.error("Parse error:", e instanceof Error ? e.message : e);
-      return {};
-    }
+  async writeBadChunks(badChunks) {
+    const filePath = path8.join(this.outputDir, "extract-bad-chunks.jsonl");
+    const lines = badChunks.map((record) => JSON.stringify(record)).join("\n");
+    await fs7.promises.writeFile(filePath, lines + "\n", "utf-8");
+    return filePath;
   }
 };
 
@@ -7514,13 +7803,13 @@ function formatBytes(bytes) {
   if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
-var extractCommand = new Command9("extract").description("Extract entities (characters, locations, etc.) from prose").option("-f, --file <path>", "Extract from specific file").option("--all", "Extract from all markdown files").option("-m, --model <model>", "Ollama model to use", "qwen2.5:7b").option("--dry-run", "Show what would be extracted without creating files").option("-o, --output <dir>", "Output directory for entity files").option("-v, --verbose", "Show detailed output").action(async (options) => {
+var extractCommand = new Command9("extract").description("Extract entities (characters, locations, etc.) from prose").option("-f, --file <path>", "Extract from specific file").option("--all", "Extract from all markdown files").option("-m, --model <model>", "Ollama model to use", "qwen2.5:7b").option("--dry-run", "Show what would be extracted without creating files").option("-o, --output <dir>", "Output directory for entity files").option("-v, --verbose", "Show detailed output (per-chunk progress)").option("-q, --quiet", "Suppress output (exit code still reflects success)").action(async (options) => {
   try {
     const ctx = await initContext();
     let filesToProcess = [];
     if (options.file) {
-      const filePath = path8.isAbsolute(options.file) ? options.file : path8.join(ctx.vaultPath, options.file);
-      if (!fs7.existsSync(filePath)) {
+      const filePath = path9.isAbsolute(options.file) ? options.file : path9.join(ctx.vaultPath, options.file);
+      if (!fs8.existsSync(filePath)) {
         console.error(`File not found: ${filePath}`);
         process.exit(1);
       }
@@ -7528,9 +7817,9 @@ var extractCommand = new Command9("extract").description("Extract entities (char
     } else if (options.all) {
       const findMarkdown = (dir) => {
         const results = [];
-        const entries = fs7.readdirSync(dir, { withFileTypes: true });
+        const entries = fs8.readdirSync(dir, { withFileTypes: true });
         for (const entry of entries) {
-          const fullPath = path8.join(dir, entry.name);
+          const fullPath = path9.join(dir, entry.name);
           if (ctx.config.vault.excludePatterns.some((p) => {
             const pattern = p.replace("**/", "").replace("/**", "");
             return entry.name === pattern || fullPath.includes(pattern);
@@ -7559,8 +7848,10 @@ var extractCommand = new Command9("extract").description("Extract entities (char
       ctx.connectionManager.close();
       return;
     }
-    console.log(`Processing ${filesToProcess.length} file(s)...
+    if (!options.quiet) {
+      console.log(`Processing ${filesToProcess.length} file(s)...
 `);
+    }
     const ollamaRunning = await checkOllamaRunning();
     if (!ollamaRunning) {
       console.error("Error: Ollama is not running.");
@@ -7668,28 +7959,48 @@ Failed to download model: ${err instanceof Error ? err.message : err}`
         if (modelInfo.parameterSize) console.log(`  Parameters: ${modelInfo.parameterSize}`);
       }
     }
+    const outputDir = options.output ? path9.isAbsolute(options.output) ? options.output : path9.join(ctx.vaultPath, options.output) : ctx.vaultPath;
     const extractor = new EntityExtractor({
       llmProvider,
-      chunkSize: 6e3
+      chunkSize: 6e3,
       // Smaller chunks for 3b model
+      outputDir,
+      verbose: options.verbose,
+      quiet: options.quiet
     });
     const allEntities = /* @__PURE__ */ new Map();
     const entityToFiles = /* @__PURE__ */ new Map();
+    let totalChunks = 0;
+    let totalStrict = 0;
+    let totalRepaired = 0;
+    let totalSalvaged = 0;
+    let totalFailed = 0;
+    let badChunksPath;
     for (const filePath of filesToProcess) {
-      const relativePath = path8.relative(ctx.vaultPath, filePath);
-      console.log(`
+      const relativePath = path9.relative(ctx.vaultPath, filePath);
+      if (!options.quiet) {
+        console.log(`
 Extracting from: ${relativePath}`);
-      const content = fs7.readFileSync(filePath, "utf-8");
+      }
+      const content = fs8.readFileSync(filePath, "utf-8");
       if (content.length < 100) {
-        console.log("  Skipped (too small)");
+        if (!options.quiet) {
+          console.log("  Skipped (too small)");
+        }
         continue;
       }
-      const spinner = new Spinner("Analyzing...");
-      spinner.start();
+      const spinner = options.quiet ? null : new Spinner("Analyzing...");
+      if (spinner) spinner.start();
       const result = await extractor.extractFromText(content, (current, total) => {
-        spinner.update(`Chunk ${current}/${total}`);
+        if (spinner) spinner.update(`Chunk ${current}/${total}`);
       });
-      spinner.stop();
+      if (spinner) spinner.stop();
+      totalChunks += result.stats.total;
+      totalStrict += result.stats.strict;
+      totalRepaired += result.stats.repaired;
+      totalSalvaged += result.stats.salvaged;
+      totalFailed += result.stats.failed;
+      if (result.badChunksPath) badChunksPath = result.badChunksPath;
       for (const entity of result.entities) {
         const key = entity.name.toLowerCase();
         const existing = allEntities.get(key);
@@ -7707,7 +8018,7 @@ Extracting from: ${relativePath}`);
         }
         entityToFiles.get(key).add(relativePath);
       }
-      if (options.verbose) {
+      if (options.verbose && !options.quiet) {
         console.log(`  Found ${result.entities.length} entities`);
         for (const e of result.entities.slice(0, 10)) {
           console.log(`    - ${e.name} (${e.type})`);
@@ -7717,50 +8028,65 @@ Extracting from: ${relativePath}`);
         }
       }
     }
+    if (!options.quiet && totalChunks > 0) {
+      console.log("\n--- Parsing Statistics ---");
+      console.log(`  Chunks processed: ${totalChunks}`);
+      console.log(`    - strict:   ${totalStrict}`);
+      console.log(`    - repaired: ${totalRepaired}`);
+      console.log(`    - salvaged: ${totalSalvaged}`);
+      console.log(`    - failed:   ${totalFailed}`);
+      if (badChunksPath) {
+        console.log(`  Failed chunks logged to: ${badChunksPath}`);
+      }
+    }
     const sortedEntities = Array.from(allEntities.values()).sort(
       (a, b) => b.mentions - a.mentions
     );
-    console.log("\n" + "=".repeat(50));
-    console.log("Extracted Entities");
-    console.log("=".repeat(50) + "\n");
-    const byType = /* @__PURE__ */ new Map();
-    for (const entity of sortedEntities) {
-      const list = byType.get(entity.type) || [];
-      list.push(entity);
-      byType.set(entity.type, list);
-    }
-    for (const [type, entities] of byType) {
-      console.log(`
-${type.toUpperCase()}S (${entities.length}):`);
-      const rows = entities.slice(0, 15).map((e) => [
-        e.name,
-        e.aliases.slice(0, 3).join(", ") || "-",
-        e.mentions.toString(),
-        e.description.slice(0, 50) + (e.description.length > 50 ? "..." : "")
-      ]);
-      printTable(["Name", "Aliases", "Refs", "Description"], rows);
-      if (entities.length > 15) {
-        console.log(`  ... and ${entities.length - 15} more`);
+    if (!options.quiet) {
+      console.log("\n" + "=".repeat(50));
+      console.log("Extracted Entities");
+      console.log("=".repeat(50) + "\n");
+      const byType = /* @__PURE__ */ new Map();
+      for (const entity of sortedEntities) {
+        const list = byType.get(entity.type) || [];
+        list.push(entity);
+        byType.set(entity.type, list);
       }
-    }
-    console.log(`
-Total: ${sortedEntities.length} entities`);
-    if (!options.dryRun && sortedEntities.length > 0) {
-      const outputDir = options.output ? path8.isAbsolute(options.output) ? options.output : path8.join(ctx.vaultPath, options.output) : path8.join(ctx.vaultPath, "entities");
+      for (const [type, entities] of byType) {
+        console.log(`
+${type.toUpperCase()}S (${entities.length}):`);
+        const rows = entities.slice(0, 15).map((e) => [
+          e.name,
+          e.aliases.slice(0, 3).join(", ") || "-",
+          e.mentions.toString(),
+          e.description.slice(0, 50) + (e.description.length > 50 ? "..." : "")
+        ]);
+        printTable(["Name", "Aliases", "Refs", "Description"], rows);
+        if (entities.length > 15) {
+          console.log(`  ... and ${entities.length - 15} more`);
+        }
+      }
       console.log(`
-Creating entity files in: ${path8.relative(ctx.vaultPath, outputDir)}/`);
+Total: ${sortedEntities.length} entities`);
+    }
+    if (!options.dryRun && sortedEntities.length > 0) {
+      const outputDir2 = options.output ? path9.isAbsolute(options.output) ? options.output : path9.join(ctx.vaultPath, options.output) : path9.join(ctx.vaultPath, "entities");
+      if (!options.quiet) {
+        console.log(`
+Creating entity files in: ${path9.relative(ctx.vaultPath, outputDir2)}/`);
+      }
       const dirs = ["characters", "locations", "objects", "events"];
       for (const dir of dirs) {
-        fs7.mkdirSync(path8.join(outputDir, dir), { recursive: true });
+        fs8.mkdirSync(path9.join(outputDir2, dir), { recursive: true });
       }
       let created = 0;
       for (const entity of sortedEntities) {
         if (entity.mentions < 2) continue;
         const typeDir = entity.type === "character" ? "characters" : entity.type === "location" ? "locations" : entity.type === "object" ? "objects" : "events";
         const fileName = entity.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") + ".md";
-        const filePath = path8.join(outputDir, typeDir, fileName);
-        if (fs7.existsSync(filePath)) {
-          if (options.verbose) {
+        const filePath = path9.join(outputDir2, typeDir, fileName);
+        if (fs8.existsSync(filePath)) {
+          if (options.verbose && !options.quiet) {
             console.log(`  Skipped (exists): ${typeDir}/${fileName}`);
           }
           continue;
@@ -7783,19 +8109,21 @@ ${entity.description}
 
 ## Appearances
 
-${Array.from(entityToFiles.get(entity.name.toLowerCase()) || []).map((f) => `- [[${path8.basename(f, ".md")}]]`).join("\n")}
+${Array.from(entityToFiles.get(entity.name.toLowerCase()) || []).map((f) => `- [[${path9.basename(f, ".md")}]]`).join("\n")}
 `;
-        fs7.writeFileSync(filePath, content, "utf-8");
+        fs8.writeFileSync(filePath, content, "utf-8");
         created++;
-        if (options.verbose) {
+        if (options.verbose && !options.quiet) {
           console.log(`  Created: ${typeDir}/${fileName}`);
         }
       }
-      console.log(`
+      if (!options.quiet) {
+        console.log(`
 Created ${created} entity files.`);
-      console.log("\nNext steps:");
-      console.log("  zettel index     # Re-index to include new entities");
-      console.log("  zettel discover --all  # Find unlinked mentions");
+        console.log("\nNext steps:");
+        console.log("  zettel index     # Re-index to include new entities");
+        console.log("  zettel discover --all  # Find unlinked mentions");
+      }
     }
     ctx.connectionManager.close();
   } catch (error) {
@@ -7806,7 +8134,7 @@ Created ${created} entity files.`);
 
 // src/cli/commands/generate.ts
 import { Command as Command10 } from "commander";
-import * as path12 from "path";
+import * as path13 from "path";
 
 // src/generators/types.ts
 function getLockLevel(entity) {
@@ -7858,15 +8186,15 @@ function classifyRealm(location) {
 }
 
 // src/generators/utils.ts
-import * as fs8 from "fs";
-import * as path9 from "path";
+import * as fs9 from "fs";
+import * as path10 from "path";
 import { stringify as stringifyYaml5 } from "yaml";
 function sanitizeFilename(name) {
   return name.replace(/[<>:"/\\|?*]/g, "").replace(/\s+/g, " ").trim().replace(/\s/g, "-").replace(/[^\w\-().]/g, "").replace(/-+/g, "-").replace(/^-+|-+$/g, "");
 }
 function generateNotePath(outputDir, subdir, name, extension = ".md") {
   const safeFilename = sanitizeFilename(name);
-  return path9.join(outputDir, subdir, `${safeFilename}${extension}`);
+  return path10.join(outputDir, subdir, `${safeFilename}${extension}`);
 }
 function buildFrontmatter(data) {
   const cleaned = Object.fromEntries(
@@ -7885,7 +8213,7 @@ function buildNote(frontmatter, content) {
   return `${fm}${content}`;
 }
 function loadJson(filePath) {
-  const content = fs8.readFileSync(filePath, "utf-8");
+  const content = fs9.readFileSync(filePath, "utf-8");
   return JSON.parse(content);
 }
 function parseKBJson(kbPath) {
@@ -7900,34 +8228,34 @@ function parseWorldRules(worldRulesPath) {
 function findKBFiles(projectDir) {
   const result = {};
   const kbPaths = [
-    path9.join(projectDir, ".narrative-project", "kb", "kb.json"),
-    path9.join(projectDir, "kb", "kb.json"),
-    path9.join(projectDir, "kb.json")
+    path10.join(projectDir, ".narrative-project", "kb", "kb.json"),
+    path10.join(projectDir, "kb", "kb.json"),
+    path10.join(projectDir, "kb.json")
   ];
   const arcLedgerPaths = [
-    path9.join(projectDir, ".narrative-project", "kb", "arc-ledger.json"),
-    path9.join(projectDir, "kb", "arc-ledger.json"),
-    path9.join(projectDir, "arc-ledger.json")
+    path10.join(projectDir, ".narrative-project", "kb", "arc-ledger.json"),
+    path10.join(projectDir, "kb", "arc-ledger.json"),
+    path10.join(projectDir, "arc-ledger.json")
   ];
   const worldRulesPaths = [
-    path9.join(projectDir, ".narrative-project", "kb", "world-rules.json"),
-    path9.join(projectDir, "kb", "world-rules.json"),
-    path9.join(projectDir, "world-rules.json")
+    path10.join(projectDir, ".narrative-project", "kb", "world-rules.json"),
+    path10.join(projectDir, "kb", "world-rules.json"),
+    path10.join(projectDir, "world-rules.json")
   ];
   for (const p of kbPaths) {
-    if (fs8.existsSync(p)) {
+    if (fs9.existsSync(p)) {
       result.kb = p;
       break;
     }
   }
   for (const p of arcLedgerPaths) {
-    if (fs8.existsSync(p)) {
+    if (fs9.existsSync(p)) {
       result.arcLedger = p;
       break;
     }
   }
   for (const p of worldRulesPaths) {
-    if (fs8.existsSync(p)) {
+    if (fs9.existsSync(p)) {
       result.worldRules = p;
       break;
     }
@@ -7973,12 +8301,12 @@ async function writeNoteFile(filePath, content, options = {}) {
     console.log(`[DRY RUN] Would create: ${filePath}`);
     return true;
   }
-  if (!options.force && fs8.existsSync(filePath)) {
+  if (!options.force && fs9.existsSync(filePath)) {
     return false;
   }
-  const dir = path9.dirname(filePath);
-  await fs8.promises.mkdir(dir, { recursive: true });
-  await fs8.promises.writeFile(filePath, content, "utf-8");
+  const dir = path10.dirname(filePath);
+  await fs9.promises.mkdir(dir, { recursive: true });
+  await fs9.promises.writeFile(filePath, content, "utf-8");
   return true;
 }
 function wikilink(target, display) {
@@ -8861,8 +9189,8 @@ async function generateCharacters(options) {
 }
 
 // src/generators/chapters.ts
-import * as fs9 from "fs";
-import * as path10 from "path";
+import * as fs10 from "fs";
+import * as path11 from "path";
 var CHAPTERS_SUBDIR = "Chapters";
 var CHAPTER_REGEX = /^##\s*Chapter\s+(\d+)(?:\s*[:\-–—]\s*(.+))?$/im;
 var ALT_CHAPTER_PATTERNS = [
@@ -8949,7 +9277,7 @@ async function generateChapters(options) {
   };
   let manuscript;
   try {
-    manuscript = fs9.readFileSync(options.manuscriptPath, "utf-8");
+    manuscript = fs10.readFileSync(options.manuscriptPath, "utf-8");
   } catch (error) {
     result.errors.push({
       file: options.manuscriptPath,
@@ -8970,7 +9298,7 @@ async function generateChapters(options) {
   for (const chapter of chapters) {
     try {
       const filename = getChapterFilename(chapter);
-      const filePath = path10.join(options.outputDir, chaptersDir, `${filename}.md`);
+      const filePath = path11.join(options.outputDir, chaptersDir, `${filename}.md`);
       const frontmatter = buildChapterFrontmatter(chapter);
       const content = buildChapterContent(chapter);
       const note = buildNote(frontmatter, content);
@@ -9953,8 +10281,8 @@ async function generateArcs(options) {
 }
 
 // src/generators/inject-links.ts
-import * as fs10 from "fs";
-import * as path11 from "path";
+import * as fs11 from "fs";
+import * as path12 from "path";
 async function glob(basePath, pattern, options = {}) {
   const results = [];
   const ignore = options.ignore || [];
@@ -9963,13 +10291,13 @@ async function glob(basePath, pattern, options = {}) {
   async function walk(dir) {
     let entries;
     try {
-      entries = await fs10.promises.readdir(dir, { withFileTypes: true });
+      entries = await fs11.promises.readdir(dir, { withFileTypes: true });
     } catch {
       return;
     }
     for (const entry of entries) {
-      const fullPath = path11.join(dir, entry.name);
-      const relativePath = path11.relative(basePath, fullPath).replace(/\\/g, "/");
+      const fullPath = path12.join(dir, entry.name);
+      const relativePath = path12.relative(basePath, fullPath).replace(/\\/g, "/");
       let shouldIgnore = false;
       for (const ignorePattern of ignore) {
         const ignoreRegex = ignorePattern.replace(/\*\*/g, "{{GLOBSTAR}}").replace(/\*/g, "[^/]*").replace(/{{GLOBSTAR}}/g, ".*");
@@ -10179,13 +10507,13 @@ async function injectLinks(options) {
     }
   } else {
     const kbPaths = [
-      path11.join(options.vaultPath, ".narrative-project", "kb", "kb.json"),
-      path11.join(options.vaultPath, "kb", "kb.json"),
-      path11.join(options.vaultPath, "kb.json")
+      path12.join(options.vaultPath, ".narrative-project", "kb", "kb.json"),
+      path12.join(options.vaultPath, "kb", "kb.json"),
+      path12.join(options.vaultPath, "kb.json")
     ];
     let kbPath = null;
     for (const p of kbPaths) {
-      if (fs10.existsSync(p)) {
+      if (fs11.existsSync(p)) {
         kbPath = p;
         break;
       }
@@ -10218,7 +10546,7 @@ async function injectLinks(options) {
   });
   for (const file of files) {
     try {
-      const content = fs10.readFileSync(file, "utf-8");
+      const content = fs11.readFileSync(file, "utf-8");
       const { content: newContent, linksInjected } = injectLinksInFile(content, entities);
       if (linksInjected > 0) {
         if (options.dryRun) {
@@ -10226,7 +10554,7 @@ async function injectLinks(options) {
           result.modified.push(file);
           result.linksInjected += linksInjected;
         } else {
-          await fs10.promises.writeFile(file, newContent, "utf-8");
+          await fs11.promises.writeFile(file, newContent, "utf-8");
           result.modified.push(file);
           result.linksInjected += linksInjected;
           if (options.verbose) {
@@ -10255,13 +10583,13 @@ async function previewLinkInjection(options) {
     }
   } else {
     const kbPaths = [
-      path11.join(options.vaultPath, ".narrative-project", "kb", "kb.json"),
-      path11.join(options.vaultPath, "kb", "kb.json"),
-      path11.join(options.vaultPath, "kb.json")
+      path12.join(options.vaultPath, ".narrative-project", "kb", "kb.json"),
+      path12.join(options.vaultPath, "kb", "kb.json"),
+      path12.join(options.vaultPath, "kb.json")
     ];
     let kbPath = null;
     for (const p of kbPaths) {
-      if (fs10.existsSync(p)) {
+      if (fs11.existsSync(p)) {
         kbPath = p;
         break;
       }
@@ -10278,7 +10606,7 @@ async function previewLinkInjection(options) {
     ignore: ["**/node_modules/**", "**/.git/**", "**/.zettelscript/**"]
   });
   for (const file of files) {
-    const content = fs10.readFileSync(file, "utf-8");
+    const content = fs11.readFileSync(file, "utf-8");
     const protectedRegions = findProtectedRegions(content);
     const filePreview = [];
     for (const [canonical, aliases2] of entities) {
@@ -10308,13 +10636,13 @@ async function previewLinkInjection(options) {
 // src/cli/commands/generate.ts
 function resolveOptions(options) {
   const vaultPath = findVaultRoot() || process.cwd();
-  const outputDir = options.output ? path12.resolve(options.output) : vaultPath;
+  const outputDir = options.output ? path13.resolve(options.output) : vaultPath;
   const kbFiles = findKBFiles(vaultPath);
   return {
     outputDir,
-    kbPath: options.kb ? path12.resolve(options.kb) : kbFiles.kb,
-    arcLedgerPath: options.arcLedger ? path12.resolve(options.arcLedger) : kbFiles.arcLedger,
-    worldRulesPath: options.worldRules ? path12.resolve(options.worldRules) : kbFiles.worldRules,
+    kbPath: options.kb ? path13.resolve(options.kb) : kbFiles.kb,
+    arcLedgerPath: options.arcLedger ? path13.resolve(options.arcLedger) : kbFiles.arcLedger,
+    worldRulesPath: options.worldRules ? path13.resolve(options.worldRules) : kbFiles.worldRules,
     force: options.force || false,
     dryRun: options.dryRun || false,
     verbose: options.verbose || false
@@ -10366,7 +10694,7 @@ generateCommand.command("chapters").description("Split manuscript into chapter n
     const baseOpts = resolveOptions(options);
     const chapterOpts = {
       ...baseOpts,
-      manuscriptPath: path12.resolve(options.manuscript),
+      manuscriptPath: path13.resolve(options.manuscript),
       chaptersDir: options.chaptersDir
     };
     const result = await generateChapters(chapterOpts);
@@ -10512,7 +10840,7 @@ Total errors: ${totalErrors}`);
 
 // src/cli/commands/inject-links.ts
 import { Command as Command11 } from "commander";
-import * as path13 from "path";
+import * as path14 from "path";
 var injectLinksCommand = new Command11("inject-links").description("Add wikilinks to notes based on entity names from KB").option("-p, --path <dir>", "Vault path (default: current vault)").option("-g, --pattern <glob>", "File pattern to process (default: **/*.md)").option("-e, --entities <names...>", "Specific entity names to link").option("-n, --dry-run", "Show changes without modifying files").option("--preview", "Show detailed preview of all changes").option("-v, --verbose", "Show detailed output").addHelpText(
   "after",
   `
@@ -10525,7 +10853,7 @@ Examples:
 `
 ).action(async (options) => {
   try {
-    const vaultPath = options.path ? path13.resolve(options.path) : findVaultRoot() || process.cwd();
+    const vaultPath = options.path ? path14.resolve(options.path) : findVaultRoot() || process.cwd();
     const opts = {
       vaultPath,
       pattern: options.pattern,
@@ -10541,7 +10869,7 @@ Examples:
         return;
       }
       for (const [file, changes] of previews) {
-        const relativePath = path13.relative(vaultPath, file);
+        const relativePath = path14.relative(vaultPath, file);
         console.log(`
 ${relativePath} (${changes.length} links):`);
         for (const change of changes.slice(0, 10)) {
@@ -10583,7 +10911,7 @@ Errors (${result.errors.length}):`);
     if (opts.verbose && result.modified.length > 0) {
       console.log("\nModified files:");
       for (const file of result.modified) {
-        const relativePath = path13.relative(vaultPath, file);
+        const relativePath = path14.relative(vaultPath, file);
         console.log(`  ${relativePath}`);
       }
     }
@@ -10596,16 +10924,16 @@ Errors (${result.errors.length}):`);
 // src/cli/commands/visualize.ts
 import { Command as Command12 } from "commander";
 import process2 from "process";
-import * as fs12 from "fs";
-import * as path15 from "path";
+import * as fs13 from "fs";
+import * as path16 from "path";
 import open from "open";
 
 // src/cli/server/visualize-server.ts
 import { createServer } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { nanoid as nanoid9 } from "nanoid";
-import * as fs11 from "fs";
-import * as path14 from "path";
+import * as fs12 from "fs";
+import * as path15 from "path";
 import { stringify as stringifyYaml6 } from "yaml";
 
 // src/cli/server/ws-protocol.ts
@@ -10870,11 +11198,11 @@ var VisualizeServer = class {
     const { title, targetFolder, ghostId } = message;
     const folder = targetFolder || "";
     const filename = this.sanitizeFilename(title) + ".md";
-    const relativePath = folder ? path14.join(folder, filename) : filename;
-    const absolutePath = path14.join(this.ctx.vaultPath, relativePath);
-    const dir = path14.dirname(absolutePath);
-    if (!fs11.existsSync(dir)) {
-      fs11.mkdirSync(dir, { recursive: true });
+    const relativePath = folder ? path15.join(folder, filename) : filename;
+    const absolutePath = path15.join(this.ctx.vaultPath, relativePath);
+    const dir = path15.dirname(absolutePath);
+    if (!fs12.existsSync(dir)) {
+      fs12.mkdirSync(dir, { recursive: true });
     }
     const nodeId = nanoid9();
     const now = (/* @__PURE__ */ new Date()).toISOString();
@@ -10890,7 +11218,7 @@ ${stringifyYaml6(frontmatter)}---
 # ${title}
 
 `;
-    fs11.writeFileSync(absolutePath, content, "utf-8");
+    fs12.writeFileSync(absolutePath, content, "utf-8");
     const node = await this.ctx.nodeRepository.create({
       type: "note",
       title,
@@ -14119,12 +14447,12 @@ var visualizeCommand = new Command12("visualize").alias("viz").description("Visu
         computedPathData,
         wsConfig
       );
-      const outputDir = options.output ? path15.dirname(options.output) : getZettelScriptDir(ctx.vaultPath);
-      if (!fs12.existsSync(outputDir)) {
-        fs12.mkdirSync(outputDir, { recursive: true });
+      const outputDir = options.output ? path16.dirname(options.output) : getZettelScriptDir(ctx.vaultPath);
+      if (!fs13.existsSync(outputDir)) {
+        fs13.mkdirSync(outputDir, { recursive: true });
       }
-      const outputPath = options.output || path15.join(outputDir, "graph.html");
-      fs12.writeFileSync(outputPath, htmlContent, "utf-8");
+      const outputPath = options.output || path16.join(outputDir, "graph.html");
+      fs13.writeFileSync(outputPath, htmlContent, "utf-8");
       console.log(`
 Graph visualization generated at: ${outputPath}`);
       if (options.open) {
@@ -14157,8 +14485,8 @@ Graph visualization generated at: ${outputPath}`);
 
 // src/cli/commands/setup.ts
 import { Command as Command13 } from "commander";
-import * as fs13 from "fs";
-import * as path16 from "path";
+import * as fs14 from "fs";
+import * as path17 from "path";
 import * as readline3 from "readline";
 import process3 from "process";
 import { stringify as stringifyYaml7 } from "yaml";
@@ -14536,7 +14864,7 @@ var setupCommand = new Command13("setup").alias("go").description("Initialize va
   let needsInit = true;
   console.log("ZettelScript Setup");
   console.log("==================\n");
-  if (fs13.existsSync(zettelDir) && !options.force) {
+  if (fs14.existsSync(zettelDir) && !options.force) {
     const existingRoot = findVaultRoot(vaultPath);
     if (existingRoot) {
       console.log("Step 1: Initialize");
@@ -14547,8 +14875,8 @@ var setupCommand = new Command13("setup").alias("go").description("Initialize va
   if (needsInit) {
     console.log("Step 1: Initialize");
     try {
-      fs13.mkdirSync(zettelDir, { recursive: true });
-      console.log(`  Created ${path16.relative(vaultPath, zettelDir)}/`);
+      fs14.mkdirSync(zettelDir, { recursive: true });
+      console.log(`  Created ${path17.relative(vaultPath, zettelDir)}/`);
       const config = {
         ...DEFAULT_CONFIG,
         vault: {
@@ -14561,16 +14889,16 @@ var setupCommand = new Command13("setup").alias("go").description("Initialize va
         }
       };
       const configPath = getConfigPath(vaultPath);
-      fs13.writeFileSync(configPath, stringifyYaml7(config), "utf-8");
-      console.log(`  Created ${path16.relative(vaultPath, configPath)}`);
+      fs14.writeFileSync(configPath, stringifyYaml7(config), "utf-8");
+      console.log(`  Created ${path17.relative(vaultPath, configPath)}`);
       const dbPath = getDbPath(vaultPath);
       const manager = ConnectionManager.getInstance(dbPath);
       await manager.initialize();
       manager.close();
       ConnectionManager.resetInstance();
-      console.log(`  Created ${path16.relative(vaultPath, dbPath)}`);
-      const gitignorePath = path16.join(zettelDir, ".gitignore");
-      fs13.writeFileSync(
+      console.log(`  Created ${path17.relative(vaultPath, dbPath)}`);
+      const gitignorePath = path17.join(zettelDir, ".gitignore");
+      fs14.writeFileSync(
         gitignorePath,
         "# Ignore database (regenerated from files)\nzettelscript.db\nzettelscript.db-*\n",
         "utf-8"
@@ -14671,9 +14999,9 @@ var setupCommand = new Command13("setup").alias("go").description("Initialize va
           });
           const findMarkdown = (dir) => {
             const results = [];
-            const entries = fs13.readdirSync(dir, { withFileTypes: true });
+            const entries = fs14.readdirSync(dir, { withFileTypes: true });
             for (const entry of entries) {
-              const fullPath = path16.join(dir, entry.name);
+              const fullPath = path17.join(dir, entry.name);
               if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
               if (entry.isDirectory()) {
                 results.push(...findMarkdown(fullPath));
@@ -14689,7 +15017,7 @@ var setupCommand = new Command13("setup").alias("go").description("Initialize va
           const spinner2 = new Spinner(`  Extracting from ${files.length} files...`);
           spinner2.start();
           for (const filePath of files) {
-            const content = fs13.readFileSync(filePath, "utf-8");
+            const content = fs14.readFileSync(filePath, "utf-8");
             if (content.length < 100) continue;
             try {
               const result2 = await extractor.extractFromText(content);
@@ -14710,16 +15038,16 @@ var setupCommand = new Command13("setup").alias("go").description("Initialize va
             }
           }
           spinner2.stop();
-          const outputDir = path16.join(ctx.vaultPath, "entities");
-          if (!fs13.existsSync(outputDir)) {
-            fs13.mkdirSync(outputDir, { recursive: true });
+          const outputDir = path17.join(ctx.vaultPath, "entities");
+          if (!fs14.existsSync(outputDir)) {
+            fs14.mkdirSync(outputDir, { recursive: true });
           }
           let created = 0;
           for (const entity of allEntities.values()) {
             if (entity.mentions < 2) continue;
             const safeName = entity.name.replace(/[<>:"/\\|?*]/g, "-");
-            const filePath = path16.join(outputDir, `${safeName}.md`);
-            if (!fs13.existsSync(filePath)) {
+            const filePath = path17.join(outputDir, `${safeName}.md`);
+            if (!fs14.existsSync(filePath)) {
               const frontmatter = {
                 id: nanoid10(12),
                 title: entity.name,
@@ -14731,7 +15059,7 @@ ${stringifyYaml7(frontmatter)}---
 
 ${entity.description}
 `;
-              fs13.writeFileSync(filePath, content, "utf-8");
+              fs14.writeFileSync(filePath, content, "utf-8");
               created++;
             }
           }
@@ -14768,10 +15096,10 @@ ${entity.description}
           const spinner2 = new Spinner(`  Computing embeddings for ${nodes2.length} nodes...`);
           spinner2.start();
           for (const node of nodes2) {
-            const filePath = path16.join(ctx.vaultPath, node.path);
+            const filePath = path17.join(ctx.vaultPath, node.path);
             let text2 = node.title;
-            if (fs13.existsSync(filePath)) {
-              text2 = fs13.readFileSync(filePath, "utf-8");
+            if (fs14.existsSync(filePath)) {
+              text2 = fs14.readFileSync(filePath, "utf-8");
             }
             try {
               const embedding = await provider.embed(text2);
@@ -14850,9 +15178,9 @@ ${entity.description}
           }))
         };
         const htmlContent = generateVisualizationHtml(graphData, typeColors);
-        const outputPath = path16.join(getZettelScriptDir(ctx.vaultPath), "graph.html");
-        fs13.writeFileSync(outputPath, htmlContent, "utf-8");
-        console.log(`  Generated: ${path16.relative(vaultPath, outputPath)}`);
+        const outputPath = path17.join(getZettelScriptDir(ctx.vaultPath), "graph.html");
+        fs14.writeFileSync(outputPath, htmlContent, "utf-8");
+        console.log(`  Generated: ${path17.relative(vaultPath, outputPath)}`);
         console.log("  Done!\n");
       }
     }
@@ -15059,8 +15387,8 @@ constellationCommand.command("update <name>").description("Update an existing co
 
 // src/cli/commands/embed.ts
 import { Command as Command15 } from "commander";
-import * as fs14 from "fs";
-import * as path17 from "path";
+import * as fs15 from "fs";
+import * as path18 from "path";
 var embedCommand = new Command15("embed").description(
   "Manage node embeddings for semantic wormholes"
 );
@@ -15124,9 +15452,9 @@ embedCommand.command("compute").description("Compute embeddings for nodes that n
             if (chunks2.length > 0) {
               texts.push(chunks2.map((c) => c.text).join("\n"));
             } else {
-              const filePath = path17.join(ctx.vaultPath, node.path);
-              if (fs14.existsSync(filePath)) {
-                const content = fs14.readFileSync(filePath, "utf-8");
+              const filePath = path18.join(ctx.vaultPath, node.path);
+              if (fs15.existsSync(filePath)) {
+                const content = fs15.readFileSync(filePath, "utf-8");
                 texts.push(content);
               } else {
                 texts.push(node.title);
@@ -15453,7 +15781,7 @@ function truncate(str, maxLen) {
 
 // src/cli/commands/path.ts
 import { Command as Command17 } from "commander";
-import * as fs15 from "fs";
+import * as fs16 from "fs";
 import process4 from "process";
 var DEFAULT_EDGE_TYPES = ["explicit_link", "sequence", "causes", "semantic"];
 var DEFAULT_EXCLUDED = ["semantic_suggestion", "backlink", "mention", "hierarchy"];
@@ -15679,7 +16007,7 @@ var pathCommand = new Command17("path").description("Find narrative paths betwee
       case "md":
         output = formatMarkdown(fromNode, toNode, paths, nodeMap);
         if (options.output) {
-          fs15.writeFileSync(options.output, output, "utf-8");
+          fs16.writeFileSync(options.output, output, "utf-8");
           console.log(`Markdown written to: ${options.output}`);
         } else {
           console.log(output);
@@ -15688,7 +16016,7 @@ var pathCommand = new Command17("path").description("Find narrative paths betwee
       case "json":
         output = formatJson(fromNode, toNode, paths, options, effectiveEdgeTypes, reason, k);
         if (options.output) {
-          fs15.writeFileSync(options.output, output, "utf-8");
+          fs16.writeFileSync(options.output, output, "utf-8");
           console.log(`JSON written to: ${options.output}`);
         } else {
           console.log(output);

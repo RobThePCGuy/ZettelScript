@@ -13,6 +13,7 @@ export interface LLMOptions {
 
 export interface LLMProvider {
   name: string;
+  modelName: string;
   complete(prompt: string, options?: LLMOptions): Promise<string>;
 }
 
@@ -36,6 +37,10 @@ export class OpenAILLMProvider implements LLMProvider {
     this.model = config.model;
     this.defaultMaxTokens = config.maxTokens ?? 2048;
     this.defaultTemperature = config.temperature ?? 0.7;
+  }
+
+  get modelName(): string {
+    return this.model;
   }
 
   async complete(prompt: string, options?: LLMOptions): Promise<string> {
@@ -240,6 +245,10 @@ export class OllamaLLMProvider implements LLMProvider {
     // Only set if explicitly configured - undefined means "use dynamic"
     this.configuredMaxTokens = config.maxTokens;
     this.defaultTemperature = config.temperature ?? 0.7;
+  }
+
+  get modelName(): string {
+    return this.model;
   }
 
   /**

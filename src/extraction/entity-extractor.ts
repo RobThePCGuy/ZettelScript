@@ -1,9 +1,22 @@
 /**
  * Entity extraction from prose using LLM
+ *
+ * Features:
+ * - Multi-stage JSON parsing with repair and salvage
+ * - Provenance tracking for each entity
+ * - bad-chunks.jsonl for failed chunk diagnostics
+ * - Summary output with parse statistics
  */
 
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import type { LLMProvider } from '../llm/provider.js';
 import type { NodeType } from '../core/types/index.js';
+import { parseJSONWithFallbacks, type ParseMode } from './json-parser.js';
+
+// ============================================================================
+// Types
+// ============================================================================
 
 export interface ExtractedEntity {
   name: string;
@@ -11,6 +24,10 @@ export interface ExtractedEntity {
   aliases: string[];
   description: string;
   mentions: number;
+  // Provenance fields
+  parseMode: ParseMode;
+  chunkIndex: number;
+  islandIndex?: number | undefined;
 }
 
 export interface ExtractionResult {
@@ -20,16 +37,59 @@ export interface ExtractionResult {
     summary: string;
     startOffset: number;
     endOffset: number;
-    entities: string[]; // Entity names referenced in this scene
+    entities: string[];
   }>;
+  stats: ChunkStats;
+  badChunksPath?: string | undefined;
 }
 
 export interface EntityExtractorOptions {
   llmProvider: LLMProvider;
-  chunkSize?: number; // Max characters per chunk
-  overlapSize?: number; // Overlap between chunks
-  maxTokens?: number; // Max tokens for LLM response (default: 4096)
+  chunkSize?: number;
+  overlapSize?: number;
+  maxTokens?: number;
+  outputDir?: string; // For bad-chunks.jsonl
+  verbose?: boolean;
+  quiet?: boolean;
 }
+
+interface ChunkStats {
+  total: number;
+  strict: number;
+  repaired: number;
+  salvaged: number;
+  parsedEmpty: number;
+  failed: number;
+  entitiesByType: Record<string, number>;
+  entitiesByMode: Record<ParseMode, number>;
+}
+
+interface BadChunkRecord {
+  chunkIndex: number;
+  phase: ParseMode;
+  error: string;
+  errors?: Partial<Record<ParseMode, string>> | undefined;
+  rawSnippet: string;
+  repairedSnippet?: string | undefined;
+  attemptedRepair: boolean;
+  islandsFound: number;
+  model: string;
+  extractorVersion: string;
+  timestamp: string;
+}
+
+interface RawExtractionResponse {
+  characters?: unknown[];
+  locations?: unknown[];
+  objects?: unknown[];
+  events?: unknown[];
+}
+
+// ============================================================================
+// Constants
+// ============================================================================
+
+const VERSION = '0.4.2';
 
 const EXTRACTION_PROMPT = `You are an entity extractor for fiction manuscripts. Analyze the following text and extract all named entities.
 
@@ -61,7 +121,7 @@ Rules:
 TEXT TO ANALYZE:
 `;
 
-// Reserved for future LLM-based scene detection (see extractScenes TODO)
+// Reserved for future LLM-based scene detection
 export const SCENE_EXTRACTION_PROMPT = `Analyze this text and identify distinct scenes or chapters. A scene is a continuous unit of action in one location/time.
 
 Return ONLY valid JSON (no markdown):
@@ -81,17 +141,80 @@ Return ONLY valid JSON (no markdown):
 TEXT:
 `;
 
+// ============================================================================
+// Schema Validation
+// ============================================================================
+
+function isValidExtractionResponse(candidate: unknown): candidate is RawExtractionResponse {
+  if (typeof candidate !== 'object' || candidate === null) return false;
+  const obj = candidate as Record<string, unknown>;
+
+  const allowedKeys = ['characters', 'locations', 'objects', 'events'];
+  for (const key of allowedKeys) {
+    if (key in obj && !Array.isArray(obj[key])) return false;
+  }
+
+  // Must have at least one non-empty array
+  return allowedKeys.some((key) => Array.isArray(obj[key]) && (obj[key] as unknown[]).length > 0);
+}
+
+function isValidEntity(obj: unknown): boolean {
+  if (typeof obj !== 'object' || obj === null) return false;
+  const candidate = obj as Record<string, unknown>;
+  return typeof candidate.name === 'string' && candidate.name.trim().length > 0;
+}
+
+// ============================================================================
+// Normalization
+// ============================================================================
+
+function normalizeAliases(raw: unknown): string[] {
+  let aliases: string[];
+
+  if (typeof raw === 'string') {
+    aliases = [raw.trim()];
+  } else if (Array.isArray(raw)) {
+    aliases = raw.filter((s) => typeof s === 'string').map((s) => (s as string).trim());
+  } else {
+    aliases = [];
+  }
+
+  // Filter empties and dedupe (case-insensitive)
+  const seen = new Set<string>();
+  return aliases.filter((a) => {
+    if (!a) return false;
+    const lower = a.toLowerCase();
+    if (seen.has(lower)) return false;
+    seen.add(lower);
+    return true;
+  });
+}
+
+function normalizeDescription(raw: unknown): string {
+  return typeof raw === 'string' ? raw.trim() : '';
+}
+
+// ============================================================================
+// Entity Extractor
+// ============================================================================
+
 export class EntityExtractor {
   private llm: LLMProvider;
   private chunkSize: number;
   private overlapSize: number;
   private maxTokens: number;
+  private outputDir: string;
+  private verbose: boolean;
+  private quiet: boolean;
 
   constructor(options: EntityExtractorOptions) {
     this.llm = options.llmProvider;
-    this.chunkSize = options.chunkSize ?? 8000; // ~2000 tokens
+    this.chunkSize = options.chunkSize ?? 8000;
     this.overlapSize = options.overlapSize ?? 500;
-    this.maxTokens = options.maxTokens ?? 4096; // Enough for complex JSON responses
+    this.maxTokens = options.maxTokens ?? 4096;
+    this.outputDir = options.outputDir ?? process.cwd();
+    this.verbose = options.verbose ?? false;
+    this.quiet = options.quiet ?? false;
   }
 
   /**
@@ -103,32 +226,105 @@ export class EntityExtractor {
   ): Promise<ExtractionResult> {
     const chunks = this.chunkText(text);
     const allEntities = new Map<string, ExtractedEntity>();
+    const badChunks: BadChunkRecord[] = [];
+
+    const stats: ChunkStats = {
+      total: chunks.length,
+      strict: 0,
+      repaired: 0,
+      salvaged: 0,
+      parsedEmpty: 0,
+      failed: 0,
+      entitiesByType: {},
+      entitiesByMode: { strict: 0, repaired: 0, salvaged: 0 },
+    };
 
     // Extract entities from each chunk
-    for (let i = 0; i < chunks.length; i++) {
-      const chunk = chunks[i];
+    for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
+      const chunk = chunks[chunkIndex];
       if (!chunk) continue;
-      if (onProgress) onProgress(i + 1, chunks.length);
+      if (onProgress) onProgress(chunkIndex + 1, chunks.length);
 
-      const chunkEntities = await this.extractEntitiesFromChunk(chunk.text);
+      try {
+        const response = await this.llm.complete(EXTRACTION_PROMPT + chunk.text, {
+          temperature: 0.1,
+          maxTokens: this.maxTokens,
+        });
 
-      // Merge entities
-      for (const entity of chunkEntities) {
-        const key = this.normalizeEntityKey(entity.name);
-        const existing = allEntities.get(key);
+        const result = parseJSONWithFallbacks(response);
 
-        if (existing) {
-          // Merge: combine aliases, increment mentions
-          existing.aliases = [...new Set([...existing.aliases, ...entity.aliases])];
-          existing.mentions += 1;
-          // Keep longer description
-          if (entity.description.length > existing.description.length) {
-            existing.description = entity.description;
+        if (result.ok) {
+          let entitiesFromChunk = 0;
+
+          for (let islandIndex = 0; islandIndex < result.values.length; islandIndex++) {
+            const candidate = result.values[islandIndex];
+            if (!isValidExtractionResponse(candidate)) continue;
+
+            const entities = this.extractEntitiesFromCandidate(candidate, {
+              parseMode: result.mode,
+              chunkIndex,
+              islandIndex: result.mode === 'salvaged' ? islandIndex : undefined,
+            });
+
+            entitiesFromChunk += entities.length;
+            this.mergeEntities(allEntities, entities, stats);
+          }
+
+          if (entitiesFromChunk > 0) {
+            stats[result.mode]++;
+            if (this.verbose && !this.quiet) {
+              const extra =
+                result.mode === 'salvaged' && result.warnings
+                  ? ` (${result.warnings[0]})`
+                  : result.mode !== 'strict'
+                    ? ` (${result.mode})`
+                    : '';
+              console.log(
+                `Chunk ${chunkIndex + 1}/${chunks.length}: ${entitiesFromChunk} entities${extra}`
+              );
+            }
+          } else {
+            stats.parsedEmpty++;
+            if (this.verbose && !this.quiet) {
+              console.log(
+                `Chunk ${chunkIndex + 1}/${chunks.length}: 0 entities (parsed but empty)`
+              );
+            }
           }
         } else {
-          allEntities.set(key, { ...entity, mentions: 1 });
+          stats.failed++;
+          badChunks.push({
+            chunkIndex,
+            phase: result.mode,
+            error: result.error,
+            errors: result.errors,
+            rawSnippet: result.rawSnippet,
+            repairedSnippet: result.repairedSnippet,
+            attemptedRepair: result.attemptedRepair,
+            islandsFound: result.islandsFound,
+            model: this.llm.modelName,
+            extractorVersion: VERSION,
+            timestamp: new Date().toISOString(),
+          });
+
+          if (this.verbose && !this.quiet) {
+            console.log(
+              `Chunk ${chunkIndex + 1}/${chunks.length}: parse failed -> bad-chunks.jsonl`
+            );
+          }
+        }
+      } catch (error) {
+        stats.failed++;
+        if (!this.quiet) {
+          console.error(`Chunk ${chunkIndex + 1}/${chunks.length}: LLM error:`, error);
         }
       }
+    }
+
+    // Write bad chunks if any
+    let badChunksPath: string | undefined;
+    if (badChunks.length > 0) {
+      badChunksPath = await this.writeBadChunks(badChunks);
     }
 
     // Extract scene structure
@@ -137,7 +333,36 @@ export class EntityExtractor {
     return {
       entities: Array.from(allEntities.values()).sort((a, b) => b.mentions - a.mentions),
       scenes,
+      stats,
+      badChunksPath,
     };
+  }
+
+  /**
+   * Print extraction summary to console
+   */
+  printSummary(result: ExtractionResult): void {
+    if (this.quiet) return;
+
+    const { stats, badChunksPath, entities } = result;
+
+    console.log('\nEntity extraction complete:');
+    console.log(`  Chunks processed: ${stats.total}`);
+    console.log('  Parse results:');
+    console.log(`    - strict:      ${stats.strict} chunks`);
+    console.log(`    - repaired:    ${stats.repaired} chunks`);
+    console.log(`    - salvaged:    ${stats.salvaged} chunks`);
+    console.log(`    - parsedEmpty: ${stats.parsedEmpty} chunks`);
+    console.log(`    - failed:      ${stats.failed} chunks`);
+
+    console.log(`  Entities extracted: ${entities.length}`);
+    for (const [type, count] of Object.entries(stats.entitiesByType)) {
+      console.log(`    - ${type}s: ${count}`);
+    }
+
+    if (badChunksPath) {
+      console.log(`\n  Failed chunks logged to: ${badChunksPath}`);
+    }
   }
 
   private chunkText(text: string): Array<{ text: string; start: number; end: number }> {
@@ -171,82 +396,74 @@ export class EntityExtractor {
     return chunks;
   }
 
-  private async extractEntitiesFromChunk(text: string): Promise<ExtractedEntity[]> {
-    const prompt = EXTRACTION_PROMPT + text;
+  private extractEntitiesFromCandidate(
+    response: RawExtractionResponse,
+    provenance: { parseMode: ParseMode; chunkIndex: number; islandIndex?: number | undefined }
+  ): ExtractedEntity[] {
+    const entities: ExtractedEntity[] = [];
 
-    try {
-      const response = await this.llm.complete(prompt, {
-        temperature: 0.1,
-        maxTokens: this.maxTokens,
-      });
-      const parsed = this.parseJSON(response);
+    const typeMap: Array<{ key: keyof RawExtractionResponse; type: NodeType }> = [
+      { key: 'characters', type: 'character' },
+      { key: 'locations', type: 'location' },
+      { key: 'objects', type: 'object' },
+      { key: 'events', type: 'event' },
+    ];
 
-      const entities: ExtractedEntity[] = [];
+    for (const { key, type } of typeMap) {
+      const items = response[key];
+      if (!Array.isArray(items)) continue;
 
-      // Process characters
-      if (Array.isArray(parsed.characters)) {
-        for (const c of parsed.characters) {
-          if (c.name) {
-            entities.push({
-              name: c.name,
-              type: 'character',
-              aliases: Array.isArray(c.aliases) ? c.aliases : [],
-              description: c.description || '',
-              mentions: 1,
-            });
-          }
-        }
+      for (const item of items) {
+        if (!isValidEntity(item)) continue;
+
+        const raw = item as Record<string, unknown>;
+        entities.push({
+          name: (raw.name as string).trim(),
+          type,
+          aliases: normalizeAliases(raw.aliases),
+          description: normalizeDescription(raw.description),
+          mentions: 1,
+          parseMode: provenance.parseMode,
+          chunkIndex: provenance.chunkIndex,
+          islandIndex: provenance.islandIndex,
+        });
       }
+    }
 
-      // Process locations
-      if (Array.isArray(parsed.locations)) {
-        for (const l of parsed.locations) {
-          if (l.name) {
-            entities.push({
-              name: l.name,
-              type: 'location',
-              aliases: Array.isArray(l.aliases) ? l.aliases : [],
-              description: l.description || '',
-              mentions: 1,
-            });
-          }
+    return entities;
+  }
+
+  private mergeEntities(
+    allEntities: Map<string, ExtractedEntity>,
+    newEntities: ExtractedEntity[],
+    stats: ChunkStats
+  ): void {
+    for (const entity of newEntities) {
+      const key = this.normalizeEntityKey(entity.name);
+      const existing = allEntities.get(key);
+
+      if (existing) {
+        // Merge: combine aliases, increment mentions
+        const combinedAliases = [...existing.aliases, ...entity.aliases];
+        const seen = new Set<string>();
+        existing.aliases = combinedAliases.filter((a) => {
+          const lower = a.toLowerCase();
+          if (seen.has(lower)) return false;
+          seen.add(lower);
+          return true;
+        });
+        existing.mentions += 1;
+        // Keep longer description
+        if (entity.description.length > existing.description.length) {
+          existing.description = entity.description;
         }
-      }
+      } else {
+        allEntities.set(key, { ...entity });
 
-      // Process objects
-      if (Array.isArray(parsed.objects)) {
-        for (const o of parsed.objects) {
-          if (o.name) {
-            entities.push({
-              name: o.name,
-              type: 'object',
-              aliases: Array.isArray(o.aliases) ? o.aliases : [],
-              description: o.description || '',
-              mentions: 1,
-            });
-          }
-        }
+        // Update stats for new entity
+        stats.entitiesByType[entity.type] = (stats.entitiesByType[entity.type] || 0) + 1;
+        stats.entitiesByMode[entity.parseMode]++;
       }
-
-      // Process events
-      if (Array.isArray(parsed.events)) {
-        for (const e of parsed.events) {
-          if (e.name) {
-            entities.push({
-              name: e.name,
-              type: 'event',
-              aliases: Array.isArray(e.aliases) ? e.aliases : [],
-              description: e.description || '',
-              mentions: 1,
-            });
-          }
-        }
-      }
-
-      return entities;
-    } catch (error) {
-      console.error('Entity extraction failed for chunk:', error);
-      return [];
     }
   }
 
@@ -254,11 +471,7 @@ export class EntityExtractor {
     _fullText: string,
     chunks: Array<{ text: string; start: number; end: number }>
   ): Promise<ExtractionResult['scenes']> {
-    // For now, use chapter markers or chunk boundaries
-    // A more sophisticated approach would use the LLM to identify scene breaks
     const scenes: ExtractionResult['scenes'] = [];
-
-    // Try to find chapter markers
     const chapterRegex = /^#+\s*(Chapter|Scene|Part)\s*\d*[:\s]*.*/gim;
 
     for (const chunk of chunks) {
@@ -269,7 +482,7 @@ export class EntityExtractor {
             title: match[0].replace(/^#+\s*/, '').trim(),
             summary: '',
             startOffset: chunk.start + match.index,
-            endOffset: chunk.start + match.index + 1000, // Approximate
+            endOffset: chunk.start + match.index + 1000,
             entities: [],
           });
         }
@@ -283,31 +496,13 @@ export class EntityExtractor {
     return name.toLowerCase().replace(/[^a-z0-9]/g, '');
   }
 
-  private parseJSON(text: string): Record<string, unknown> {
-    // Try to extract JSON from response
-    let jsonText = text.trim();
+  private async writeBadChunks(badChunks: BadChunkRecord[]): Promise<string> {
+    const filePath = path.join(this.outputDir, 'extract-bad-chunks.jsonl');
 
-    // Remove markdown code blocks if present
-    if (jsonText.startsWith('```')) {
-      jsonText = jsonText.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
-    }
+    const lines = badChunks.map((record) => JSON.stringify(record)).join('\n');
 
-    // Find JSON object boundaries
-    const start = jsonText.indexOf('{');
-    const end = jsonText.lastIndexOf('}');
+    await fs.promises.writeFile(filePath, lines + '\n', 'utf-8');
 
-    if (start !== -1 && end !== -1 && end > start) {
-      jsonText = jsonText.slice(start, end + 1);
-    }
-
-    try {
-      return JSON.parse(jsonText);
-    } catch (e) {
-      console.error('Failed to parse JSON:', jsonText.slice(0, 200));
-      console.error('Full response length:', jsonText.length);
-      console.error('Last 100 chars:', jsonText.slice(-100));
-      console.error('Parse error:', e instanceof Error ? e.message : e);
-      return {};
-    }
+    return filePath;
   }
 }

@@ -49,7 +49,8 @@ export const extractCommand = new Command('extract')
   .option('-m, --model <model>', 'Ollama model to use', 'qwen2.5:7b')
   .option('--dry-run', 'Show what would be extracted without creating files')
   .option('-o, --output <dir>', 'Output directory for entity files')
-  .option('-v, --verbose', 'Show detailed output')
+  .option('-v, --verbose', 'Show detailed output (per-chunk progress)')
+  .option('-q, --quiet', 'Suppress output (exit code still reflects success)')
   .action(async (options) => {
     try {
       const ctx = await initContext();
@@ -111,7 +112,9 @@ export const extractCommand = new Command('extract')
         return;
       }
 
-      console.log(`Processing ${filesToProcess.length} file(s)...\n`);
+      if (!options.quiet) {
+        console.log(`Processing ${filesToProcess.length} file(s)...\n`);
+      }
 
       // Check Ollama is running
       const ollamaRunning = await checkOllamaRunning();
@@ -235,34 +238,64 @@ export const extractCommand = new Command('extract')
         }
       }
 
+      // Determine output directory for bad-chunks.jsonl
+      const outputDir = options.output
+        ? path.isAbsolute(options.output)
+          ? options.output
+          : path.join(ctx.vaultPath, options.output)
+        : ctx.vaultPath;
+
       const extractor = new EntityExtractor({
         llmProvider,
         chunkSize: 6000, // Smaller chunks for 3b model
+        outputDir,
+        verbose: options.verbose,
+        quiet: options.quiet,
       });
 
       const allEntities = new Map<string, ExtractedEntity>();
       const entityToFiles = new Map<string, Set<string>>();
 
+      // Track combined stats across all files
+      let totalChunks = 0;
+      let totalStrict = 0;
+      let totalRepaired = 0;
+      let totalSalvaged = 0;
+      let totalFailed = 0;
+      let badChunksPath: string | undefined;
+
       for (const filePath of filesToProcess) {
         const relativePath = path.relative(ctx.vaultPath, filePath);
-        console.log(`\nExtracting from: ${relativePath}`);
+        if (!options.quiet) {
+          console.log(`\nExtracting from: ${relativePath}`);
+        }
 
         const content = fs.readFileSync(filePath, 'utf-8');
 
         // Skip very small files
         if (content.length < 100) {
-          console.log('  Skipped (too small)');
+          if (!options.quiet) {
+            console.log('  Skipped (too small)');
+          }
           continue;
         }
 
-        const spinner = new Spinner('Analyzing...');
-        spinner.start();
+        const spinner = options.quiet ? null : new Spinner('Analyzing...');
+        if (spinner) spinner.start();
 
         const result = await extractor.extractFromText(content, (current, total) => {
-          spinner.update(`Chunk ${current}/${total}`);
+          if (spinner) spinner.update(`Chunk ${current}/${total}`);
         });
 
-        spinner.stop();
+        if (spinner) spinner.stop();
+
+        // Accumulate stats
+        totalChunks += result.stats.total;
+        totalStrict += result.stats.strict;
+        totalRepaired += result.stats.repaired;
+        totalSalvaged += result.stats.salvaged;
+        totalFailed += result.stats.failed;
+        if (result.badChunksPath) badChunksPath = result.badChunksPath;
 
         // Merge entities
         for (const entity of result.entities) {
@@ -286,7 +319,7 @@ export const extractCommand = new Command('extract')
           entityToFiles.get(key)!.add(relativePath);
         }
 
-        if (options.verbose) {
+        if (options.verbose && !options.quiet) {
           console.log(`  Found ${result.entities.length} entities`);
           for (const e of result.entities.slice(0, 10)) {
             console.log(`    - ${e.name} (${e.type})`);
@@ -297,42 +330,57 @@ export const extractCommand = new Command('extract')
         }
       }
 
+      // Print parsing stats summary
+      if (!options.quiet && totalChunks > 0) {
+        console.log('\n--- Parsing Statistics ---');
+        console.log(`  Chunks processed: ${totalChunks}`);
+        console.log(`    - strict:   ${totalStrict}`);
+        console.log(`    - repaired: ${totalRepaired}`);
+        console.log(`    - salvaged: ${totalSalvaged}`);
+        console.log(`    - failed:   ${totalFailed}`);
+        if (badChunksPath) {
+          console.log(`  Failed chunks logged to: ${badChunksPath}`);
+        }
+      }
+
       // Sort by mentions
       const sortedEntities = Array.from(allEntities.values()).sort(
         (a, b) => b.mentions - a.mentions
       );
 
       // Display results
-      console.log('\n' + '='.repeat(50));
-      console.log('Extracted Entities');
-      console.log('='.repeat(50) + '\n');
+      if (!options.quiet) {
+        console.log('\n' + '='.repeat(50));
+        console.log('Extracted Entities');
+        console.log('='.repeat(50) + '\n');
 
-      // Group by type
-      const byType = new Map<string, ExtractedEntity[]>();
-      for (const entity of sortedEntities) {
-        const list = byType.get(entity.type) || [];
-        list.push(entity);
-        byType.set(entity.type, list);
-      }
-
-      for (const [type, entities] of byType) {
-        console.log(`\n${type.toUpperCase()}S (${entities.length}):`);
-        const rows = entities
-          .slice(0, 15)
-          .map((e) => [
-            e.name,
-            e.aliases.slice(0, 3).join(', ') || '-',
-            e.mentions.toString(),
-            e.description.slice(0, 50) + (e.description.length > 50 ? '...' : ''),
-          ]);
-        printTable(['Name', 'Aliases', 'Refs', 'Description'], rows);
-
-        if (entities.length > 15) {
-          console.log(`  ... and ${entities.length - 15} more`);
+        // Group by type
+        const byType = new Map<string, ExtractedEntity[]>();
+        for (const entity of sortedEntities) {
+          const list = byType.get(entity.type) || [];
+          list.push(entity);
+          byType.set(entity.type, list);
         }
-      }
 
-      console.log(`\nTotal: ${sortedEntities.length} entities`);
+        for (const [type, entities] of byType) {
+          console.log(`\n${type.toUpperCase()}S (${entities.length}):`);
+          const rows = entities
+            .slice(0, 15)
+            .map((e) => [
+              e.name,
+              e.aliases.slice(0, 3).join(', ') || '-',
+              e.mentions.toString(),
+              e.description.slice(0, 50) + (e.description.length > 50 ? '...' : ''),
+            ]);
+          printTable(['Name', 'Aliases', 'Refs', 'Description'], rows);
+
+          if (entities.length > 15) {
+            console.log(`  ... and ${entities.length - 15} more`);
+          }
+        }
+
+        console.log(`\nTotal: ${sortedEntities.length} entities`);
+      }
 
       // Create files if not dry run
       if (!options.dryRun && sortedEntities.length > 0) {
@@ -342,7 +390,9 @@ export const extractCommand = new Command('extract')
             : path.join(ctx.vaultPath, options.output)
           : path.join(ctx.vaultPath, 'entities');
 
-        console.log(`\nCreating entity files in: ${path.relative(ctx.vaultPath, outputDir)}/`);
+        if (!options.quiet) {
+          console.log(`\nCreating entity files in: ${path.relative(ctx.vaultPath, outputDir)}/`);
+        }
 
         // Create directories
         const dirs = ['characters', 'locations', 'objects', 'events'];
@@ -374,7 +424,7 @@ export const extractCommand = new Command('extract')
 
           // Skip if file already exists
           if (fs.existsSync(filePath)) {
-            if (options.verbose) {
+            if (options.verbose && !options.quiet) {
               console.log(`  Skipped (exists): ${typeDir}/${fileName}`);
             }
             continue;
@@ -410,15 +460,17 @@ ${Array.from(entityToFiles.get(entity.name.toLowerCase()) || [])
           fs.writeFileSync(filePath, content, 'utf-8');
           created++;
 
-          if (options.verbose) {
+          if (options.verbose && !options.quiet) {
             console.log(`  Created: ${typeDir}/${fileName}`);
           }
         }
 
-        console.log(`\nCreated ${created} entity files.`);
-        console.log('\nNext steps:');
-        console.log('  zettel index     # Re-index to include new entities');
-        console.log('  zettel discover --all  # Find unlinked mentions');
+        if (!options.quiet) {
+          console.log(`\nCreated ${created} entity files.`);
+          console.log('\nNext steps:');
+          console.log('  zettel index     # Re-index to include new entities');
+          console.log('  zettel discover --all  # Find unlinked mentions');
+        }
       }
 
       ctx.connectionManager.close();
