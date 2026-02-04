@@ -128,8 +128,13 @@ export class ConnectionManager {
       if (result) {
         currentVersion = result.version;
       }
-    } catch {
-      // Table doesn't exist yet, that's fine
+    } catch (error) {
+      // Only ignore "no such table" errors - other errors should propagate
+      const message = error instanceof Error ? error.message : String(error);
+      if (!message.includes('no such table')) {
+        throw new Error(`Database schema check failed: ${message}`);
+      }
+      // Table doesn't exist yet - will be created below
     }
 
     if (currentVersion >= SCHEMA_VERSION) {
