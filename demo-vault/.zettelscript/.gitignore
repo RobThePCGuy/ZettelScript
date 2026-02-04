@@ -1,3 +1,9 @@
-# Demo vault: db and graph.html are committed as examples
-# Normal vaults should ignore these (they're regenerated)
+# Ignore database (regenerated from files)
+zettelscript.db
 zettelscript.db-*
+
+# Ignore generated outputs
+focus.html
+focus.json
+state.json
+graph.html

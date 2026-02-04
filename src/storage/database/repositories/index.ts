@@ -15,3 +15,8 @@ export { EmbeddingRepository } from './embedding-repository.js';
 export type { NodeEmbedding, CreateEmbeddingInput } from './embedding-repository.js';
 export { WormholeRepository } from './wormhole-repository.js';
 export type { WormholeRejection, CreateRejectionInput } from './wormhole-repository.js';
+export { CandidateEdgeRepository } from './candidate-edge-repository.js';
+export type {
+  CreateCandidateEdgeInput,
+  UpdateCandidateEdgeInput,
+} from './candidate-edge-repository.js';

@@ -15,11 +15,13 @@ export const nodes = sqliteTable(
     updatedAt: text('updated_at').notNull(),
     contentHash: text('content_hash'),
     metadata: text('metadata', { mode: 'json' }),
+    isGhost: integer('is_ghost').notNull().default(0), // 0 = real node, 1 = ghost
   },
   (table) => [
     index('idx_nodes_title').on(table.title),
     index('idx_nodes_type').on(table.type),
     index('idx_nodes_path').on(table.path),
+    index('idx_nodes_ghost').on(table.isGhost),
   ]
 );
 
@@ -288,6 +290,49 @@ export const wormholeRejections = sqliteTable(
   ]
 );
 
+// ============================================================================
+// Candidate Edges Table (Phase 2: Suggestions)
+// ============================================================================
+
+export const candidateEdges = sqliteTable(
+  'candidate_edges',
+  {
+    suggestionId: text('suggestion_id').primaryKey(),
+    fromId: text('from_id').notNull(),
+    toId: text('to_id').notNull(),
+    suggestedEdgeType: text('suggested_edge_type').notNull(),
+
+    // For undirected uniqueness (canonical ordering)
+    fromIdNorm: text('from_id_norm').notNull(),
+    toIdNorm: text('to_id_norm').notNull(),
+
+    // Status lifecycle
+    status: text('status').default('suggested').notNull(),
+    statusChangedAt: text('status_changed_at'),
+
+    // Evidence (merged from multiple sources)
+    signals: text('signals', { mode: 'json' }), // { semantic?, mentionCount?, graphProximity? }
+    reasons: text('reasons', { mode: 'json' }), // string[]
+    provenance: text('provenance', { mode: 'json' }), // array of evidence objects
+
+    // Timestamps
+    createdAt: text('created_at').notNull(),
+    lastComputedAt: text('last_computed_at').notNull(),
+    lastSeenAt: text('last_seen_at'),
+
+    // Writeback tracking
+    writebackStatus: text('writeback_status'),
+    writebackReason: text('writeback_reason'),
+    approvedEdgeId: text('approved_edge_id'),
+  },
+  (table) => [
+    index('idx_candidate_from').on(table.fromId),
+    index('idx_candidate_to').on(table.toId),
+    index('idx_candidate_status').on(table.status),
+    index('idx_candidate_norm').on(table.fromIdNorm, table.toIdNorm, table.suggestedEdgeType),
+  ]
+);
+
 // Type exports for use in repositories
 export type NodeRow = typeof nodes.$inferSelect;
 export type NewNodeRow = typeof nodes.$inferInsert;
@@ -318,3 +363,6 @@ export type NewNodeEmbeddingRow = typeof nodeEmbeddings.$inferInsert;
 
 export type WormholeRejectionRow = typeof wormholeRejections.$inferSelect;
 export type NewWormholeRejectionRow = typeof wormholeRejections.$inferInsert;
+
+export type CandidateEdgeRow = typeof candidateEdges.$inferSelect;
+export type NewCandidateEdgeRow = typeof candidateEdges.$inferInsert;
