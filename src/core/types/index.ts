@@ -1,5 +1,6 @@
 import { Type, Static } from '@sinclair/typebox';
 import { createHash } from 'node:crypto';
+import { getLogger } from '../logger.js';
 
 // ============================================================================
 // Node Types
@@ -592,7 +593,7 @@ export function shouldRenderEdge(edgeType: EdgeType, mode: VisualizationMode): b
   if (layer === 'C') return false;
 
   // Unknown edge types: warn and hide (safe default)
-  console.warn(`Unknown edge type: ${edgeType}`);
+  getLogger().warn(`Unknown edge type: ${edgeType}`);
   return false;
 }
 

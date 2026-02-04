@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   shouldRenderEdge,
   getEdgeLayer,
@@ -127,6 +127,34 @@ describe('Edge Layer Classification', () => {
       expect(getEdgeLayer('semantic')).toBe('B');
       expect(getEdgeLayer('mention')).toBe('C');
       expect(getEdgeLayer('backlink')).toBe('C');
+    });
+  });
+
+  describe('shouldRenderEdge logging', () => {
+    it('should not log warning for known edge types', () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      const knownTypes = [...LAYER_A_EDGES, ...LAYER_B_EDGES, ...LAYER_C_EDGES];
+
+      for (const edgeType of knownTypes) {
+        shouldRenderEdge(edgeType, 'focus');
+        shouldRenderEdge(edgeType, 'classic');
+      }
+
+      expect(warnSpy).not.toHaveBeenCalled();
+      warnSpy.mockRestore();
+    });
+
+    it('should warn for unknown edge types', () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      const result = shouldRenderEdge('nonexistent' as EdgeType, 'focus');
+
+      expect(result).toBe(false);
+      expect(warnSpy).toHaveBeenCalled();
+      expect(warnSpy.mock.calls[0][0]).toContain('Unknown edge type');
+
+      warnSpy.mockRestore();
     });
   });
 });
