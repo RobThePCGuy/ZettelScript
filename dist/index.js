@@ -7,6 +7,79 @@ var __export = (target, all) => {
 // src/core/types/index.ts
 import { Type } from "@sinclair/typebox";
 import { createHash } from "crypto";
+
+// src/core/logger.ts
+var Logger = class _Logger {
+  level;
+  prefix;
+  constructor(options = {}) {
+    this.level = options.level ?? 1 /* INFO */;
+    this.prefix = options.prefix ?? "";
+  }
+  /**
+   * Set the log level
+   */
+  setLevel(level) {
+    this.level = level;
+  }
+  /**
+   * Get the current log level
+   */
+  getLevel() {
+    return this.level;
+  }
+  /**
+   * Format a log message with optional prefix
+   */
+  format(message) {
+    return this.prefix ? `[${this.prefix}] ${message}` : message;
+  }
+  /**
+   * Log a debug message
+   */
+  debug(message, ...args) {
+    if (this.level <= 0 /* DEBUG */) {
+      console.debug(this.format(message), ...args);
+    }
+  }
+  /**
+   * Log an info message
+   */
+  info(message, ...args) {
+    if (this.level <= 1 /* INFO */) {
+      console.log(this.format(message), ...args);
+    }
+  }
+  /**
+   * Log a warning message
+   */
+  warn(message, ...args) {
+    if (this.level <= 2 /* WARN */) {
+      console.warn(this.format(message), ...args);
+    }
+  }
+  /**
+   * Log an error message
+   */
+  error(message, ...args) {
+    if (this.level <= 3 /* ERROR */) {
+      console.error(this.format(message), ...args);
+    }
+  }
+  /**
+   * Create a child logger with a prefix
+   */
+  child(prefix) {
+    const childPrefix = this.prefix ? `${this.prefix}:${prefix}` : prefix;
+    return new _Logger({ level: this.level, prefix: childPrefix });
+  }
+};
+var defaultLogger = new Logger();
+function getLogger() {
+  return defaultLogger;
+}
+
+// src/core/types/index.ts
 var NodeTypeSchema = Type.Union([
   Type.Literal("note"),
   Type.Literal("scene"),
@@ -281,7 +354,7 @@ function shouldRenderEdge(edgeType, mode) {
   const layer = getEdgeLayer(edgeType);
   if (layer === "A" || layer === "B") return true;
   if (layer === "C") return false;
-  console.warn(`Unknown edge type: ${edgeType}`);
+  getLogger().warn(`Unknown edge type: ${edgeType}`);
   return false;
 }
 var CandidateEdgeStatusSchema = Type.Union([
@@ -1432,7 +1505,11 @@ var ConnectionManager = class _ConnectionManager {
       if (result) {
         currentVersion = result.version;
       }
-    } catch {
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!message.includes("no such table")) {
+        throw new Error(`Database schema check failed: ${message}`);
+      }
     }
     if (currentVersion >= SCHEMA_VERSION) {
       return;
@@ -2982,77 +3059,6 @@ var ConstellationRepository = class {
 import { eq as eq7, inArray as inArray4, sql as sql7 } from "drizzle-orm";
 import { nanoid as nanoid6 } from "nanoid";
 
-// src/core/logger.ts
-var Logger = class _Logger {
-  level;
-  prefix;
-  constructor(options = {}) {
-    this.level = options.level ?? 1 /* INFO */;
-    this.prefix = options.prefix ?? "";
-  }
-  /**
-   * Set the log level
-   */
-  setLevel(level) {
-    this.level = level;
-  }
-  /**
-   * Get the current log level
-   */
-  getLevel() {
-    return this.level;
-  }
-  /**
-   * Format a log message with optional prefix
-   */
-  format(message) {
-    return this.prefix ? `[${this.prefix}] ${message}` : message;
-  }
-  /**
-   * Log a debug message
-   */
-  debug(message, ...args) {
-    if (this.level <= 0 /* DEBUG */) {
-      console.debug(this.format(message), ...args);
-    }
-  }
-  /**
-   * Log an info message
-   */
-  info(message, ...args) {
-    if (this.level <= 1 /* INFO */) {
-      console.log(this.format(message), ...args);
-    }
-  }
-  /**
-   * Log a warning message
-   */
-  warn(message, ...args) {
-    if (this.level <= 2 /* WARN */) {
-      console.warn(this.format(message), ...args);
-    }
-  }
-  /**
-   * Log an error message
-   */
-  error(message, ...args) {
-    if (this.level <= 3 /* ERROR */) {
-      console.error(this.format(message), ...args);
-    }
-  }
-  /**
-   * Create a child logger with a prefix
-   */
-  child(prefix) {
-    const childPrefix = this.prefix ? `${this.prefix}:${prefix}` : prefix;
-    return new _Logger({ level: this.level, prefix: childPrefix });
-  }
-};
-var defaultLogger = new Logger();
-function getLogger() {
-  return defaultLogger;
-}
-
 // src/core/circuit-breaker.ts
 var logger = getLogger().child("circuit-breaker");
 var DEFAULT_CONFIG2 = {
@@ -3067,6 +3073,7 @@ var SubsystemBreaker = class {
   }
   state = {
     failureCount: 0,
+    totalFailures: 0,
     lastFailure: null,
     lastError: null,
     recoveryInProgress: false
@@ -3110,6 +3117,7 @@ var SubsystemBreaker = class {
    */
   recordFailure(error) {
     this.state.failureCount++;
+    this.state.totalFailures++;
     this.state.lastFailure = Date.now();
     this.state.lastError = error.message;
     this.state.recoveryInProgress = false;
@@ -3150,6 +3158,7 @@ var SubsystemBreaker = class {
     return {
       state,
       failureCount: this.state.failureCount,
+      totalFailures: this.state.totalFailures,
       lastFailure: this.state.lastFailure ? new Date(this.state.lastFailure) : null,
       lastError: this.state.lastError,
       cooldownRemainingMs
@@ -3161,6 +3170,7 @@ var SubsystemBreaker = class {
   reset() {
     this.state = {
       failureCount: 0,
+      totalFailures: 0,
       lastFailure: null,
       lastError: null,
       recoveryInProgress: false

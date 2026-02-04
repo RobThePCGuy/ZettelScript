@@ -391,7 +391,6 @@ function printStats(stats: DoctorStats): void {
 export function printEmbeddingStatus(stats: DoctorStats): void {
   const { embeddings } = stats;
   const color = levelColor(embeddings.level);
-  const icon = levelIcon(embeddings.level);
 
   let line = `Embeddings: ${color}${embeddings.level.toUpperCase()}${RESET} (${embeddings.coverage.toFixed(0)}% in view)`;
 

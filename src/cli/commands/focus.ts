@@ -1,7 +1,6 @@
 import { Command } from 'commander';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import * as os from 'node:os';
 import open from 'open';
 import { initContext, getZettelScriptDir, Spinner } from '../utils.js';
 import type { CLIContext } from '../utils.js';
@@ -15,15 +14,12 @@ import {
 } from './visualize.js';
 import {
   getEdgeLayer,
-  LAYER_A_EDGES,
-  LAYER_B_EDGES,
   type EdgeType,
   type Node,
   type Edge,
 } from '../../core/types/index.js';
 import {
   assembleFocusBundle,
-  type FocusBundle,
   type RelatedNote,
 } from '../../discovery/focus-bundle.js';
 import {

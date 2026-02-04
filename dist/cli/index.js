@@ -410,7 +410,11 @@ var ConnectionManager = class _ConnectionManager {
       if (result) {
         currentVersion = result.version;
       }
-    } catch {
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!message.includes("no such table")) {
+        throw new Error(`Database schema check failed: ${message}`);
+      }
     }
     if (currentVersion >= SCHEMA_VERSION) {
       return;
@@ -681,6 +685,79 @@ var ConnectionManager = class _ConnectionManager {
 // src/core/types/index.ts
 import { Type } from "@sinclair/typebox";
 import { createHash } from "crypto";
+
+// src/core/logger.ts
+var Logger = class _Logger {
+  level;
+  prefix;
+  constructor(options = {}) {
+    this.level = options.level ?? 1 /* INFO */;
+    this.prefix = options.prefix ?? "";
+  }
+  /**
+   * Set the log level
+   */
+  setLevel(level) {
+    this.level = level;
+  }
+  /**
+   * Get the current log level
+   */
+  getLevel() {
+    return this.level;
+  }
+  /**
+   * Format a log message with optional prefix
+   */
+  format(message) {
+    return this.prefix ? `[${this.prefix}] ${message}` : message;
+  }
+  /**
+   * Log a debug message
+   */
+  debug(message, ...args) {
+    if (this.level <= 0 /* DEBUG */) {
+      console.debug(this.format(message), ...args);
+    }
+  }
+  /**
+   * Log an info message
+   */
+  info(message, ...args) {
+    if (this.level <= 1 /* INFO */) {
+      console.log(this.format(message), ...args);
+    }
+  }
+  /**
+   * Log a warning message
+   */
+  warn(message, ...args) {
+    if (this.level <= 2 /* WARN */) {
+      console.warn(this.format(message), ...args);
+    }
+  }
+  /**
+   * Log an error message
+   */
+  error(message, ...args) {
+    if (this.level <= 3 /* ERROR */) {
+      console.error(this.format(message), ...args);
+    }
+  }
+  /**
+   * Create a child logger with a prefix
+   */
+  child(prefix) {
+    const childPrefix = this.prefix ? `${this.prefix}:${prefix}` : prefix;
+    return new _Logger({ level: this.level, prefix: childPrefix });
+  }
+};
+var defaultLogger = new Logger();
+function getLogger() {
+  return defaultLogger;
+}
+
+// src/core/types/index.ts
 var NodeTypeSchema = Type.Union([
   Type.Literal("note"),
   Type.Literal("scene"),
@@ -955,7 +1032,7 @@ function shouldRenderEdge(edgeType, mode) {
   const layer = getEdgeLayer(edgeType);
   if (layer === "A" || layer === "B") return true;
   if (layer === "C") return false;
-  console.warn(`Unknown edge type: ${edgeType}`);
+  getLogger().warn(`Unknown edge type: ${edgeType}`);
   return false;
 }
 var CandidateEdgeStatusSchema = Type.Union([
@@ -2253,77 +2330,6 @@ var ConstellationRepository = class {
 import { eq as eq7, inArray as inArray4, sql as sql7 } from "drizzle-orm";
 import { nanoid as nanoid6 } from "nanoid";
 
-// src/core/logger.ts
-var Logger = class _Logger {
-  level;
-  prefix;
-  constructor(options = {}) {
-    this.level = options.level ?? 1 /* INFO */;
-    this.prefix = options.prefix ?? "";
-  }
-  /**
-   * Set the log level
-   */
-  setLevel(level) {
-    this.level = level;
-  }
-  /**
-   * Get the current log level
-   */
-  getLevel() {
-    return this.level;
-  }
-  /**
-   * Format a log message with optional prefix
-   */
-  format(message) {
-    return this.prefix ? `[${this.prefix}] ${message}` : message;
-  }
-  /**
-   * Log a debug message
-   */
-  debug(message, ...args) {
-    if (this.level <= 0 /* DEBUG */) {
-      console.debug(this.format(message), ...args);
-    }
-  }
-  /**
-   * Log an info message
-   */
-  info(message, ...args) {
-    if (this.level <= 1 /* INFO */) {
-      console.log(this.format(message), ...args);
-    }
-  }
-  /**
-   * Log a warning message
-   */
-  warn(message, ...args) {
-    if (this.level <= 2 /* WARN */) {
-      console.warn(this.format(message), ...args);
-    }
-  }
-  /**
-   * Log an error message
-   */
-  error(message, ...args) {
-    if (this.level <= 3 /* ERROR */) {
-      console.error(this.format(message), ...args);
-    }
-  }
-  /**
-   * Create a child logger with a prefix
-   */
-  child(prefix) {
-    const childPrefix = this.prefix ? `${this.prefix}:${prefix}` : prefix;
-    return new _Logger({ level: this.level, prefix: childPrefix });
-  }
-};
-var defaultLogger = new Logger();
-function getLogger() {
-  return defaultLogger;
-}
-
 // src/core/circuit-breaker.ts
 var logger = getLogger().child("circuit-breaker");
 var DEFAULT_CONFIG2 = {
@@ -2338,6 +2344,7 @@ var SubsystemBreaker = class {
   }
   state = {
     failureCount: 0,
+    totalFailures: 0,
     lastFailure: null,
     lastError: null,
     recoveryInProgress: false
@@ -2381,6 +2388,7 @@ var SubsystemBreaker = class {
    */
   recordFailure(error) {
     this.state.failureCount++;
+    this.state.totalFailures++;
     this.state.lastFailure = Date.now();
     this.state.lastError = error.message;
     this.state.recoveryInProgress = false;
@@ -2421,6 +2429,7 @@ var SubsystemBreaker = class {
     return {
       state,
       failureCount: this.state.failureCount,
+      totalFailures: this.state.totalFailures,
       lastFailure: this.state.lastFailure ? new Date(this.state.lastFailure) : null,
       lastError: this.state.lastError,
       cooldownRemainingMs
@@ -2432,6 +2441,7 @@ var SubsystemBreaker = class {
   reset() {
     this.state = {
       failureCount: 0,
+      totalFailures: 0,
       lastFailure: null,
       lastError: null,
       recoveryInProgress: false
@@ -4463,7 +4473,10 @@ function loadConfig(vaultPath) {
       visualization: { ...DEFAULT_CONFIG.visualization, ...userConfig.visualization }
     };
   } catch (error) {
-    console.warn(`Warning: Could not parse config file: ${error}`);
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.warn(
+      `Warning: Could not parse config file at ${configPath}: ${errorMsg}. Using defaults. Run "zs init --force" to regenerate.`
+    );
     return { ...DEFAULT_CONFIG, vault: { ...DEFAULT_CONFIG.vault, path: vaultPath } };
   }
 }
@@ -12163,6 +12176,23 @@ async function createVisualizeServer(ctx, options) {
 import { Command as Command12 } from "commander";
 import * as fs13 from "fs";
 import * as path16 from "path";
+import { fileURLToPath } from "url";
+import { dirname as dirname5 } from "path";
+function getVersionFromPath(packageJsonPath) {
+  try {
+    const content = fs13.readFileSync(packageJsonPath, "utf-8");
+    const pkg = JSON.parse(content);
+    return pkg.version ?? "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+function getVersion() {
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = dirname5(__filename);
+  const packageJsonPath = path16.join(__dirname, "..", "..", "..", "package.json");
+  return getVersionFromPath(packageJsonPath);
+}
 var EMBEDDING_OK_THRESHOLD = 95;
 var EMBEDDING_WARN_THRESHOLD = 60;
 function getEmbeddingHealthLevel(coverage) {
@@ -12229,8 +12259,7 @@ async function computeDoctorStats(ctx) {
     overallLevel = "warn";
   }
   return {
-    version: "0.4.1",
-    // TODO: read from package.json
+    version: getVersion(),
     vaultPath,
     overallLevel,
     index: {
@@ -12246,8 +12275,7 @@ async function computeDoctorStats(ctx) {
       embedded: embeddingCount,
       coverage: embeddingCoverage,
       pending: pendingEmbeddings.length,
-      errorCount: 0,
-      // TODO: track embedding errors
+      errorCount: getCircuitBreaker().getStatus("embeddings").totalFailures,
       model: embeddingModel
     },
     wormholes: {
@@ -12403,7 +12431,6 @@ function printStats(stats) {
 function printEmbeddingStatus(stats) {
   const { embeddings } = stats;
   const color = levelColor(embeddings.level);
-  const icon = levelIcon(embeddings.level);
   let line = `Embeddings: ${color}${embeddings.level.toUpperCase()}${RESET} (${embeddings.coverage.toFixed(0)}% in view)`;
   if (embeddings.pending > 0) {
     line += `, ${embeddings.pending} pending`;
@@ -18472,9 +18499,7 @@ var OrphanEngine = class {
       const truthDegree = layerADegrees.get(node.nodeId) || 0;
       const mentionCount = unresolvedMentionCounts.get(node.nodeId) || 0;
       const neighbors = semanticNeighbors.get(node.nodeId) || [];
-      const unconnectedNeighbors = neighbors.filter((n) => {
-        return true;
-      });
+      const unconnectedNeighbors = neighbors;
       const semanticPull = unconnectedNeighbors.length > 0 ? unconnectedNeighbors.reduce((sum, n) => sum + n.similarity, 0) / unconnectedNeighbors.length : 0;
       const lowTruthDegree = 1 / (1 + truthDegree);
       const mentionPressure = mentionCount / maxMentionCount;
@@ -18598,6 +18623,16 @@ var OrphanEngine = class {
 };
 
 // src/cli/commands/focus.ts
+var DEFAULT_HYBRID_CONFIG = {
+  enabled: true,
+  wVec: 0.85,
+  wKw: 0.15
+};
+var DEFAULT_GROUPING_CONFIG = {
+  enabled: true,
+  kStrong: 1,
+  kWeak: 0
+};
 function getStatePath(vaultPath) {
   return path20.join(getZettelScriptDir(vaultPath), "state.json");
 }
@@ -18738,8 +18773,13 @@ function writeFileAtomic(filePath, content) {
     throw error;
   }
 }
-async function computeRelatedNotes(ctx, focusNodeId, nodesInView) {
+async function computeRelatedNotes(ctx, focusNodeId, nodesInView, hybridConfig = DEFAULT_HYBRID_CONFIG, groupingConfig = DEFAULT_GROUPING_CONFIG) {
   const { embeddingRepository, nodeRepository } = ctx;
+  const focusNodes = await nodeRepository.findByIds([focusNodeId]);
+  if (focusNodes.length === 0) {
+    return [];
+  }
+  const focusNode = focusNodes[0];
   const focusEmbeddings = await embeddingRepository.findByNodeIds([focusNodeId]);
   if (focusEmbeddings.length === 0) {
     return [];
@@ -18752,29 +18792,51 @@ async function computeRelatedNotes(ctx, focusNodeId, nodesInView) {
     return [];
   }
   const candidateEmbeddings = await embeddingRepository.findByNodeIds(candidateNodeIds);
+  const nodeMap = new Map(allNodes.map((n) => [n.nodeId, n]));
+  const focusTokens = tokenize(focusNode.title);
   const scored = [];
   for (const emb of candidateEmbeddings) {
-    const similarity = cosineSimilarity3(focusEmbedding, emb.embedding);
-    if (similarity >= 0.5) {
-      scored.push({ nodeId: emb.nodeId, similarity });
+    const vecScore = cosineSimilarity3(focusEmbedding, emb.embedding);
+    if (vecScore < 0.35) {
+      continue;
     }
+    const node = nodeMap.get(emb.nodeId);
+    if (!node) continue;
+    let kwScore = 0;
+    let matchedTerms = [];
+    if (hybridConfig.enabled && hybridConfig.wKw > 0) {
+      const candidateTokens = tokenize(node.title);
+      const kwResult = keywordScore(focusTokens, candidateTokens);
+      kwScore = kwResult.score;
+      matchedTerms = kwResult.matchedTerms;
+    }
+    const finalScore = hybridConfig.enabled ? hybridConfig.wVec * vecScore + hybridConfig.wKw * kwScore : vecScore;
+    scored.push({ nodeId: emb.nodeId, vecScore, kwScore, finalScore, matchedTerms });
   }
-  scored.sort((a, b) => b.similarity - a.similarity);
-  const top = scored.slice(0, 15);
-  const nodeMap = new Map(allNodes.map((n) => [n.nodeId, n]));
-  return top.map(({ nodeId, similarity }) => {
+  scored.sort((a, b) => b.finalScore - a.finalScore);
+  const forGrouping = scored.map((s) => ({ ...s, score: s.finalScore }));
+  const grouped = applyGrouping(forGrouping, groupingConfig, 2);
+  const top = grouped.slice(0, 15);
+  return top.map(({ nodeId, vecScore, kwScore, finalScore, matchedTerms }) => {
     const node = nodeMap.get(nodeId);
     if (!node) return null;
+    const reasons = [];
+    reasons.push(`Semantic similarity: ${(vecScore * 100).toFixed(0)}%`);
+    if (kwScore > 0 && matchedTerms.length > 0) {
+      const termDisplay = matchedTerms.slice(0, 3).join(", ");
+      reasons.push(`Keyword match: ${matchedTerms.length} term(s) (${termDisplay})`);
+    }
     return {
       nodeId: node.nodeId,
       title: node.title,
       path: node.path,
-      score: similarity,
-      reasons: [`${(similarity * 100).toFixed(0)}% similar to focus note`],
+      score: finalScore,
+      reasons,
       layer: "B",
       isInView: false,
       signals: {
-        semantic: similarity
+        semantic: vecScore,
+        lexical: kwScore > 0 ? kwScore : void 0
       }
     };
   }).filter((rn) => rn !== null);
@@ -18791,6 +18853,118 @@ function cosineSimilarity3(a, b) {
   }
   if (normA === 0 || normB === 0) return 0;
   return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+function tokenize(text2) {
+  const stopwords = /* @__PURE__ */ new Set([
+    "the",
+    "a",
+    "an",
+    "and",
+    "or",
+    "but",
+    "in",
+    "on",
+    "at",
+    "to",
+    "for",
+    "of",
+    "with",
+    "by",
+    "from",
+    "as",
+    "is",
+    "was",
+    "are",
+    "were",
+    "been",
+    "be",
+    "have",
+    "has",
+    "had",
+    "do",
+    "does",
+    "did",
+    "will",
+    "would",
+    "could",
+    "should",
+    "may",
+    "might",
+    "must",
+    "shall",
+    "can",
+    "need",
+    "dare",
+    "ought",
+    "this",
+    "that",
+    "these",
+    "those",
+    "it",
+    "its",
+    "my",
+    "your",
+    "his",
+    "her",
+    "their",
+    "our",
+    "we",
+    "you",
+    "he",
+    "she",
+    "they",
+    "them",
+    "us",
+    "me"
+  ]);
+  return new Set(
+    text2.toLowerCase().replace(/[^\w\s-]/g, " ").split(/\s+/).filter((term) => term.length >= 3 && !stopwords.has(term))
+  );
+}
+function keywordScore(focusTokens, candidateTokens) {
+  if (focusTokens.size === 0 || candidateTokens.size === 0) {
+    return { score: 0, matchedTerms: [] };
+  }
+  const matchedTerms = [];
+  for (const term of focusTokens) {
+    if (candidateTokens.has(term)) {
+      matchedTerms.push(term);
+    }
+  }
+  const score = matchedTerms.length / focusTokens.size;
+  return { score: Math.min(1, score), matchedTerms };
+}
+function findGroupBoundaries(results, config) {
+  if (!config.enabled || results.length <= 1) {
+    return [];
+  }
+  const gaps = [];
+  for (let i = 0; i < results.length - 1; i++) {
+    const gap = results[i].score - results[i + 1].score;
+    gaps.push({ index: i + 1, gap });
+  }
+  if (gaps.length === 0) {
+    return [];
+  }
+  const gapValues = gaps.map((g) => g.gap);
+  const mean = gapValues.reduce((a, b) => a + b, 0) / gapValues.length;
+  const variance = gapValues.reduce((a, b) => a + (b - mean) ** 2, 0) / gapValues.length;
+  const std = Math.sqrt(variance);
+  const epsilon = 1e-10;
+  const strongThreshold = mean + config.kStrong * std + epsilon;
+  const boundaries = gaps.filter((g) => g.gap > strongThreshold).map((g) => g.index);
+  return boundaries;
+}
+function applyGrouping(results, config, maxGroups = 1) {
+  if (!config.enabled || results.length <= 1) {
+    return results;
+  }
+  const boundaries = findGroupBoundaries(results, config);
+  if (boundaries.length === 0) {
+    return results;
+  }
+  const cutoffIndex = maxGroups <= boundaries.length ? boundaries[maxGroups - 1] : results.length;
+  return results.slice(0, cutoffIndex);
 }
 var focusCommand = new Command19("focus").description("Open a focus view centered on a specific note or the most recent file").argument("[target]", "File path, node title, or node ID to focus on").option("-b, --budget <number>", "Maximum number of nodes to show", "200").option("-d, --depth <number>", "Maximum expansion depth", "3").option("-o, --output <path>", "Output HTML file path").option("--no-open", "Do not open browser automatically").option("--json-stdout", "Print FocusBundle JSON to stdout, no file writes").option("--json-only", "Write focus.json only, print path to stdout").action(
   async (target, options) => {

@@ -9,14 +9,12 @@
  * Per Phase 2 Design Document Section 3.
  */
 
-import type { DrizzleDB } from '../storage/database/connection.js';
 import { NodeRepository, EdgeRepository, CandidateEdgeRepository } from '../storage/database/repositories/index.js';
 import { MentionRepository } from '../storage/database/repositories/mention-repository.js';
 import { EmbeddingRepository } from '../storage/database/repositories/embedding-repository.js';
 import type {
   CandidateEdge,
   EdgeType,
-  Node,
 } from '../core/types/index.js';
 import {
   generateSuggestionId,
@@ -528,11 +526,8 @@ export class OrphanEngine {
 
       // Component 1: Semantic pull (average similarity to top neighbors NOT connected by Layer A)
       // Filter out neighbors that are already connected by Layer A
-      const unconnectedNeighbors = neighbors.filter((n) => {
-        // Check if this neighbor is connected to current node by Layer A
-        // Note: neighbors don't have Layer A edges by construction in computeSemanticNeighbors
-        return true; // Already filtered during neighbor computation
-      });
+      // Note: neighbors don't have Layer A edges by construction in computeSemanticNeighbors
+      const unconnectedNeighbors = neighbors;
       const semanticPull =
         unconnectedNeighbors.length > 0
           ? unconnectedNeighbors.reduce((sum, n) => sum + n.similarity, 0) /
