@@ -9,6 +9,7 @@
 
 import type { Node, Edge, EdgeType, CandidateEdge } from '../core/types/index.js';
 import { getEdgeLayer } from '../core/types/index.js';
+import { getCircuitBreaker } from '../core/circuit-breaker.js';
 import type { DoctorStats } from '../cli/commands/doctor.js';
 import type { OrphanEntry } from './suggestion-engine.js';
 
@@ -38,6 +39,7 @@ export interface FocusBundleMeta {
 
 export interface HealthSummary {
   level: 'ok' | 'warn' | 'fail';
+  warnings: string[];
 
   embeddings: {
     level: 'ok' | 'warn' | 'fail';
@@ -445,8 +447,12 @@ function buildHealthSummary(
     wormholeLevel = stats.embeddings.level === 'fail' ? 'fail' : 'warn';
   }
 
+  // Get circuit breaker warnings (plain text, no ANSI codes)
+  const circuitWarnings = getCircuitBreaker().getWarnings();
+
   return {
     level: stats.overallLevel,
+    warnings: circuitWarnings,
 
     embeddings: {
       level: stats.embeddings.level,

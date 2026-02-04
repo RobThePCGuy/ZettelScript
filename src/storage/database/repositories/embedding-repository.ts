@@ -7,6 +7,7 @@ import {
   type NodeEmbeddingRow,
   type NewNodeEmbeddingRow,
 } from '../schema.js';
+import { getCircuitBreaker } from '../../../core/circuit-breaker.js';
 
 /**
  * Interface for a node's embedding data
@@ -37,8 +38,14 @@ export class EmbeddingRepository {
 
   /**
    * Create a new embedding
+   * Protected by embeddings circuit breaker as this is part of the embedding pipeline
    */
-  async create(data: CreateEmbeddingInput): Promise<NodeEmbedding> {
+  async create(data: CreateEmbeddingInput): Promise<NodeEmbedding | null> {
+    const cb = getCircuitBreaker();
+    if (!cb.shouldAttempt('embeddings')) {
+      return null;
+    }
+
     const embeddingId = nanoid();
     const now = new Date().toISOString();
 
@@ -52,15 +59,26 @@ export class EmbeddingRepository {
       computedAt: now,
     };
 
-    await this.db.insert(nodeEmbeddings).values(row);
-
-    return this.rowToEmbedding({ ...row, embeddingId, computedAt: now } as NodeEmbeddingRow);
+    try {
+      await this.db.insert(nodeEmbeddings).values(row);
+      cb.recordSuccess('embeddings');
+      return this.rowToEmbedding({ ...row, embeddingId, computedAt: now } as NodeEmbeddingRow);
+    } catch (error) {
+      cb.recordFailure('embeddings', error instanceof Error ? error : new Error(String(error)));
+      return null;
+    }
   }
 
   /**
    * Create or update an embedding for a node
+   * Protected by embeddings circuit breaker as this is part of the embedding pipeline
    */
-  async upsert(data: CreateEmbeddingInput): Promise<NodeEmbedding> {
+  async upsert(data: CreateEmbeddingInput): Promise<NodeEmbedding | null> {
+    const cb = getCircuitBreaker();
+    if (!cb.shouldAttempt('embeddings')) {
+      return null;
+    }
+
     const existing = await this.findByNodeId(data.nodeId);
 
     if (existing) {
@@ -98,10 +116,22 @@ export class EmbeddingRepository {
 
   /**
    * Find all embeddings
+   * Protected by vectorDb circuit breaker as this powers similarity search
    */
   async findAll(): Promise<NodeEmbedding[]> {
-    const result = await this.db.select().from(nodeEmbeddings);
-    return result.map((row) => this.rowToEmbedding(row));
+    const cb = getCircuitBreaker();
+    if (!cb.shouldAttempt('vectorDb')) {
+      return [];
+    }
+
+    try {
+      const result = await this.db.select().from(nodeEmbeddings);
+      cb.recordSuccess('vectorDb');
+      return result.map((row) => this.rowToEmbedding(row));
+    } catch (error) {
+      cb.recordFailure('vectorDb', error instanceof Error ? error : new Error(String(error)));
+      return [];
+    }
   }
 
   /**
@@ -118,16 +148,28 @@ export class EmbeddingRepository {
 
   /**
    * Find embeddings by node IDs
+   * Protected by vectorDb circuit breaker as this powers similarity search
    */
   async findByNodeIds(nodeIds: string[]): Promise<NodeEmbedding[]> {
     if (nodeIds.length === 0) return [];
 
-    const result = await this.db
-      .select()
-      .from(nodeEmbeddings)
-      .where(inArray(nodeEmbeddings.nodeId, nodeIds));
+    const cb = getCircuitBreaker();
+    if (!cb.shouldAttempt('vectorDb')) {
+      return [];
+    }
 
-    return result.map((row) => this.rowToEmbedding(row));
+    try {
+      const result = await this.db
+        .select()
+        .from(nodeEmbeddings)
+        .where(inArray(nodeEmbeddings.nodeId, nodeIds));
+
+      cb.recordSuccess('vectorDb');
+      return result.map((row) => this.rowToEmbedding(row));
+    } catch (error) {
+      cb.recordFailure('vectorDb', error instanceof Error ? error : new Error(String(error)));
+      return [];
+    }
   }
 
   /**
@@ -169,8 +211,14 @@ export class EmbeddingRepository {
 
   /**
    * Update an embedding
+   * Protected by embeddings circuit breaker as this is part of the embedding pipeline
    */
-  async update(embeddingId: string, data: Partial<CreateEmbeddingInput>): Promise<NodeEmbedding> {
+  async update(embeddingId: string, data: Partial<CreateEmbeddingInput>): Promise<NodeEmbedding | null> {
+    const cb = getCircuitBreaker();
+    if (!cb.shouldAttempt('embeddings')) {
+      return null;
+    }
+
     const now = new Date().toISOString();
     const updateData: Partial<NodeEmbeddingRow> = {
       computedAt: now,
@@ -181,16 +229,22 @@ export class EmbeddingRepository {
     if (data.dimensions !== undefined) updateData.dimensions = data.dimensions;
     if (data.contentHash !== undefined) updateData.contentHash = data.contentHash;
 
-    await this.db
-      .update(nodeEmbeddings)
-      .set(updateData)
-      .where(eq(nodeEmbeddings.embeddingId, embeddingId));
+    try {
+      await this.db
+        .update(nodeEmbeddings)
+        .set(updateData)
+        .where(eq(nodeEmbeddings.embeddingId, embeddingId));
 
-    const updated = await this.findById(embeddingId);
-    if (!updated) {
-      throw new Error(`Embedding ${embeddingId} not found after update`);
+      cb.recordSuccess('embeddings');
+      const updated = await this.findById(embeddingId);
+      if (!updated) {
+        return null;
+      }
+      return updated;
+    } catch (error) {
+      cb.recordFailure('embeddings', error instanceof Error ? error : new Error(String(error)));
+      return null;
     }
-    return updated;
   }
 
   /**

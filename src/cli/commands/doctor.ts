@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import { initContext, getZettelScriptDir, getDbPath } from '../utils.js';
 import type { CLIContext } from '../utils.js';
 import { getEdgeLayer, type EdgeType } from '../../core/types/index.js';
+import { getCircuitBreaker, CircuitState } from '../../core/circuit-breaker.js';
 
 // ============================================================================
 // Health Status Types (reusable by Atlas and other commands)
@@ -302,6 +303,56 @@ function printStats(stats: DoctorStats): void {
     );
   }
   console.log('');
+
+  // Circuit breaker section
+  const circuitBreaker = getCircuitBreaker();
+  const allStatus = circuitBreaker.getAllStatus();
+  const subsystems = Object.keys(allStatus) as Array<keyof typeof allStatus>;
+
+  if (subsystems.length > 0) {
+    console.log(`${DIM}Circuit Breakers${RESET}`);
+    for (const subsystem of subsystems) {
+      const status = allStatus[subsystem];
+      let stateColor: string;
+      let stateIcon: string;
+
+      switch (status.state) {
+        case CircuitState.CLOSED:
+          stateColor = '\x1b[32m'; // green
+          stateIcon = '✓';
+          break;
+        case CircuitState.HALF_OPEN:
+          stateColor = '\x1b[33m'; // yellow
+          stateIcon = '⚠';
+          break;
+        case CircuitState.OPEN:
+          stateColor = '\x1b[31m'; // red
+          stateIcon = '✗';
+          break;
+      }
+
+      console.log(`  ${subsystem}: ${stateColor}${status.state} ${stateIcon}${RESET}`);
+
+      if (status.state === CircuitState.OPEN) {
+        if (status.lastError) {
+          console.log(`    Error:     ${status.lastError}`);
+        }
+        if (status.cooldownRemainingMs !== null) {
+          const cooldownSeconds = Math.ceil(status.cooldownRemainingMs / 1000);
+          const cooldownMinutes = Math.floor(cooldownSeconds / 60);
+          const remainingSeconds = cooldownSeconds % 60;
+          const timeStr =
+            cooldownMinutes > 0 ? `${cooldownMinutes}m ${remainingSeconds}s` : `${cooldownSeconds}s`;
+          console.log(`    Cooldown:  ${timeStr} remaining`);
+        }
+        // Actionable fix for embeddings
+        if (subsystem === 'embeddings') {
+          console.log(`    ${DIM}Run: zs embed compute${RESET}`);
+        }
+      }
+    }
+    console.log('');
+  }
 
   // Summary
   const overallColor = levelColor(stats.overallLevel);

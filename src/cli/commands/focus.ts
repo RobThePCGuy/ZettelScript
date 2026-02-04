@@ -32,6 +32,34 @@ import {
 } from '../../discovery/suggestion-engine.js';
 
 // ============================================================================
+// Hybrid Search Configuration (Phase 3)
+// ============================================================================
+
+export interface HybridSearchConfig {
+  enabled: boolean;
+  wVec: number;   // Weight for vector similarity (default: 0.85)
+  wKw: number;    // Weight for keyword match (default: 0.15)
+}
+
+export const DEFAULT_HYBRID_CONFIG: HybridSearchConfig = {
+  enabled: true,
+  wVec: 0.85,
+  wKw: 0.15,
+};
+
+export interface GroupingConfig {
+  enabled: boolean;
+  kStrong: number;  // Std multiplier for "strong" group boundary (default: 1.0)
+  kWeak: number;    // Std multiplier for "weak" group boundary (default: 0.0)
+}
+
+export const DEFAULT_GROUPING_CONFIG: GroupingConfig = {
+  enabled: true,
+  kStrong: 1.0,
+  kWeak: 0.0,
+};
+
+// ============================================================================
 // State Management
 // ============================================================================
 
@@ -290,17 +318,27 @@ function writeFileAtomic(filePath: string, content: string): void {
 // ============================================================================
 
 /**
- * Compute related notes based on semantic similarity.
+ * Compute related notes based on semantic similarity with optional keyword boost.
  * Uses embeddings to find similar notes not already in the subgraph.
+ * Phase 3: Hybrid search combines vector similarity with keyword matching.
+ * Phase 3: Statistical grouping identifies natural clusters in results.
  */
 async function computeRelatedNotes(
   ctx: CLIContext,
   focusNodeId: string,
-  nodesInView: Node[]
+  nodesInView: Node[],
+  hybridConfig: HybridSearchConfig = DEFAULT_HYBRID_CONFIG,
+  groupingConfig: GroupingConfig = DEFAULT_GROUPING_CONFIG
 ): Promise<RelatedNote[]> {
   const { embeddingRepository, nodeRepository } = ctx;
 
-  // Get focus node embedding
+  // Get focus node and its embedding
+  const focusNodes = await nodeRepository.findByIds([focusNodeId]);
+  if (focusNodes.length === 0) {
+    return [];
+  }
+  const focusNode = focusNodes[0];
+
   const focusEmbeddings = await embeddingRepository.findByNodeIds([focusNodeId]);
   if (focusEmbeddings.length === 0) {
     return [];
@@ -309,8 +347,7 @@ async function computeRelatedNotes(
   const focusEmbedding = focusEmbeddings[0].embedding;
   const nodeIdsInView = new Set(nodesInView.map(n => n.nodeId));
 
-  // Get all embeddings to find related notes
-  // Note: In a real implementation, this would use a vector index
+  // Get all embeddings to find related notes (fetch 2x for reranking)
   const allNodes = await nodeRepository.findAll();
   const candidateNodeIds = allNodes
     .filter(n => !n.isGhost && !nodeIdsInView.has(n.nodeId))
@@ -321,39 +358,85 @@ async function computeRelatedNotes(
   }
 
   const candidateEmbeddings = await embeddingRepository.findByNodeIds(candidateNodeIds);
-
-  // Compute similarity scores
-  const scored: Array<{ nodeId: string; similarity: number }> = [];
-
-  for (const emb of candidateEmbeddings) {
-    const similarity = cosineSimilarity(focusEmbedding, emb.embedding);
-    if (similarity >= 0.5) { // Minimum threshold for related notes
-      scored.push({ nodeId: emb.nodeId, similarity });
-    }
-  }
-
-  // Sort by similarity and take top results
-  scored.sort((a, b) => b.similarity - a.similarity);
-  const top = scored.slice(0, 15);
-
-  // Build RelatedNote objects
   const nodeMap = new Map(allNodes.map(n => [n.nodeId, n]));
 
+  // Tokenize focus node title for keyword matching
+  const focusTokens = tokenize(focusNode.title);
+
+  // Compute hybrid scores
+  const scored: Array<{
+    nodeId: string;
+    vecScore: number;
+    kwScore: number;
+    finalScore: number;
+    matchedTerms: string[];
+  }> = [];
+
+  for (const emb of candidateEmbeddings) {
+    const vecScore = cosineSimilarity(focusEmbedding, emb.embedding);
+    if (vecScore < 0.35) { // Minimum vector threshold (relaxed for hybrid)
+      continue;
+    }
+
+    const node = nodeMap.get(emb.nodeId);
+    if (!node) continue;
+
+    // Compute keyword score
+    let kwScore = 0;
+    let matchedTerms: string[] = [];
+
+    if (hybridConfig.enabled && hybridConfig.wKw > 0) {
+      const candidateTokens = tokenize(node.title);
+      const kwResult = keywordScore(focusTokens, candidateTokens);
+      kwScore = kwResult.score;
+      matchedTerms = kwResult.matchedTerms;
+    }
+
+    // Compute final hybrid score
+    const finalScore = hybridConfig.enabled
+      ? (hybridConfig.wVec * vecScore) + (hybridConfig.wKw * kwScore)
+      : vecScore;
+
+    scored.push({ nodeId: emb.nodeId, vecScore, kwScore, finalScore, matchedTerms });
+  }
+
+  // Sort by final score descending
+  scored.sort((a, b) => b.finalScore - a.finalScore);
+
+  // Apply statistical grouping to identify natural clusters
+  // Map to score-based array for grouping algorithm
+  const forGrouping = scored.map(s => ({ ...s, score: s.finalScore }));
+  const grouped = applyGrouping(forGrouping, groupingConfig, 2); // Take top 2 groups (related mode)
+
+  // Take top 15 from grouped results (hard cap)
+  const top = grouped.slice(0, 15);
+
+  // Build RelatedNote objects with hybrid signals
   return top
-    .map(({ nodeId, similarity }) => {
+    .map(({ nodeId, vecScore, kwScore, finalScore, matchedTerms }) => {
       const node = nodeMap.get(nodeId);
       if (!node) return null;
+
+      // Build reasons with both signals
+      const reasons: string[] = [];
+      reasons.push(`Semantic similarity: ${(vecScore * 100).toFixed(0)}%`);
+
+      if (kwScore > 0 && matchedTerms.length > 0) {
+        const termDisplay = matchedTerms.slice(0, 3).join(', ');
+        reasons.push(`Keyword match: ${matchedTerms.length} term(s) (${termDisplay})`);
+      }
 
       return {
         nodeId: node.nodeId,
         title: node.title,
         path: node.path,
-        score: similarity,
-        reasons: [`${(similarity * 100).toFixed(0)}% similar to focus note`],
+        score: finalScore,
+        reasons,
         layer: 'B' as const,
         isInView: false,
         signals: {
-          semantic: similarity,
+          semantic: vecScore,
+          lexical: kwScore > 0 ? kwScore : undefined,
         },
       };
     })
@@ -378,6 +461,132 @@ function cosineSimilarity(a: number[], b: number[]): number {
 
   if (normA === 0 || normB === 0) return 0;
   return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
+/**
+ * Tokenize text into normalized terms for keyword matching.
+ * Removes common stopwords and short terms.
+ */
+function tokenize(text: string): Set<string> {
+  const stopwords = new Set([
+    'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
+    'of', 'with', 'by', 'from', 'as', 'is', 'was', 'are', 'were', 'been',
+    'be', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
+    'should', 'may', 'might', 'must', 'shall', 'can', 'need', 'dare', 'ought',
+    'this', 'that', 'these', 'those', 'it', 'its', 'my', 'your', 'his', 'her',
+    'their', 'our', 'we', 'you', 'he', 'she', 'they', 'them', 'us', 'me',
+  ]);
+
+  return new Set(
+    text
+      .toLowerCase()
+      .replace(/[^\w\s-]/g, ' ')  // Keep alphanumeric, spaces, hyphens
+      .split(/\s+/)
+      .filter(term => term.length >= 3 && !stopwords.has(term))
+  );
+}
+
+/**
+ * Compute keyword overlap score between two texts.
+ * Returns a value between 0 and 1 based on Jaccard-like similarity.
+ */
+function keywordScore(focusTokens: Set<string>, candidateTokens: Set<string>): {
+  score: number;
+  matchedTerms: string[];
+} {
+  if (focusTokens.size === 0 || candidateTokens.size === 0) {
+    return { score: 0, matchedTerms: [] };
+  }
+
+  const matchedTerms: string[] = [];
+  for (const term of focusTokens) {
+    if (candidateTokens.has(term)) {
+      matchedTerms.push(term);
+    }
+  }
+
+  // Jaccard-like: matches / (union size - matches + epsilon)
+  // But we weight by focus terms since that's what we're searching from
+  const score = matchedTerms.length / focusTokens.size;
+
+  return { score: Math.min(1, score), matchedTerms };
+}
+
+/**
+ * Apply statistical grouping to scored results.
+ * Uses mean + k*sigma threshold to identify natural group boundaries.
+ *
+ * @param results - Array of items with a score property, sorted descending by score
+ * @param config - Grouping configuration
+ * @param mode - 'strong' returns first group only, 'weak' returns up to 2 groups
+ * @returns Indices of boundaries (positions where groups should be cut)
+ */
+export function findGroupBoundaries<T extends { score: number }>(
+  results: T[],
+  config: GroupingConfig
+): number[] {
+  if (!config.enabled || results.length <= 1) {
+    return [];
+  }
+
+  // Calculate gaps between consecutive results (assumes sorted desc by score)
+  const gaps: { index: number; gap: number }[] = [];
+  for (let i = 0; i < results.length - 1; i++) {
+    const gap = results[i].score - results[i + 1].score;
+    gaps.push({ index: i + 1, gap });
+  }
+
+  if (gaps.length === 0) {
+    return [];
+  }
+
+  // Calculate statistical threshold
+  const gapValues = gaps.map(g => g.gap);
+  const mean = gapValues.reduce((a, b) => a + b, 0) / gapValues.length;
+  const variance = gapValues.reduce((a, b) => a + (b - mean) ** 2, 0) / gapValues.length;
+  const std = Math.sqrt(variance);
+
+  // Find boundaries using strong threshold (mean + kStrong * std)
+  // Add small epsilon for floating point tolerance
+  const epsilon = 1e-10;
+  const strongThreshold = mean + config.kStrong * std + epsilon;
+
+  const boundaries = gaps
+    .filter(g => g.gap > strongThreshold)
+    .map(g => g.index);
+
+  return boundaries;
+}
+
+/**
+ * Apply grouping to results, returning only the top group(s).
+ *
+ * @param results - Array sorted descending by score
+ * @param config - Grouping configuration
+ * @param maxGroups - Maximum number of groups to return (1 for strong, 2 for weak)
+ * @returns Filtered array containing only the top group(s)
+ */
+export function applyGrouping<T extends { score: number }>(
+  results: T[],
+  config: GroupingConfig,
+  maxGroups: number = 1
+): T[] {
+  if (!config.enabled || results.length <= 1) {
+    return results;
+  }
+
+  const boundaries = findGroupBoundaries(results, config);
+
+  if (boundaries.length === 0) {
+    return results; // No natural boundaries found, return all
+  }
+
+  // Determine cutoff based on maxGroups
+  const cutoffIndex = maxGroups <= boundaries.length
+    ? boundaries[maxGroups - 1]
+    : results.length; // Not enough boundaries, return all
+
+  return results.slice(0, cutoffIndex);
 }
 
 // ============================================================================
