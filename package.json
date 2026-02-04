@@ -1,6 +1,6 @@
 {
   "name": "zettelscript",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Graph-first knowledge management system combining Zettelkasten-style notes, GraphRAG retrieval, and manuscript continuity tracking",
   "type": "module",
   "engines": {
