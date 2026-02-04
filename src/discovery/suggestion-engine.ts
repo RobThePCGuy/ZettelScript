@@ -73,7 +73,7 @@ export class SuggestionEngine {
   private config: SuggestionConfig;
 
   constructor(
-    private nodeRepository: NodeRepository,
+    _nodeRepository: NodeRepository,
     private edgeRepository: EdgeRepository,
     private mentionRepository: MentionRepository,
     private embeddingRepository: EmbeddingRepository,
@@ -193,8 +193,8 @@ export class SuggestionEngine {
     // Compare all pairs within scope
     for (let i = 0; i < embeddings.length; i++) {
       for (let j = i + 1; j < embeddings.length; j++) {
-        const e1 = embeddings[i];
-        const e2 = embeddings[j];
+        const e1 = embeddings[i]!;
+        const e2 = embeddings[j]!;
 
         // Skip if already connected by Layer A
         if (this.isAlreadyConnected(e1.nodeId, e2.nodeId, existingLayerA)) {
@@ -378,9 +378,9 @@ function cosineSimilarity(a: number[], b: number[]): number {
   let normB = 0;
 
   for (let i = 0; i < a.length; i++) {
-    dotProduct += a[i] * b[i];
-    normA += a[i] * a[i];
-    normB += b[i] * b[i];
+    dotProduct += a[i]! * b[i]!;
+    normA += a[i]! * a[i]!;
+    normB += b[i]! * b[i]!;
   }
 
   if (normA === 0 || normB === 0) return 0;
@@ -576,9 +576,10 @@ export class OrphanEngine {
 
     // Calculate percentiles and severity
     for (let i = 0; i < entries.length; i++) {
+      const entry = entries[i]!;
       const percentile = ((entries.length - i) / entries.length) * 100;
-      entries[i].percentile = Math.round(percentile);
-      entries[i].severity = percentile >= 75 ? 'high' : percentile >= 50 ? 'med' : 'low';
+      entry.percentile = Math.round(percentile);
+      entry.severity = percentile >= 75 ? 'high' : percentile >= 50 ? 'med' : 'low';
     }
 
     // Filter by min score and limit

@@ -250,7 +250,7 @@ export function assembleFocusBundle(input: FocusBundleInput): FocusBundle {
     title: node.title,
     path: node.path,
     type: node.type,
-    updatedAtMs: node.updatedAt ? new Date(node.updatedAt).getTime() : undefined,
+    ...(node.updatedAt !== undefined && { updatedAtMs: new Date(node.updatedAt).getTime() }),
     isGhost: node.isGhost || false,
     degreeA: degreesA.get(node.nodeId) || 0,
     degreeB: degreesB.get(node.nodeId) || 0,
@@ -265,8 +265,8 @@ export function assembleFocusBundle(input: FocusBundleInput): FocusBundle {
     type: edge.edgeType,
     status: 'truth' as const,
     layer: getEdgeLayer(edge.edgeType as EdgeType) as 'A' | 'B' | 'C',
-    confidence: edge.strength,
-    provenance: edge.provenance,
+    ...(edge.strength !== undefined && { confidence: edge.strength }),
+    ...(edge.provenance !== undefined && { provenance: edge.provenance }),
   }));
 
   // Build node lookup for titles
@@ -307,15 +307,16 @@ export function assembleFocusBundle(input: FocusBundleInput): FocusBundle {
         reasons: (ce.reasons || []).slice(0, SUGGESTION_CAPS.reasonsPerSuggestion),
         source,
         status: ce.status,
-        signals: ce.signals || {},
-        provenance:
-          ce.provenance && ce.provenance.length > 0
-            ? {
-                model: ce.provenance[0].model,
-                excerpt: ce.provenance[0].excerpt?.slice(0, SUGGESTION_CAPS.excerptMaxLength),
-                createdAt: ce.provenance[0].createdAt,
-              }
-            : undefined,
+        signals: ce.signals ?? {},
+        ...(ce.provenance && ce.provenance.length > 0 && ce.provenance[0] !== undefined
+          ? {
+              provenance: {
+                ...(ce.provenance[0].model !== undefined && { model: ce.provenance[0].model }),
+                ...(ce.provenance[0].excerpt !== undefined && { excerpt: ce.provenance[0].excerpt.slice(0, SUGGESTION_CAPS.excerptMaxLength) }),
+                ...(ce.provenance[0].createdAt !== undefined && { createdAt: ce.provenance[0].createdAt }),
+              },
+            }
+          : {}),
       };
     })
     // Sort by confidence desc, then title
@@ -462,7 +463,7 @@ function buildHealthSummary(
       missingInView,
       pending: stats.embeddings.pending,
       errors: stats.embeddings.errorCount,
-      lastError: stats.embeddings.lastError,
+      ...(stats.embeddings.lastError !== undefined && { lastError: stats.embeddings.lastError }),
     },
 
     wormholes: {
@@ -470,18 +471,18 @@ function buildHealthSummary(
       level: wormholeLevel,
       countInView: wormholesInView,
       threshold: stats.wormholes.threshold,
-      disabledReason: stats.wormholes.disabledReason,
+      ...(stats.wormholes.disabledReason !== undefined && { disabledReason: stats.wormholes.disabledReason }),
     },
 
     index: {
-      lastRunAt: stats.index.lastIndexTime?.toISOString(),
+      ...(stats.index.lastIndexTime !== undefined && { lastRunAt: stats.index.lastIndexTime.toISOString() }),
       nodeCount: stats.index.nodeCount,
       edgeCountsByLayer,
     },
 
     extraction: {
       parseFailures: stats.extraction.parseFailCount,
-      badChunksPath: stats.extraction.badChunksPath,
+      ...(stats.extraction.badChunksPath !== undefined && { badChunksPath: stats.extraction.badChunksPath }),
     },
   };
 }

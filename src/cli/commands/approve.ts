@@ -95,7 +95,8 @@ async function insertWikilink(
       linksSectionFound = true;
       // Find end of this section (next heading or end of file)
       for (let j = i + 1; j < lines.length; j++) {
-        if (lines[j] && /^##?\s/.test(lines[j])) {
+        const lineJ = lines[j];
+        if (lineJ && /^##?\s/.test(lineJ)) {
           insertionIndex = j;
           break;
         }
@@ -175,7 +176,7 @@ export const approveCommand = new Command('approve')
         // Generate suggestionId from components
         const edgeType = options.type as EdgeType;
         const isUndirected = isUndirectedEdgeType(edgeType);
-        suggestionId = generateSuggestionId(options.from, options.to, edgeType, isUndirected);
+        suggestionId = generateSuggestionId(options.from as string, options.to as string, edgeType, isUndirected);
       } else {
         response.error = 'Must provide --suggestion-id or both --from and --to';
         response.errorCode = 'INVALID_ARGS';
@@ -211,7 +212,9 @@ export const approveCommand = new Command('approve')
         response.fromId = candidate.fromId;
         response.toId = candidate.toId;
         response.edgeType = candidate.suggestedEdgeType;
-        response.edgeId = candidate.approvedEdgeId;
+        if (candidate.approvedEdgeId !== undefined) {
+          response.edgeId = candidate.approvedEdgeId;
+        }
 
         if (options.json) {
           outputJson();
@@ -245,7 +248,7 @@ export const approveCommand = new Command('approve')
         targetId: candidate.toId,
         edgeType: candidate.suggestedEdgeType,
         provenance: 'user_approved',
-        strength: candidate.signals?.semantic,
+        ...(candidate.signals?.semantic !== undefined && { strength: candidate.signals.semantic }),
       });
 
       await ctx.candidateEdgeRepository.updateStatus(suggestionId, 'approved', truthEdge.edgeId);
@@ -253,9 +256,9 @@ export const approveCommand = new Command('approve')
       response.success = true;
       response.suggestionId = suggestionId;
       response.fromId = candidate.fromId;
-      response.fromTitle = fromNode?.title;
+      if (fromNode) response.fromTitle = fromNode.title;
       response.toId = candidate.toId;
-      response.toTitle = toNode?.title;
+      if (toNode) response.toTitle = toNode.title;
       response.edgeId = truthEdge.edgeId;
       response.edgeType = candidate.suggestedEdgeType;
 
@@ -269,13 +272,13 @@ export const approveCommand = new Command('approve')
         );
 
         response.writeback = writebackResult.status;
-        response.writebackReason = writebackResult.reason;
-        response.writebackPath = writebackResult.path;
+        if (writebackResult.reason !== undefined) response.writebackReason = writebackResult.reason;
+        if (writebackResult.path !== undefined) response.writebackPath = writebackResult.path;
 
         // Record writeback status
         await ctx.candidateEdgeRepository.update(suggestionId, {
           writebackStatus: writebackResult.status,
-          writebackReason: writebackResult.reason,
+          ...(writebackResult.reason !== undefined && { writebackReason: writebackResult.reason }),
         });
 
         // Writeback failure is a warning, not failure

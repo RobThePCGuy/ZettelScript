@@ -110,9 +110,9 @@ export const rejectCommand = new Command('reject')
       response.success = true;
       response.suggestionId = suggestionId;
       response.fromId = candidate.fromId;
-      response.fromTitle = fromNode?.title;
+      if (fromNode) response.fromTitle = fromNode.title;
       response.toId = candidate.toId;
-      response.toTitle = toNode?.title;
+      if (toNode) response.toTitle = toNode.title;
       response.edgeType = candidate.suggestedEdgeType;
 
       if (options.json) {

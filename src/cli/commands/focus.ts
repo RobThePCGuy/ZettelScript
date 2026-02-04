@@ -89,11 +89,11 @@ async function resolveTargetNode(ctx: CLIContext, target?: string): Promise<Node
 
     // Try as title
     const byTitle = await nodeRepository.findByTitle(target);
-    if (byTitle.length > 0) return byTitle[0];
+    if (byTitle.length > 0) return byTitle[0]!;
 
     // Try as alias
     const byAlias = await nodeRepository.findByTitleOrAlias(target);
-    if (byAlias.length > 0) return byAlias[0];
+    if (byAlias.length > 0) return byAlias[0]!;
 
     // Try as node ID
     node = await nodeRepository.findById(target);
@@ -114,7 +114,7 @@ async function resolveTargetNode(ctx: CLIContext, target?: string): Promise<Node
     return bTime - aTime;
   });
 
-  const mostRecent = nodes[0];
+  const mostRecent = nodes[0]!;
 
   // 2. Check last focused node
   const state = loadFocusState(vaultPath);
@@ -248,7 +248,7 @@ function subgraphToGraphData(
     color: nodeColors[n.type] || '#94a3b8',
     path: n.path,
     metadata: (n.metadata as Record<string, unknown>) || {},
-    updatedAtMs: n.updatedAt ? new Date(n.updatedAt).getTime() : undefined,
+    ...(n.updatedAt ? { updatedAtMs: new Date(n.updatedAt).getTime() } : {}),
   }));
 
   const graphLinks: GraphLink[] = edges.map((e) => ({
@@ -318,14 +318,14 @@ async function computeRelatedNotes(
   if (focusNodes.length === 0) {
     return [];
   }
-  const focusNode = focusNodes[0];
+  const focusNode = focusNodes[0]!;
 
   const focusEmbeddings = await embeddingRepository.findByNodeIds([focusNodeId]);
   if (focusEmbeddings.length === 0) {
     return [];
   }
 
-  const focusEmbedding = focusEmbeddings[0].embedding;
+  const focusEmbedding = focusEmbeddings[0]!.embedding;
   const nodeIdsInView = new Set(nodesInView.map((n) => n.nodeId));
 
   // Get all embeddings to find related notes (fetch 2x for reranking)
@@ -395,7 +395,7 @@ async function computeRelatedNotes(
 
   // Build RelatedNote objects with hybrid signals
   return top
-    .map(({ nodeId, vecScore, kwScore, finalScore, matchedTerms }) => {
+    .map(({ nodeId, vecScore, kwScore, finalScore, matchedTerms }): RelatedNote | null => {
       const node = nodeMap.get(nodeId);
       if (!node) return null;
 
@@ -418,7 +418,7 @@ async function computeRelatedNotes(
         isInView: false,
         signals: {
           semantic: vecScore,
-          lexical: kwScore > 0 ? kwScore : undefined,
+          ...(kwScore > 0 ? { lexical: kwScore } : {}),
         },
       };
     })
@@ -436,9 +436,9 @@ function cosineSimilarity(a: number[], b: number[]): number {
   let normB = 0;
 
   for (let i = 0; i < a.length; i++) {
-    dot += a[i] * b[i];
-    normA += a[i] * a[i];
-    normB += b[i] * b[i];
+    dot += a[i]! * b[i]!;
+    normA += a[i]! * a[i]!;
+    normB += b[i]! * b[i]!;
   }
 
   if (normA === 0 || normB === 0) return 0;
@@ -571,7 +571,7 @@ export function findGroupBoundaries<T extends { score: number }>(
   // Calculate gaps between consecutive results (assumes sorted desc by score)
   const gaps: { index: number; gap: number }[] = [];
   for (let i = 0; i < results.length - 1; i++) {
-    const gap = results[i].score - results[i + 1].score;
+    const gap = results[i]!.score - results[i + 1]!.score;
     gaps.push({ index: i + 1, gap });
   }
 
@@ -619,7 +619,7 @@ export function applyGrouping<T extends { score: number }>(
   }
 
   // Determine cutoff based on maxGroups
-  const cutoffIndex = maxGroups <= boundaries.length ? boundaries[maxGroups - 1] : results.length; // Not enough boundaries, return all
+  const cutoffIndex = maxGroups <= boundaries.length ? boundaries[maxGroups - 1]! : results.length; // Not enough boundaries, return all
 
   return results.slice(0, cutoffIndex);
 }

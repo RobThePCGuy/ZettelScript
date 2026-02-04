@@ -205,16 +205,16 @@ export async function computeDoctorStats(ctx: CLIContext): Promise<DoctorStats> 
       coverage: embeddingCoverage,
       pending: pendingEmbeddings.length,
       errorCount: getCircuitBreaker().getStatus('embeddings').totalFailures,
-      model: embeddingModel,
+      ...(embeddingModel !== undefined && { model: embeddingModel }),
     },
     wormholes: {
       enabled: !wormholeDisabledReason,
       count: wormholeCount,
       threshold: wormholeThreshold,
-      disabledReason: wormholeDisabledReason,
+      ...(wormholeDisabledReason !== undefined && { disabledReason: wormholeDisabledReason }),
     },
     extraction: {
-      badChunksPath: parseFailCount > 0 ? badChunksPath : undefined,
+      ...(parseFailCount > 0 && { badChunksPath }),
       parseFailCount,
     },
     visualization: {
