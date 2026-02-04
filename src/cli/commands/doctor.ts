@@ -1,10 +1,33 @@
 import { Command } from 'commander';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { dirname } from 'node:path';
 import { initContext, getZettelScriptDir, getDbPath } from '../utils.js';
 import type { CLIContext } from '../utils.js';
 import { getEdgeLayer, type EdgeType } from '../../core/types/index.js';
 import { getCircuitBreaker, CircuitState } from '../../core/circuit-breaker.js';
+
+// ============================================================================
+// Version from package.json
+// ============================================================================
+
+export function getVersionFromPath(packageJsonPath: string): string {
+  try {
+    const content = fs.readFileSync(packageJsonPath, 'utf-8');
+    const pkg = JSON.parse(content) as { version?: string };
+    return pkg.version ?? 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
+export function getVersion(): string {
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = dirname(__filename);
+  const packageJsonPath = path.join(__dirname, '..', '..', '..', 'package.json');
+  return getVersionFromPath(packageJsonPath);
+}
 
 // ============================================================================
 // Health Status Types (reusable by Atlas and other commands)
@@ -165,7 +188,7 @@ export async function computeDoctorStats(ctx: CLIContext): Promise<DoctorStats> 
   }
 
   return {
-    version: '0.4.1', // TODO: read from package.json
+    version: getVersion(),
     vaultPath,
     overallLevel,
     index: {
