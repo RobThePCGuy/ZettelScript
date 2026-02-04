@@ -99,7 +99,11 @@ export function loadConfig(vaultPath: string): ZettelScriptConfig {
       visualization: { ...DEFAULT_CONFIG.visualization, ...userConfig.visualization },
     };
   } catch (error) {
-    console.warn(`Warning: Could not parse config file: ${error}`);
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.warn(
+      `Warning: Could not parse config file at ${configPath}: ${errorMsg}. ` +
+      `Using defaults. Run "zs init --force" to regenerate.`
+    );
     return { ...DEFAULT_CONFIG, vault: { ...DEFAULT_CONFIG.vault, path: vaultPath } };
   }
 }
