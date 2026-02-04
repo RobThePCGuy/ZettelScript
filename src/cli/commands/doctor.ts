@@ -204,7 +204,7 @@ export async function computeDoctorStats(ctx: CLIContext): Promise<DoctorStats> 
       embedded: embeddingCount,
       coverage: embeddingCoverage,
       pending: pendingEmbeddings.length,
-      errorCount: 0, // TODO: track embedding errors
+      errorCount: getCircuitBreaker().getStatus('embeddings').totalFailures,
       model: embeddingModel,
     },
     wormholes: {

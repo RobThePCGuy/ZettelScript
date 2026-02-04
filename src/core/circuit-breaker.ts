@@ -30,6 +30,7 @@ export interface CircuitBreakerConfig {
 export interface CircuitStatus {
   state: CircuitState;
   failureCount: number;
+  totalFailures: number;
   lastFailure: Date | null;
   lastError: string | null;
   cooldownRemainingMs: number | null;
@@ -37,6 +38,7 @@ export interface CircuitStatus {
 
 interface SubsystemState {
   failureCount: number;
+  totalFailures: number;
   lastFailure: number | null;
   lastError: string | null;
   recoveryInProgress: boolean;
@@ -53,6 +55,7 @@ const DEFAULT_CONFIG: CircuitBreakerConfig = {
 class SubsystemBreaker {
   private state: SubsystemState = {
     failureCount: 0,
+    totalFailures: 0,
     lastFailure: null,
     lastError: null,
     recoveryInProgress: false,
@@ -112,6 +115,7 @@ class SubsystemBreaker {
    */
   recordFailure(error: Error): void {
     this.state.failureCount++;
+    this.state.totalFailures++;
     this.state.lastFailure = Date.now();
     this.state.lastError = error.message;
     this.state.recoveryInProgress = false;
@@ -160,6 +164,7 @@ class SubsystemBreaker {
     return {
       state,
       failureCount: this.state.failureCount,
+      totalFailures: this.state.totalFailures,
       lastFailure: this.state.lastFailure ? new Date(this.state.lastFailure) : null,
       lastError: this.state.lastError,
       cooldownRemainingMs,
@@ -172,6 +177,7 @@ class SubsystemBreaker {
   reset(): void {
     this.state = {
       failureCount: 0,
+      totalFailures: 0,
       lastFailure: null,
       lastError: null,
       recoveryInProgress: false,

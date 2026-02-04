@@ -327,4 +327,38 @@ describe('CircuitBreaker', () => {
       vi.useRealTimers();
     });
   });
+
+  describe('error counting', () => {
+    it('should track cumulative error count', () => {
+      const error = new Error('API failure');
+
+      breaker.recordFailure('embeddings', error);
+      expect(breaker.getStatus('embeddings').totalFailures).toBe(1);
+
+      breaker.recordFailure('embeddings', error);
+      expect(breaker.getStatus('embeddings').totalFailures).toBe(2);
+    });
+
+    it('should not reset total failures on success', () => {
+      const error = new Error('API failure');
+
+      breaker.recordFailure('embeddings', error);
+      breaker.recordFailure('embeddings', error);
+      breaker.recordSuccess('embeddings');
+
+      // Consecutive failures reset, but total stays
+      expect(breaker.getStatus('embeddings').failureCount).toBe(0);
+      expect(breaker.getStatus('embeddings').totalFailures).toBe(2);
+    });
+
+    it('should reset total failures on manual reset', () => {
+      const error = new Error('API failure');
+
+      breaker.recordFailure('embeddings', error);
+      breaker.recordFailure('embeddings', error);
+      breaker.reset('embeddings');
+
+      expect(breaker.getStatus('embeddings').totalFailures).toBe(0);
+    });
+  });
 });
