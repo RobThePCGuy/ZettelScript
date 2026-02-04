@@ -18,6 +18,8 @@ import { constellationCommand } from './commands/constellation.js';
 import { embedCommand } from './commands/embed.js';
 import { wormholeCommand } from './commands/wormhole.js';
 import { pathCommand } from './commands/path.js';
+import { doctorCommand } from './commands/doctor.js';
+import { focusCommand } from './commands/focus.js';
 
 const program = new Command();
 
@@ -44,6 +46,8 @@ program.addCommand(constellationCommand);
 program.addCommand(embedCommand);
 program.addCommand(wormholeCommand);
 program.addCommand(pathCommand);
+program.addCommand(doctorCommand);
+program.addCommand(focusCommand);
 
 // Parse arguments
 program.parse();

@@ -7,6 +7,8 @@ import { initContext, getZettelScriptDir, printTable } from '../utils.js';
 import type { Constellation } from '../../storage/database/repositories/index.js';
 import { createVisualizeServer, type VisualizeServer } from '../server/visualize-server.js';
 import { PROTOCOL_VERSION } from '../server/ws-protocol.js';
+import { shouldRenderEdge, type EdgeType } from '../../core/types/index.js';
+import { computeDoctorStats, type DoctorStats } from './doctor.js';
 
 // Node type colors (Modern Palette)
 export const typeColors: Record<string, string> = {
@@ -93,11 +95,13 @@ export function generateVisualizationHtml(
   nodeTypeColors: Record<string, string>,
   constellation?: Constellation | null,
   pathData?: PathData | null,
-  wsConfig?: WebSocketConfig | null
+  wsConfig?: WebSocketConfig | null,
+  statusData?: DoctorStats | null
 ): string {
   const constellationState = constellation ? JSON.stringify(constellation) : 'null';
   const pathDataJson = pathData ? JSON.stringify(pathData) : 'null';
   const wsConfigJson = wsConfig ? JSON.stringify(wsConfig) : 'null';
+  const statusDataJson = statusData ? JSON.stringify(statusData) : 'null';
   return `
 <!DOCTYPE html>
 <html lang="en">
@@ -816,6 +820,124 @@ export function generateVisualizationHtml(
       background: rgba(56, 189, 248, 0.3);
     }
 
+    /* Health Status Panel */
+    #status-panel {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      min-width: 200px;
+      max-width: 300px;
+      z-index: 1000;
+    }
+    #status-panel .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: pointer;
+      padding: 8px 12px;
+      border-radius: 8px;
+      background: var(--panel-bg);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+    }
+    #status-panel .panel-header:hover {
+      background: rgba(30, 41, 59, 0.9);
+    }
+    #status-panel .panel-content {
+      margin-top: 8px;
+      padding: 12px;
+      border-radius: 8px;
+      background: var(--panel-bg);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      display: none;
+    }
+    #status-panel.expanded .panel-content {
+      display: block;
+    }
+    #status-panel .status-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+      font-size: 0.85rem;
+    }
+    #status-panel .status-row:last-child {
+      margin-bottom: 0;
+    }
+    #status-panel .status-label {
+      color: var(--text-muted);
+    }
+    #status-panel .status-value {
+      font-weight: 500;
+    }
+    #status-panel .status-ok { color: #34d399; }
+    #status-panel .status-warn { color: #fbbf24; }
+    #status-panel .status-fail { color: #f87171; }
+    #status-panel .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    #status-panel .badge-ok {
+      background: rgba(52, 211, 153, 0.2);
+      color: #34d399;
+    }
+    #status-panel .badge-warn {
+      background: rgba(251, 191, 36, 0.2);
+      color: #fbbf24;
+    }
+    #status-panel .badge-fail {
+      background: rgba(248, 113, 113, 0.2);
+      color: #f87171;
+    }
+    #status-panel .mode-toggle {
+      display: flex;
+      gap: 4px;
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+    }
+    #status-panel .mode-btn {
+      flex: 1;
+      padding: 6px 12px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 0.8rem;
+      transition: all 0.2s;
+    }
+    #status-panel .mode-btn:hover {
+      background: rgba(56, 189, 248, 0.1);
+      color: var(--text-main);
+    }
+    #status-panel .mode-btn.active {
+      background: rgba(56, 189, 248, 0.2);
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+    #status-panel .help-link {
+      display: block;
+      margin-top: 12px;
+      padding-top: 8px;
+      border-top: 1px solid var(--border);
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      text-decoration: none;
+    }
+    #status-panel .help-link code {
+      background: rgba(0,0,0,0.3);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: monospace;
+    }
+
     /* WebSocket Status Indicator */
     .ws-status {
       position: fixed;
@@ -838,6 +960,70 @@ export function generateVisualizationHtml(
     .ws-status.error {
       background: #f87171;
       box-shadow: 0 0 8px #f87171;
+    }
+
+    /* Upgrade Banner */
+    #upgrade-banner {
+      position: fixed;
+      top: 80px;
+      left: 50%;
+      transform: translateX(-50%);
+      max-width: 500px;
+      padding: 16px 20px;
+      background: rgba(56, 189, 248, 0.1);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      border-radius: 12px;
+      z-index: 1002;
+      display: none;
+    }
+    #upgrade-banner.show {
+      display: block;
+      animation: slideDown 0.3s ease;
+    }
+    @keyframes slideDown {
+      from { opacity: 0; transform: translateX(-50%) translateY(-20px); }
+      to { opacity: 1; transform: translateX(-50%) translateY(0); }
+    }
+    #upgrade-banner h3 {
+      margin: 0 0 8px 0;
+      font-size: 1rem;
+      color: var(--accent);
+    }
+    #upgrade-banner p {
+      margin: 0 0 12px 0;
+      font-size: 0.9rem;
+      color: var(--text-main);
+      line-height: 1.4;
+    }
+    #upgrade-banner .banner-actions {
+      display: flex;
+      gap: 8px;
+    }
+    #upgrade-banner .banner-btn {
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    #upgrade-banner .banner-btn-primary {
+      background: var(--accent);
+      color: var(--bg);
+      border: none;
+      font-weight: 600;
+    }
+    #upgrade-banner .banner-btn-primary:hover {
+      background: #7dd3fc;
+    }
+    #upgrade-banner .banner-btn-secondary {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+    }
+    #upgrade-banner .banner-btn-secondary:hover {
+      border-color: var(--text-main);
+      color: var(--text-main);
     }
 
     /* Toast Notifications */
@@ -1018,6 +1204,51 @@ export function generateVisualizationHtml(
     </div>
   </div>
 
+  <!-- Upgrade Banner (first-run) -->
+  <div id="upgrade-banner">
+    <h3>New: Focus-first view</h3>
+    <p>Suggestion edges (mentions, pending wormholes) are now hidden by default for a cleaner graph. Toggle <strong>Classic mode</strong> in the Status panel to see all edges.</p>
+    <div class="banner-actions">
+      <button class="banner-btn banner-btn-secondary" onclick="dismissUpgradeBanner()">Got it</button>
+      <button class="banner-btn banner-btn-primary" onclick="switchToClassicFromBanner()">Switch to Classic</button>
+    </div>
+  </div>
+
+  <!-- Health Status Panel -->
+  <div id="status-panel" class="panel">
+    <div class="panel-header" onclick="toggleStatusPanel()">
+      <span id="status-header-text">Status</span>
+      <span id="status-toggle-icon">▼</span>
+    </div>
+    <div class="panel-content">
+      <div class="status-row">
+        <span class="status-label">Mode</span>
+        <span id="status-mode" class="status-value"></span>
+      </div>
+      <div class="status-row">
+        <span class="status-label">Nodes</span>
+        <span id="status-nodes" class="status-value"></span>
+      </div>
+      <div class="status-row">
+        <span class="status-label">Edges</span>
+        <span id="status-edges" class="status-value"></span>
+      </div>
+      <div class="status-row">
+        <span class="status-label">Embeddings</span>
+        <span id="status-embeddings" class="status-value"></span>
+      </div>
+      <div class="status-row">
+        <span class="status-label">Wormholes</span>
+        <span id="status-wormholes" class="status-value"></span>
+      </div>
+      <div class="mode-toggle">
+        <button id="mode-focus-btn" class="mode-btn" onclick="setVisualizationMode('focus')">Focus</button>
+        <button id="mode-classic-btn" class="mode-btn" onclick="setVisualizationMode('classic')">Classic</button>
+      </div>
+      <span class="help-link">Run <code>zs doctor</code> for details</span>
+    </div>
+  </div>
+
   <!-- WebSocket Status Indicator -->
   <div id="ws-status" class="ws-status disconnected" title="Disconnected"></div>
 
@@ -1028,6 +1259,117 @@ export function generateVisualizationHtml(
     const loadedConstellation = ${constellationState};
     const pathData = ${pathDataJson};
     const wsConfig = ${wsConfigJson};
+    const statusData = ${statusDataJson};
+
+    // Status panel state
+    let statusPanelExpanded = false;
+
+    function toggleStatusPanel() {
+      const panel = document.getElementById('status-panel');
+      const icon = document.getElementById('status-toggle-icon');
+      statusPanelExpanded = !statusPanelExpanded;
+      panel.classList.toggle('expanded', statusPanelExpanded);
+      icon.textContent = statusPanelExpanded ? '▲' : '▼';
+    }
+
+    function updateStatusPanel() {
+      if (!statusData) {
+        document.getElementById('status-panel').style.display = 'none';
+        return;
+      }
+
+      // Mode
+      document.getElementById('status-mode').textContent = statusData.visualization.mode;
+
+      // Nodes/Edges
+      document.getElementById('status-nodes').textContent = statusData.index.nodeCount;
+      const { A, B, C } = statusData.index.edgesByLayer;
+      const hiddenCount = statusData.visualization.totalEdgeCount - statusData.visualization.filteredEdgeCount;
+      document.getElementById('status-edges').innerHTML =
+        statusData.visualization.mode === 'focus' && hiddenCount > 0
+          ? \`\${statusData.visualization.filteredEdgeCount} <span style="color:var(--text-muted)">(\${hiddenCount} hidden)</span>\`
+          : statusData.index.edgeCount;
+
+      // Embeddings
+      const embEl = document.getElementById('status-embeddings');
+      const embLevel = statusData.embeddings.level;
+      const embPct = statusData.embeddings.coverage.toFixed(0);
+      const badgeClass = embLevel === 'ok' ? 'badge-ok' : embLevel === 'warn' ? 'badge-warn' : 'badge-fail';
+      embEl.innerHTML = \`<span class="status-badge \${badgeClass}">\${embLevel.toUpperCase()} \${embPct}%</span>\`;
+
+      // Wormholes
+      const whEl = document.getElementById('status-wormholes');
+      if (statusData.wormholes.enabled) {
+        whEl.innerHTML = \`<span style="color:#34d399">\${statusData.wormholes.count} edges</span>\`;
+      } else {
+        whEl.innerHTML = \`<span style="color:#fbbf24">disabled</span>\`;
+      }
+
+      // Mode buttons
+      document.getElementById('mode-focus-btn').classList.toggle('active', statusData.visualization.mode === 'focus');
+      document.getElementById('mode-classic-btn').classList.toggle('active', statusData.visualization.mode === 'classic');
+
+      // Header badge
+      const headerText = document.getElementById('status-header-text');
+      if (embLevel === 'fail') {
+        headerText.innerHTML = 'Status <span class="status-badge badge-fail">!</span>';
+      } else if (embLevel === 'warn') {
+        headerText.innerHTML = 'Status <span class="status-badge badge-warn">!</span>';
+      } else {
+        headerText.textContent = 'Status';
+      }
+    }
+
+    function setVisualizationMode(mode) {
+      // Note: This just updates UI state. The actual mode switch requires
+      // re-running the visualize command with different config.
+      // Show a toast indicating how to switch modes
+      showToast(\`To switch to \${mode} mode, update config: visualization.mode: "\${mode}"\`, 'info', 5000);
+    }
+
+    // Initialize status panel on load
+    setTimeout(updateStatusPanel, 100);
+
+    // Upgrade banner logic
+    const UPGRADE_BANNER_KEY = 'zs-upgrade-banner-dismissed';
+    const CURRENT_VERSION = statusData ? statusData.version : '0.4.1';
+
+    function shouldShowUpgradeBanner() {
+      if (!statusData) return false;
+      if (statusData.visualization.mode !== 'focus') return false;
+
+      const dismissed = localStorage.getItem(UPGRADE_BANNER_KEY);
+      if (!dismissed) return true;
+
+      // Check if dismissed for older version
+      try {
+        const { version } = JSON.parse(dismissed);
+        // Simple version comparison - show if current is newer
+        return version !== CURRENT_VERSION;
+      } catch {
+        return true;
+      }
+    }
+
+    function dismissUpgradeBanner() {
+      localStorage.setItem(UPGRADE_BANNER_KEY, JSON.stringify({
+        version: CURRENT_VERSION,
+        dismissedAt: new Date().toISOString()
+      }));
+      document.getElementById('upgrade-banner').classList.remove('show');
+    }
+
+    function switchToClassicFromBanner() {
+      dismissUpgradeBanner();
+      showToast('To switch to Classic mode: edit .zettelscript/config.yaml → visualization.mode: "classic"', 'info', 6000);
+    }
+
+    // Show upgrade banner if conditions met
+    setTimeout(() => {
+      if (shouldShowUpgradeBanner()) {
+        document.getElementById('upgrade-banner').classList.add('show');
+      }
+    }, 500);
 
     // Pre-compute adjacency index for O(1) lookups
     const adjacency = {};
@@ -2927,7 +3269,19 @@ export const visualizeCommand = new Command('visualize')
           updatedAtMs: n.updatedAt ? new Date(n.updatedAt).getTime() : undefined,
         }));
 
-        const graphLinks: GraphLink[] = edges.map((e) => ({
+        // Filter edges based on visualization mode (focus vs classic)
+        const vizMode = ctx.config.visualization.mode;
+        const filteredEdges = edges.filter((e) =>
+          shouldRenderEdge(e.edgeType as EdgeType, vizMode)
+        );
+
+        if (vizMode === 'focus' && edges.length !== filteredEdges.length) {
+          console.log(
+            `Focus mode: showing ${filteredEdges.length}/${edges.length} edges (Layer C edges hidden)`
+          );
+        }
+
+        const graphLinks: GraphLink[] = filteredEdges.map((e) => ({
           source: e.sourceId,
           target: e.targetId,
           type: e.edgeType,
@@ -3067,16 +3421,20 @@ export const visualizeCommand = new Command('visualize')
           console.log(`Live updates enabled on port ${info.port}`);
         }
 
-        // 7. Generate HTML
+        // 7. Compute health stats for status panel
+        const statusData = await computeDoctorStats(ctx);
+
+        // 8. Generate HTML
         const htmlContent = generateVisualizationHtml(
           graphData,
           typeColors,
           constellation,
           computedPathData,
-          wsConfig
+          wsConfig,
+          statusData
         );
 
-        // 8. Write Output
+        // 9. Write Output
         const outputDir = options.output
           ? path.dirname(options.output)
           : getZettelScriptDir(ctx.vaultPath);
@@ -3090,13 +3448,13 @@ export const visualizeCommand = new Command('visualize')
 
         console.log(`\nGraph visualization generated at: ${outputPath}`);
 
-        // 9. Open Browser
+        // 10. Open Browser
         if (options.open) {
           console.log('Opening in default browser...');
           await open(outputPath);
         }
 
-        // 10. Keep process alive if live mode, otherwise close
+        // 11. Keep process alive if live mode, otherwise close
         if (options.live && wsServer) {
           console.log('\nLive mode active. Press Ctrl+C to stop.');
 

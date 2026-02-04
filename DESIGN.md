@@ -29,27 +29,47 @@ When a user writes or thinks:
 - It suggests connections that can be accepted with one click.
 - It presents structure at the right level of abstraction (clusters/threads first, details on demand).
 
+### The one-minute test (definition of "value")
+
+Open a single note. Run one command (or let the plugin auto-run). Get a small, high-signal view that answers:
+- "What is this connected to?"
+- "What important thing is missing?"
+- "What should I read next?"
+
+If this takes more than one minute or requires multiple commands, v2 has failed.
+
+### Primary problems (prioritized)
+
+| Priority | Problem | Symptom |
+|----------|---------|---------|
+| **P0** | Workflow confusion | User must do extract→discover→approve→index→viz to see value |
+| **P1** | Edge spam (hairball) | Mention edges are not relationships but dominate the graph |
+| **P2** | Silent failure | Embeddings/wormholes fail quietly, user thinks tool is broken |
+| **P3** | No abstraction layer | Every edge drawn, every node shown, no clusters or summaries |
+| **P4** | No real-time loop | Changes require full rebuild, no live feedback while writing |
+
 ### Core principles
 
 1. **The editor is home**
    - The graph is a map, not a dashboard.
    - The default experience is "local neighborhood of the current note."
+   - Any feature that cannot surface value inside the editor is second priority.
 
-2. **Connections have meaning**
-   - Co-occurrence is not relationship.
-   - Mention edges are suggestions, not first-class truth.
+2. **Candidate vs approved**
+   - Signals (mentions, semantic similarity, heuristic guesses) are not edges by default.
+   - Approved edges are edges. Everything else is a suggestion.
 
-3. **Abstraction over exhaustion**
-   - Default view emphasizes clusters and threads.
-   - Full detail is available, but never the default.
+3. **Default to clarity over completeness**
+   - Show fewer, better connections.
+   - Everything else is discoverable, not always visible.
 
-4. **Silence is failure**
-   - Any failure to compute (embeddings, similarity, extraction) must be visible.
+4. **Loud failure**
+   - If a subsystem is degraded, the UI must say so and explain what to do.
    - Prefer loud warnings and status panels over quiet degradation.
 
 5. **One command, immediate value**
+   - A user should not need to learn 8 commands to get a useful view.
    - The primary path should not require multi-step rituals.
-   - A user should be able to run one command and get a useful view.
 
 ---
 
@@ -162,14 +182,55 @@ Output:
 
 ## 6. Real-time loop: the system must respond while writing
 
-### The loop
+### The value loop pipeline
 
-1. User edits a note
-2. System updates local index for that note (and affected neighbors)
-3. System recomputes suggestions (wormholes, mentions, orphan score)
-4. UI updates immediately (no refresh, no rebuild ritual)
-5. User accepts or rejects suggestions
-6. Accept writes back to markdown and patches the graph
+```
+Trigger: file modify (debounced) or CLI command
+    │
+    ▼
+┌─────────────────────────────────────────────────────────┐
+│ 1. Incremental index                                    │
+│    - Update node timestamps, outgoing links, backlinks  │
+└─────────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────────┐
+│ 2. Update embeddings (local-first)                      │
+│    - Compute embedding for changed note only            │
+│    - Circuit breaker if model fails                     │
+└─────────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────────┐
+│ 3. Discovery refresh (bounded)                          │
+│    - Mentions in changed note                           │
+│    - Semantic nearest neighbors for changed note        │
+└─────────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────────┐
+│ 4. Update candidate edges                               │
+│    - Add/update suggested edges                         │
+│    - Compute orphan scores                              │
+└─────────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────────┐
+│ 5. Push patches                                         │
+│    - To Atlas (WebSocket) for live update               │
+│    - To Obsidian panel (in-process) for suggestions     │
+└─────────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────────┐
+│ 6. User actions                                         │
+│    - Approve/reject suggestion                          │
+│    - Create ghost node note                             │
+│    - Open focus view for context                        │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Design constraint:** Any step can degrade, but must remain visible and not block basic indexing.
 
 ### Architectural requirement
 
@@ -194,6 +255,35 @@ This command:
 - Opens Atlas in focus mode (bounded expansion)
 - Shows suggestions and orphan backlog
 
+### Health and diagnostics
+
+```bash
+zs doctor
+```
+
+This command:
+- Shows embeddings coverage percentage
+- Shows extraction status and error count
+- Shows last index time
+- Lists errors with remediation steps
+- Links to `bad-chunks.jsonl` if extraction failed
+
+Example output:
+```
+ZettelScript Health Check
+─────────────────────────
+Embeddings:  127/134 nodes (95%) ✓
+Wormholes:   43 edges computed ✓
+Last index:  2 minutes ago ✓
+Extraction:  2 errors (see .zettelscript/bad-chunks.jsonl)
+
+⚠ 2 files failed entity extraction:
+  - chapters/chapter-03.md: JSON parse error
+  - entities/Kevin.md: Empty response from model
+
+Run: zs extract --retry-failed
+```
+
 ### Batch and maintenance commands (still exist)
 
 ```bash
@@ -203,6 +293,7 @@ zs wormhole compute
 zs discover          # mentions/candidates
 zs approve           # apply accepted suggestions
 zs visualize         # full export
+zs doctor            # health check
 ```
 
 But the default documentation and onboarding should lead with `zs focus`.
@@ -508,7 +599,49 @@ function shouldRenderEdge(edge, mode) {
 
 ---
 
-## Appendix C: Implementation references
+## Appendix C: Open decisions (to debate)
+
+These are design choices that have reasonable alternatives:
+
+### D1: Default embeddings engine
+- **Option A (chosen):** Local-first embeddings always on (Transformers.js)
+- Option B: Embeddings optional (safer for resources, weaker default experience)
+
+### D2: Suggestion approval policy
+- **Option A (chosen):** Always manual approval
+- Option B: Auto-approve above very high confidence threshold, with undo
+
+### D3: Candidate edge storage
+- **Option A (chosen):** Store in DB with status suggested/rejected/approved
+- Option B: Compute on the fly (less state, more compute)
+
+### D4: Atlas abstraction priority
+- Option A: Implement real cluster supernodes first
+- **Option B (chosen):** Implement "focus subgraph only" first, defer cluster UI to Phase 3
+
+### D5: Backward compatibility
+- **Option A (chosen):** v2 defaults are breaking (classic mode flag exists)
+- Option B: Preserve v1 behavior and require explicit v2 opt-in (slower adoption)
+
+---
+
+## Appendix D: Definitions
+
+| Term | Definition |
+|------|------------|
+| **Approved edge** | Durable, user-accepted meaning (Layer A or accepted Layer B) |
+| **Suggested edge** | Candidate connection surfaced for review (Layer C) |
+| **Mention** | Surface-level text match, not a relationship |
+| **Wormhole** | Semantic similarity candidate connection |
+| **Ghost** | Unresolved explicit wikilink target (missing note) |
+| **Orphan** | Low approved connectivity + high semantic pull |
+| **Focus view** | Bounded, high-signal context for one note |
+| **Truth graph** | Layer A + accepted Layer B edges |
+| **Candidate graph** | Layer C edges (suggestions, mentions, unresolved) |
+
+---
+
+## Appendix E: Implementation references
 
 The following sibling projects contain patterns and code that should be reused or adapted for v2.
 

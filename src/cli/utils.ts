@@ -91,6 +91,11 @@ export function loadConfig(vaultPath: string): ZettelScriptConfig {
       },
       cache: { ...DEFAULT_CONFIG.cache, ...userConfig.cache },
       impact: { ...DEFAULT_CONFIG.impact, ...userConfig.impact },
+      moc: { ...DEFAULT_CONFIG.moc, ...userConfig.moc },
+      versioning: { ...DEFAULT_CONFIG.versioning, ...userConfig.versioning },
+      search: { ...DEFAULT_CONFIG.search, ...userConfig.search },
+      llm: { ...DEFAULT_CONFIG.llm, ...userConfig.llm },
+      visualization: { ...DEFAULT_CONFIG.visualization, ...userConfig.visualization },
     };
   } catch (error) {
     console.warn(`Warning: Could not parse config file: ${error}`);
