@@ -9,6 +9,7 @@ import { createVisualizeServer, type VisualizeServer } from '../server/visualize
 import { PROTOCOL_VERSION } from '../server/ws-protocol.js';
 import { shouldRenderEdge, type EdgeType } from '../../core/types/index.js';
 import { computeDoctorStats, type DoctorStats } from './doctor.js';
+import type { FocusBundle } from '../../discovery/focus-bundle.js';
 
 // Node type colors (Modern Palette)
 export const typeColors: Record<string, string> = {
@@ -96,12 +97,14 @@ export function generateVisualizationHtml(
   constellation?: Constellation | null,
   pathData?: PathData | null,
   wsConfig?: WebSocketConfig | null,
-  statusData?: DoctorStats | null
+  statusData?: DoctorStats | null,
+  focusBundle?: FocusBundle | null
 ): string {
   const constellationState = constellation ? JSON.stringify(constellation) : 'null';
   const pathDataJson = pathData ? JSON.stringify(pathData) : 'null';
   const wsConfigJson = wsConfig ? JSON.stringify(wsConfig) : 'null';
   const statusDataJson = statusData ? JSON.stringify(statusData) : 'null';
+  const focusBundleJson = focusBundle ? JSON.stringify(focusBundle) : 'null';
   return `
 <!DOCTYPE html>
 <html lang="en">
@@ -1063,6 +1066,237 @@ export function generateVisualizationHtml(
       0%, 100% { opacity: 1; }
       50% { opacity: 0.5; }
     }
+
+    /* Suggestions Panel */
+    #suggestions-panel {
+      position: fixed;
+      top: 20px;
+      right: 350px;
+      width: 320px;
+      max-height: calc(100vh - 40px);
+      overflow-y: auto;
+      z-index: 100;
+    }
+    #suggestions-panel::-webkit-scrollbar { width: 6px; }
+    #suggestions-panel::-webkit-scrollbar-track { background: transparent; }
+    #suggestions-panel::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.3); border-radius: 3px; }
+
+    .suggestions-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: pointer;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .suggestions-header h3 {
+      margin: 0;
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+    .suggestions-toggle {
+      color: var(--text-muted);
+      font-size: 0.8rem;
+    }
+
+    .suggestion-section {
+      margin-top: 12px;
+    }
+    .suggestion-section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+      cursor: pointer;
+    }
+    .suggestion-section-header:hover {
+      color: var(--accent);
+    }
+    .suggestion-section-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.9rem;
+      font-weight: 500;
+    }
+    .suggestion-count {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 20px;
+      height: 20px;
+      padding: 0 6px;
+      border-radius: 10px;
+      background: rgba(56, 189, 248, 0.2);
+      color: var(--accent);
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .suggestion-section-toggle {
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      transition: transform 0.2s;
+    }
+    .suggestion-section.collapsed .suggestion-section-toggle {
+      transform: rotate(-90deg);
+    }
+    .suggestion-section.collapsed .suggestion-list {
+      display: none;
+    }
+
+    .suggestion-list {
+      margin-top: 8px;
+    }
+    .suggestion-item {
+      padding: 8px 10px;
+      margin-bottom: 6px;
+      border-radius: 6px;
+      background: rgba(15, 23, 42, 0.4);
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .suggestion-item:hover {
+      background: rgba(56, 189, 248, 0.1);
+      border-color: var(--border);
+    }
+    .suggestion-item.active {
+      background: rgba(56, 189, 248, 0.15);
+      border-color: var(--accent);
+    }
+
+    .suggestion-item-title {
+      font-size: 0.85rem;
+      color: var(--text-main);
+      margin-bottom: 4px;
+    }
+    .suggestion-item-meta {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+    .suggestion-score {
+      display: inline-block;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: rgba(52, 211, 153, 0.2);
+      color: #34d399;
+      font-size: 0.7rem;
+      margin-right: 6px;
+    }
+
+    /* Candidate link specific */
+    .candidate-link-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .candidate-link-info {
+      flex: 1;
+      min-width: 0;
+    }
+    .candidate-link-arrow {
+      color: var(--text-muted);
+      margin: 0 4px;
+    }
+    .candidate-from, .candidate-to {
+      display: inline;
+      max-width: 100px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .candidate-to.ghost {
+      font-style: italic;
+      color: #64748b;
+    }
+
+    .approve-btn {
+      padding: 4px 8px;
+      border: 1px solid rgba(52, 211, 153, 0.5);
+      border-radius: 4px;
+      background: rgba(52, 211, 153, 0.1);
+      color: #34d399;
+      font-size: 0.7rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+    .approve-btn:hover {
+      background: rgba(52, 211, 153, 0.2);
+      border-color: #34d399;
+    }
+    .approve-btn.copied {
+      background: rgba(52, 211, 153, 0.3);
+      border-color: #34d399;
+    }
+
+    .batch-copy-btn {
+      padding: 4px 10px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: rgba(15, 23, 42, 0.6);
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .batch-copy-btn:hover {
+      background: rgba(56, 189, 248, 0.1);
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+    .batch-copy-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    /* Orphan specific */
+    .orphan-severity {
+      display: inline-block;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-size: 0.7rem;
+      margin-right: 6px;
+    }
+    .orphan-severity.high {
+      background: rgba(248, 113, 113, 0.2);
+      color: #f87171;
+    }
+    .orphan-severity.med {
+      background: rgba(251, 191, 36, 0.2);
+      color: #fbbf24;
+    }
+    .orphan-severity.low {
+      background: rgba(148, 163, 184, 0.2);
+      color: #94a3b8;
+    }
+
+    /* Empty state */
+    .suggestion-empty {
+      padding: 12px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.8rem;
+    }
+    .suggestion-empty code {
+      display: block;
+      margin-top: 8px;
+      padding: 6px 10px;
+      background: rgba(0,0,0,0.3);
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 0.75rem;
+      color: var(--accent);
+    }
+
+    /* Tooltip for reasons */
+    .suggestion-reasons {
+      margin-top: 4px;
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      font-style: italic;
+    }
   </style>
   <script src="https://unpkg.com/force-graph"></script>
 </head>
@@ -1252,6 +1486,52 @@ export function generateVisualizationHtml(
   <!-- WebSocket Status Indicator -->
   <div id="ws-status" class="ws-status disconnected" title="Disconnected"></div>
 
+  <!-- Suggestions Panel -->
+  <div id="suggestions-panel" class="panel" style="display: none;">
+    <div class="suggestions-header" onclick="toggleSuggestionsPanel()">
+      <h3>Suggestions</h3>
+      <span class="suggestions-toggle" id="suggestions-toggle-icon">▼</span>
+    </div>
+
+    <!-- Related Notes Section -->
+    <div class="suggestion-section" id="related-section">
+      <div class="suggestion-section-header" onclick="toggleSuggestionSection('related')">
+        <span class="suggestion-section-title">
+          Related Notes <span class="suggestion-count" id="related-count">0</span>
+        </span>
+        <span class="suggestion-section-toggle">▼</span>
+      </div>
+      <div class="suggestion-list" id="related-list"></div>
+    </div>
+
+    <!-- Candidate Links Section -->
+    <div class="suggestion-section" id="links-section">
+      <div class="suggestion-section-header" onclick="toggleSuggestionSection('links')">
+        <span class="suggestion-section-title">
+          Candidate Links <span class="suggestion-count" id="links-count">0</span>
+        </span>
+        <span class="suggestion-section-toggle">▼</span>
+      </div>
+      <div style="display: flex; justify-content: flex-end; margin-top: 4px;">
+        <button class="batch-copy-btn" id="batch-copy-btn" onclick="batchCopyApproveCommands(event)">
+          Copy All
+        </button>
+      </div>
+      <div class="suggestion-list" id="links-list"></div>
+    </div>
+
+    <!-- Orphans Section -->
+    <div class="suggestion-section" id="orphans-section">
+      <div class="suggestion-section-header" onclick="toggleSuggestionSection('orphans')">
+        <span class="suggestion-section-title">
+          Orphans <span class="suggestion-count" id="orphans-count">0</span>
+        </span>
+        <span class="suggestion-section-toggle">▼</span>
+      </div>
+      <div class="suggestion-list" id="orphans-list"></div>
+    </div>
+  </div>
+
   <script>
     const data = ${JSON.stringify(graphData)};
     const typeColors = ${JSON.stringify(nodeTypeColors)};
@@ -1260,6 +1540,7 @@ export function generateVisualizationHtml(
     const pathData = ${pathDataJson};
     const wsConfig = ${wsConfigJson};
     const statusData = ${statusDataJson};
+    const focusBundle = ${focusBundleJson};
 
     // Status panel state
     let statusPanelExpanded = false;
@@ -3161,6 +3442,305 @@ export function generateVisualizationHtml(
         document.getElementById('search').focus();
       }
     });
+
+    // ========================================================================
+    // Suggestions Panel
+    // ========================================================================
+
+    let suggestionsPanelExpanded = true;
+    let activeSuggestionId = null;
+    let previewEdge = null;
+
+    function initSuggestionsPanel() {
+      if (!focusBundle) {
+        document.getElementById('suggestions-panel').style.display = 'none';
+        return;
+      }
+
+      const panel = document.getElementById('suggestions-panel');
+      panel.style.display = 'block';
+
+      // Render each section
+      renderRelatedNotes();
+      renderCandidateLinks();
+      renderOrphans();
+    }
+
+    function toggleSuggestionsPanel() {
+      const icon = document.getElementById('suggestions-toggle-icon');
+      suggestionsPanelExpanded = !suggestionsPanelExpanded;
+      icon.textContent = suggestionsPanelExpanded ? '▼' : '▲';
+
+      // Toggle all sections
+      document.querySelectorAll('.suggestion-section').forEach(section => {
+        section.style.display = suggestionsPanelExpanded ? 'block' : 'none';
+      });
+    }
+
+    function toggleSuggestionSection(sectionName) {
+      const section = document.getElementById(sectionName + '-section');
+      section.classList.toggle('collapsed');
+    }
+
+    function renderRelatedNotes() {
+      const list = document.getElementById('related-list');
+      const countEl = document.getElementById('related-count');
+      const notes = focusBundle?.suggestions?.relatedNotes || [];
+
+      countEl.textContent = notes.length;
+
+      if (notes.length === 0) {
+        // Empty state with health context
+        const health = focusBundle?.health;
+        let message = 'No related notes found for this view.';
+        let command = '';
+
+        if (health?.embeddings?.level === 'fail' || health?.embeddings?.level === 'warn') {
+          message = 'Embeddings incomplete.';
+          command = 'zs embed compute';
+        }
+
+        list.innerHTML = \`
+          <div class="suggestion-empty">
+            \${message}
+            \${command ? \`<code>\${command}</code>\` : ''}
+          </div>
+        \`;
+        return;
+      }
+
+      list.innerHTML = notes.map(note => \`
+        <div class="suggestion-item" data-node-id="\${note.nodeId}" onclick="handleRelatedNoteClick('\${note.nodeId}')">
+          <div class="suggestion-item-title">\${escapeHtml(note.title)}</div>
+          <div class="suggestion-item-meta">
+            <span class="suggestion-score">\${(note.score * 100).toFixed(0)}%</span>
+            \${note.isInView ? '<span style="color: var(--accent);">in view</span>' : ''}
+          </div>
+          \${note.reasons.length > 0 ? \`<div class="suggestion-reasons">\${escapeHtml(note.reasons[0])}</div>\` : ''}
+        </div>
+      \`).join('');
+    }
+
+    function renderCandidateLinks() {
+      const list = document.getElementById('links-list');
+      const countEl = document.getElementById('links-count');
+      const batchBtn = document.getElementById('batch-copy-btn');
+      const links = focusBundle?.suggestions?.candidateLinks || [];
+
+      countEl.textContent = links.length;
+      batchBtn.disabled = links.length === 0;
+
+      if (links.length === 0) {
+        list.innerHTML = \`
+          <div class="suggestion-empty">
+            No link suggestions for this view.
+          </div>
+        \`;
+        return;
+      }
+
+      list.innerHTML = links.map(link => \`
+        <div class="suggestion-item" data-suggestion-id="\${link.suggestionId}" onclick="handleCandidateLinkClick('\${link.suggestionId}', '\${link.fromId}', '\${link.toId}')">
+          <div class="candidate-link-row">
+            <div class="candidate-link-info">
+              <div class="suggestion-item-title">
+                <span class="candidate-from">\${escapeHtml(link.fromTitle)}</span>
+                <span class="candidate-link-arrow">→</span>
+                <span class="candidate-to \${link.toIsGhost ? 'ghost' : ''}">\${escapeHtml(link.toTitle)}</span>
+              </div>
+              <div class="suggestion-item-meta">
+                <span class="suggestion-score">\${(link.confidence * 100).toFixed(0)}%</span>
+                <span>\${link.source}</span>
+              </div>
+            </div>
+            <button class="approve-btn" data-suggestion-id="\${link.suggestionId}" onclick="handleApprove(event, '\${link.suggestionId}')">
+              Approve
+            </button>
+          </div>
+          \${link.reasons.length > 0 ? \`<div class="suggestion-reasons">\${escapeHtml(link.reasons[0])}</div>\` : ''}
+        </div>
+      \`).join('');
+    }
+
+    function renderOrphans() {
+      const list = document.getElementById('orphans-list');
+      const countEl = document.getElementById('orphans-count');
+      const orphans = focusBundle?.suggestions?.orphans || [];
+
+      countEl.textContent = orphans.length;
+
+      if (orphans.length === 0) {
+        list.innerHTML = \`
+          <div class="suggestion-empty">
+            No orphans detected. Your notes are well-connected!
+          </div>
+        \`;
+        return;
+      }
+
+      list.innerHTML = orphans.map(orphan => \`
+        <div class="suggestion-item" data-node-id="\${orphan.nodeId}" onclick="handleOrphanClick('\${orphan.nodeId}')">
+          <div class="suggestion-item-title">\${escapeHtml(orphan.title)}</div>
+          <div class="suggestion-item-meta">
+            <span class="orphan-severity \${orphan.severity}">\${orphan.severity}</span>
+            <span>\${orphan.percentile.toFixed(0)}th percentile</span>
+          </div>
+          \${orphan.reasons.length > 0 ? \`<div class="suggestion-reasons">\${escapeHtml(orphan.reasons[0])}</div>\` : ''}
+        </div>
+      \`).join('');
+    }
+
+    function handleRelatedNoteClick(nodeId) {
+      clearActiveSuggestion();
+
+      // Highlight the node
+      if (nodeMap[nodeId]) {
+        activeSuggestionId = nodeId;
+        markSuggestionActive(nodeId, 'related');
+        highlightSuggestionNodes([nodeId]);
+      } else {
+        // Node not in current view - could navigate
+        showToast('Note not in current view', 'info');
+      }
+    }
+
+    function handleCandidateLinkClick(suggestionId, fromId, toId) {
+      clearActiveSuggestion();
+
+      activeSuggestionId = suggestionId;
+      markSuggestionActive(suggestionId, 'links');
+
+      // Highlight both nodes
+      const nodeIds = [];
+      if (nodeMap[fromId]) nodeIds.push(fromId);
+      if (nodeMap[toId]) nodeIds.push(toId);
+
+      highlightSuggestionNodes(nodeIds);
+
+      // Show preview edge (dashed line between nodes)
+      if (nodeMap[fromId] && nodeMap[toId]) {
+        showPreviewEdge(fromId, toId);
+      }
+    }
+
+    function handleOrphanClick(nodeId) {
+      clearActiveSuggestion();
+
+      if (nodeMap[nodeId]) {
+        activeSuggestionId = nodeId;
+        markSuggestionActive(nodeId, 'orphans');
+        highlightSuggestionNodes([nodeId]);
+      }
+    }
+
+    function markSuggestionActive(id, section) {
+      // Clear all active states
+      document.querySelectorAll('.suggestion-item.active').forEach(el => {
+        el.classList.remove('active');
+      });
+
+      // Mark the clicked item as active
+      const sectionEl = document.getElementById(section + '-list');
+      const item = sectionEl.querySelector(\`[data-\${section === 'links' ? 'suggestion' : 'node'}-id="\${id}"]\`);
+      if (item) {
+        item.classList.add('active');
+      }
+    }
+
+    function highlightSuggestionNodes(nodeIds) {
+      // Clear existing highlights
+      highlightNodes.clear();
+      highlightLinks.clear();
+
+      // Add new highlights
+      nodeIds.forEach(id => highlightNodes.add(id));
+
+      // Refresh the graph
+      Graph.refresh();
+    }
+
+    function showPreviewEdge(fromId, toId) {
+      // Store preview edge for rendering
+      previewEdge = { source: fromId, target: toId };
+      Graph.refresh();
+    }
+
+    function clearActiveSuggestion() {
+      activeSuggestionId = null;
+      previewEdge = null;
+
+      // Clear visual states
+      document.querySelectorAll('.suggestion-item.active').forEach(el => {
+        el.classList.remove('active');
+      });
+
+      highlightNodes.clear();
+      highlightLinks.clear();
+      Graph.refresh();
+    }
+
+    function handleApprove(event, suggestionId) {
+      event.stopPropagation();
+
+      // Build command from template
+      const template = focusBundle?.actions?.approve?.template || 'zs approve --suggestion-id {suggestionId} --json';
+      const command = template.replace('{suggestionId}', suggestionId);
+
+      // Copy to clipboard
+      navigator.clipboard.writeText(command).then(() => {
+        showToast('Command copied', 'success');
+
+        // Visual feedback
+        const btn = event.target;
+        const originalText = btn.textContent;
+        btn.textContent = 'Copied ✓';
+        btn.classList.add('copied');
+
+        setTimeout(() => {
+          btn.textContent = originalText;
+          btn.classList.remove('copied');
+        }, 2000);
+      }).catch(err => {
+        showToast('Failed to copy command', 'error');
+        console.error('Copy failed:', err);
+      });
+    }
+
+    function batchCopyApproveCommands(event) {
+      event.stopPropagation();
+
+      const links = focusBundle?.suggestions?.candidateLinks || [];
+      if (links.length === 0) return;
+
+      const template = focusBundle?.actions?.approve?.template || 'zs approve --suggestion-id {suggestionId} --json';
+      const commands = links.map(link =>
+        template.replace('{suggestionId}', link.suggestionId)
+      ).join('\\n');
+
+      navigator.clipboard.writeText(commands).then(() => {
+        showToast(\`Copied \${links.length} approve commands\`, 'success');
+
+        // Visual feedback
+        const btn = event.target;
+        const originalText = btn.textContent;
+        btn.textContent = 'Copied ✓';
+        setTimeout(() => {
+          btn.textContent = originalText;
+        }, 2000);
+      }).catch(err => {
+        showToast('Failed to copy commands', 'error');
+        console.error('Copy failed:', err);
+      });
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // Initialize suggestions panel after graph is ready
+    setTimeout(initSuggestionsPanel, 200);
 
     // Helper
     function convertHexToRGBA(hex, opacity) {

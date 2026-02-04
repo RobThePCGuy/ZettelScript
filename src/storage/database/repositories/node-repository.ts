@@ -26,6 +26,7 @@ export class NodeRepository {
       updatedAt: data.updatedAt || now,
       contentHash: data.contentHash ?? null,
       metadata: data.metadata ?? null,
+      isGhost: data.isGhost ? 1 : 0,
     };
 
     await this.db.insert(nodes).values(row);
@@ -58,6 +59,7 @@ export class NodeRepository {
       updatedAt: data.updatedAt || now,
       contentHash: data.contentHash ?? null,
       metadata: data.metadata ?? null,
+      isGhost: data.isGhost ? 1 : 0,
     };
 
     await this.db.insert(nodes).values(row);
@@ -175,6 +177,7 @@ export class NodeRepository {
     if (data.path !== undefined) updateData.path = data.path;
     if (data.contentHash !== undefined) updateData.contentHash = data.contentHash;
     if (data.metadata !== undefined) updateData.metadata = data.metadata;
+    if (data.isGhost !== undefined) updateData.isGhost = data.isGhost ? 1 : 0;
     updateData.updatedAt = data.updatedAt || new Date().toISOString();
 
     await this.db.update(nodes).set(updateData).where(eq(nodes.nodeId, nodeId));
@@ -282,18 +285,105 @@ export class NodeRepository {
   }
 
   /**
+   * Find all ghost nodes
+   */
+  async findGhosts(): Promise<Node[]> {
+    const result = await this.db.select().from(nodes).where(eq(nodes.isGhost, 1));
+    return result.map((row) => this.rowToNode(row));
+  }
+
+  /**
+   * Find all non-ghost (real) nodes
+   */
+  async findRealNodes(): Promise<Node[]> {
+    const result = await this.db.select().from(nodes).where(eq(nodes.isGhost, 0));
+    return result.map((row) => this.rowToNode(row));
+  }
+
+  /**
+   * Count ghost nodes
+   */
+  async countGhosts(): Promise<number> {
+    const result = await this.db
+      .select({ count: sql<number>`count(*)` })
+      .from(nodes)
+      .where(eq(nodes.isGhost, 1));
+    return result[0]?.count ?? 0;
+  }
+
+  /**
+   * Create or find a ghost node by title.
+   * Ghosts are placeholder nodes for unresolved references.
+   * They have a synthetic path based on title.
+   */
+  async getOrCreateGhost(title: string): Promise<Node> {
+    // Check if ghost already exists
+    const existing = await this.db
+      .select()
+      .from(nodes)
+      .where(and(eq(nodes.isGhost, 1), sql`${nodes.title} COLLATE NOCASE = ${title}`))
+      .limit(1);
+
+    if (existing[0]) {
+      return this.rowToNode(existing[0]);
+    }
+
+    // Create new ghost
+    const nodeId = nanoid();
+    const now = new Date().toISOString();
+    const ghostPath = `__ghost__/${title.replace(/[^a-zA-Z0-9-_]/g, '_')}`;
+
+    const row: NewNodeRow = {
+      nodeId,
+      type: 'note', // Ghosts default to 'note' type
+      title,
+      path: ghostPath,
+      createdAt: now,
+      updatedAt: now,
+      contentHash: null,
+      metadata: null,
+      isGhost: 1,
+    };
+
+    await this.db.insert(nodes).values(row);
+
+    return this.rowToNode({ ...row, nodeId } as NodeRow);
+  }
+
+  /**
+   * Materialize a ghost - convert it to a real node when the file is created.
+   * Updates the ghost to be a real node with the actual path.
+   */
+  async materializeGhost(nodeId: string, realPath: string): Promise<Node> {
+    const ghost = await this.findById(nodeId);
+    if (!ghost || !ghost.isGhost) {
+      throw new Error(`Node ${nodeId} is not a ghost`);
+    }
+
+    return this.update(nodeId, {
+      path: realPath,
+      isGhost: false,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  /**
    * Convert database row to Node type
    */
   private rowToNode(row: NodeRow): Node {
-    return {
+    const node: Node = {
       nodeId: row.nodeId,
       type: row.type as NodeType,
       title: row.title,
       path: row.path,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
-      ...(row.contentHash != null && { contentHash: row.contentHash }),
-      ...(row.metadata != null && { metadata: row.metadata as Record<string, unknown> }),
     };
+
+    if (row.contentHash != null) node.contentHash = row.contentHash;
+    if (row.metadata != null) node.metadata = row.metadata as Record<string, unknown>;
+    if (row.isGhost === 1) node.isGhost = true;
+
+    return node;
   }
 }

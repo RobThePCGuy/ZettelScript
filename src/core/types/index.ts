@@ -1,4 +1,5 @@
 import { Type, Static } from '@sinclair/typebox';
+import { createHash } from 'node:crypto';
 
 // ============================================================================
 // Node Types
@@ -28,6 +29,7 @@ export const NodeSchema = Type.Object({
   updatedAt: Type.String({ format: 'date-time' }),
   contentHash: Type.Optional(Type.String()),
   metadata: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
+  isGhost: Type.Optional(Type.Boolean()),
 });
 
 export type Node = Static<typeof NodeSchema>;
@@ -592,4 +594,90 @@ export function shouldRenderEdge(edgeType: EdgeType, mode: VisualizationMode): b
   // Unknown edge types: warn and hide (safe default)
   console.warn(`Unknown edge type: ${edgeType}`);
   return false;
+}
+
+// ============================================================================
+// Candidate Edge Types (Phase 2: Suggestions)
+// ============================================================================
+
+export const CandidateEdgeStatusSchema = Type.Union([
+  Type.Literal('suggested'),
+  Type.Literal('approved'),
+  Type.Literal('rejected'),
+]);
+
+export type CandidateEdgeStatus = Static<typeof CandidateEdgeStatusSchema>;
+
+export const CandidateEdgeSourceSchema = Type.Union([
+  Type.Literal('mention'),
+  Type.Literal('semantic'),
+  Type.Literal('heuristic'),
+]);
+
+export type CandidateEdgeSource = Static<typeof CandidateEdgeSourceSchema>;
+
+export interface CandidateEdgeSignals {
+  semantic?: number;
+  mentionCount?: number;
+  graphProximity?: number;
+}
+
+export interface CandidateEdgeProvenance {
+  model?: string;
+  excerpt?: string;
+  createdAt?: string;
+}
+
+export interface CandidateEdge {
+  suggestionId: string;
+  fromId: string;
+  toId: string;
+  suggestedEdgeType: EdgeType;
+  status: CandidateEdgeStatus;
+  statusChangedAt?: string;
+  signals?: CandidateEdgeSignals;
+  reasons?: string[];
+  provenance?: CandidateEdgeProvenance[];
+  createdAt: string;
+  lastComputedAt: string;
+  lastSeenAt?: string;
+  writebackStatus?: string;
+  writebackReason?: string;
+  approvedEdgeId?: string;
+}
+
+/**
+ * Generate a canonical suggestionId from edge components.
+ *
+ * Per Phase 2 design Section 2.4:
+ * - 128-bit hash (32 hex chars) from (fromId, toId, edgeType)
+ * - For undirected edges, IDs are canonically ordered (smaller first)
+ * - For directed edges, order is preserved
+ *
+ * @param fromId Source node ID
+ * @param toId Target node ID
+ * @param edgeType The suggested edge type
+ * @param isUndirected If true, IDs are canonically ordered for deduplication
+ * @returns 32-character hex string (128 bits)
+ */
+export function generateSuggestionId(
+  fromId: string,
+  toId: string,
+  edgeType: EdgeType,
+  isUndirected: boolean = true
+): string {
+  // Canonical ordering for undirected edges only
+  const [a, b] = isUndirected && fromId > toId ? [toId, fromId] : [fromId, toId];
+
+  const input = `v1|${a}|${b}|${edgeType}`;
+  return createHash('sha256').update(input).digest('hex').slice(0, 32);
+}
+
+/**
+ * Check if an edge type is undirected for suggestionId generation.
+ * Most edges in ZettelScript are directed, but semantic similarity is undirected.
+ */
+export function isUndirectedEdgeType(edgeType: EdgeType): boolean {
+  // Semantic edges are undirected (A similar to B = B similar to A)
+  return edgeType === 'semantic' || edgeType === 'semantic_suggestion';
 }

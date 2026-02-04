@@ -68,3 +68,5 @@ search:
 llm:
   provider: none
   model: gpt-4
+visualization:
+  mode: focus

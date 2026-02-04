@@ -37,7 +37,7 @@ END;
 
 // Schema version for migrations
 // Increment this when adding new tables or making schema changes
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 4;
 
 /**
  * Database connection manager for ZettelScript
@@ -152,7 +152,8 @@ export class ConnectionManager {
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         content_hash TEXT,
-        metadata TEXT
+        metadata TEXT,
+        is_ghost INTEGER NOT NULL DEFAULT 0
       );
 
       -- Edges with version ranges
@@ -279,10 +280,32 @@ export class ConnectionManager {
         rejected_at TEXT NOT NULL
       );
 
+      -- Candidate edges (Phase 2: Suggestions)
+      CREATE TABLE IF NOT EXISTS candidate_edges (
+        suggestion_id TEXT PRIMARY KEY,
+        from_id TEXT NOT NULL,
+        to_id TEXT NOT NULL,
+        suggested_edge_type TEXT NOT NULL,
+        from_id_norm TEXT NOT NULL,
+        to_id_norm TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'suggested',
+        status_changed_at TEXT,
+        signals TEXT,
+        reasons TEXT,
+        provenance TEXT,
+        created_at TEXT NOT NULL,
+        last_computed_at TEXT NOT NULL,
+        last_seen_at TEXT,
+        writeback_status TEXT,
+        writeback_reason TEXT,
+        approved_edge_id TEXT
+      );
+
       -- Performance indexes
       CREATE INDEX IF NOT EXISTS idx_nodes_title ON nodes(title COLLATE NOCASE);
       CREATE INDEX IF NOT EXISTS idx_nodes_type ON nodes(type);
       CREATE INDEX IF NOT EXISTS idx_nodes_path ON nodes(path);
+      CREATE INDEX IF NOT EXISTS idx_nodes_ghost ON nodes(is_ghost);
       CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_id);
       CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_id);
       CREATE INDEX IF NOT EXISTS idx_edges_type ON edges(edge_type);
@@ -306,6 +329,10 @@ export class ConnectionManager {
       CREATE INDEX IF NOT EXISTS idx_rejections_source ON wormhole_rejections(source_id);
       CREATE INDEX IF NOT EXISTS idx_rejections_target ON wormhole_rejections(target_id);
       CREATE INDEX IF NOT EXISTS idx_rejections_pair ON wormhole_rejections(source_id, target_id);
+      CREATE INDEX IF NOT EXISTS idx_candidate_from ON candidate_edges(from_id);
+      CREATE INDEX IF NOT EXISTS idx_candidate_to ON candidate_edges(to_id);
+      CREATE INDEX IF NOT EXISTS idx_candidate_status ON candidate_edges(status);
+      CREATE INDEX IF NOT EXISTS idx_candidate_norm ON candidate_edges(from_id_norm, to_id_norm, suggested_edge_type);
     `);
 
     // Create FTS5 virtual table

@@ -12,6 +12,7 @@ import {
   ConstellationRepository,
   EmbeddingRepository,
   WormholeRepository,
+  CandidateEdgeRepository,
 } from '../storage/database/repositories/index.js';
 import { IndexingPipeline } from '../indexer/pipeline.js';
 import { GraphEngine } from '../core/graph/engine.js';
@@ -128,6 +129,7 @@ export interface CLIContext {
   constellationRepository: ConstellationRepository;
   embeddingRepository: EmbeddingRepository;
   wormholeRepository: WormholeRepository;
+  candidateEdgeRepository: CandidateEdgeRepository;
   pipeline: IndexingPipeline;
   graphEngine: GraphEngine;
 }
@@ -164,6 +166,7 @@ export async function initContext(vaultPath?: string): Promise<CLIContext> {
   const constellationRepository = new ConstellationRepository(db);
   const embeddingRepository = new EmbeddingRepository(db);
   const wormholeRepository = new WormholeRepository(db);
+  const candidateEdgeRepository = new CandidateEdgeRepository(db);
 
   // Initialize pipeline
   const pipeline = new IndexingPipeline({
@@ -191,6 +194,7 @@ export async function initContext(vaultPath?: string): Promise<CLIContext> {
     constellationRepository,
     embeddingRepository,
     wormholeRepository,
+    candidateEdgeRepository,
     pipeline,
     graphEngine,
   };

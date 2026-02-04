@@ -6,6 +6,7 @@ var __export = (target, all) => {
 
 // src/core/types/index.ts
 import { Type } from "@sinclair/typebox";
+import { createHash } from "crypto";
 var NodeTypeSchema = Type.Union([
   Type.Literal("note"),
   Type.Literal("scene"),
@@ -26,7 +27,8 @@ var NodeSchema = Type.Object({
   createdAt: Type.String({ format: "date-time" }),
   updatedAt: Type.String({ format: "date-time" }),
   contentHash: Type.Optional(Type.String()),
-  metadata: Type.Optional(Type.Record(Type.String(), Type.Unknown()))
+  metadata: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
+  isGhost: Type.Optional(Type.Boolean())
 });
 var EdgeTypeSchema = Type.Union([
   Type.Literal("explicit_link"),
@@ -232,8 +234,74 @@ var DEFAULT_CONFIG = {
   llm: {
     provider: "none",
     model: "gpt-4"
+  },
+  visualization: {
+    mode: "focus"
+    // v2 default: hide Layer C edges (mentions, suggestions)
   }
 };
+var LAYER_A_EDGES = [
+  "explicit_link",
+  // User-authored [[wikilinks]]
+  "hierarchy",
+  // Parent/child, folder structure
+  "sequence",
+  // Chapter/scene order (chronology_next)
+  "causes",
+  // Causal relationships
+  "setup_payoff",
+  // Narrative foreshadowing
+  "participation",
+  // Character in scene
+  "pov_visible_to"
+  // POV constraints
+];
+var LAYER_B_EDGES = [
+  "semantic"
+  // Accepted wormholes (similarity > threshold)
+];
+var LAYER_C_EDGES = [
+  "mention",
+  // Approved mention (co-occurrence)
+  "semantic_suggestion",
+  // Wormhole below threshold
+  "backlink",
+  // Computed incoming (can be noisy)
+  "alias"
+  // Alternative name reference
+];
+function getEdgeLayer(edgeType) {
+  if (LAYER_A_EDGES.includes(edgeType)) return "A";
+  if (LAYER_B_EDGES.includes(edgeType)) return "B";
+  if (LAYER_C_EDGES.includes(edgeType)) return "C";
+  return "unknown";
+}
+function shouldRenderEdge(edgeType, mode) {
+  if (mode === "classic") return true;
+  const layer = getEdgeLayer(edgeType);
+  if (layer === "A" || layer === "B") return true;
+  if (layer === "C") return false;
+  console.warn(`Unknown edge type: ${edgeType}`);
+  return false;
+}
+var CandidateEdgeStatusSchema = Type.Union([
+  Type.Literal("suggested"),
+  Type.Literal("approved"),
+  Type.Literal("rejected")
+]);
+var CandidateEdgeSourceSchema = Type.Union([
+  Type.Literal("mention"),
+  Type.Literal("semantic"),
+  Type.Literal("heuristic")
+]);
+function generateSuggestionId(fromId, toId, edgeType, isUndirected = true) {
+  const [a, b] = isUndirected && fromId > toId ? [toId, fromId] : [fromId, toId];
+  const input = `v1|${a}|${b}|${edgeType}`;
+  return createHash("sha256").update(input).digest("hex").slice(0, 32);
+}
+function isUndirectedEdgeType(edgeType) {
+  return edgeType === "semantic" || edgeType === "semantic_suggestion";
+}
 
 // src/core/graph/pathfinder.ts
 var EDGE_PENALTIES = {
@@ -1016,6 +1084,7 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 var schema_exports = {};
 __export(schema_exports, {
   aliases: () => aliases,
+  candidateEdges: () => candidateEdges,
   chunks: () => chunks,
   constellations: () => constellations,
   edges: () => edges,
@@ -1039,12 +1108,15 @@ var nodes = sqliteTable(
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
     contentHash: text("content_hash"),
-    metadata: text("metadata", { mode: "json" })
+    metadata: text("metadata", { mode: "json" }),
+    isGhost: integer("is_ghost").notNull().default(0)
+    // 0 = real node, 1 = ghost
   },
   (table) => [
     index("idx_nodes_title").on(table.title),
     index("idx_nodes_type").on(table.type),
-    index("idx_nodes_path").on(table.path)
+    index("idx_nodes_path").on(table.path),
+    index("idx_nodes_ghost").on(table.isGhost)
   ]
 );
 var edges = sqliteTable(
@@ -1228,6 +1300,42 @@ var wormholeRejections = sqliteTable(
     index("idx_rejections_pair").on(table.sourceId, table.targetId)
   ]
 );
+var candidateEdges = sqliteTable(
+  "candidate_edges",
+  {
+    suggestionId: text("suggestion_id").primaryKey(),
+    fromId: text("from_id").notNull(),
+    toId: text("to_id").notNull(),
+    suggestedEdgeType: text("suggested_edge_type").notNull(),
+    // For undirected uniqueness (canonical ordering)
+    fromIdNorm: text("from_id_norm").notNull(),
+    toIdNorm: text("to_id_norm").notNull(),
+    // Status lifecycle
+    status: text("status").default("suggested").notNull(),
+    statusChangedAt: text("status_changed_at"),
+    // Evidence (merged from multiple sources)
+    signals: text("signals", { mode: "json" }),
+    // { semantic?, mentionCount?, graphProximity? }
+    reasons: text("reasons", { mode: "json" }),
+    // string[]
+    provenance: text("provenance", { mode: "json" }),
+    // array of evidence objects
+    // Timestamps
+    createdAt: text("created_at").notNull(),
+    lastComputedAt: text("last_computed_at").notNull(),
+    lastSeenAt: text("last_seen_at"),
+    // Writeback tracking
+    writebackStatus: text("writeback_status"),
+    writebackReason: text("writeback_reason"),
+    approvedEdgeId: text("approved_edge_id")
+  },
+  (table) => [
+    index("idx_candidate_from").on(table.fromId),
+    index("idx_candidate_to").on(table.toId),
+    index("idx_candidate_status").on(table.status),
+    index("idx_candidate_norm").on(table.fromIdNorm, table.toIdNorm, table.suggestedEdgeType)
+  ]
+);
 
 // src/storage/database/connection.ts
 import * as fs from "fs";
@@ -1256,7 +1364,7 @@ CREATE TRIGGER IF NOT EXISTS chunks_au AFTER UPDATE ON chunks BEGIN
   VALUES (new.chunk_id, new.node_id, new.text);
 END;
 `;
-var SCHEMA_VERSION = 2;
+var SCHEMA_VERSION = 4;
 var ConnectionManager = class _ConnectionManager {
   static instance = null;
   sqlite = null;
@@ -1344,7 +1452,8 @@ var ConnectionManager = class _ConnectionManager {
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         content_hash TEXT,
-        metadata TEXT
+        metadata TEXT,
+        is_ghost INTEGER NOT NULL DEFAULT 0
       );
 
       -- Edges with version ranges
@@ -1471,10 +1580,32 @@ var ConnectionManager = class _ConnectionManager {
         rejected_at TEXT NOT NULL
       );
 
+      -- Candidate edges (Phase 2: Suggestions)
+      CREATE TABLE IF NOT EXISTS candidate_edges (
+        suggestion_id TEXT PRIMARY KEY,
+        from_id TEXT NOT NULL,
+        to_id TEXT NOT NULL,
+        suggested_edge_type TEXT NOT NULL,
+        from_id_norm TEXT NOT NULL,
+        to_id_norm TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'suggested',
+        status_changed_at TEXT,
+        signals TEXT,
+        reasons TEXT,
+        provenance TEXT,
+        created_at TEXT NOT NULL,
+        last_computed_at TEXT NOT NULL,
+        last_seen_at TEXT,
+        writeback_status TEXT,
+        writeback_reason TEXT,
+        approved_edge_id TEXT
+      );
+
       -- Performance indexes
       CREATE INDEX IF NOT EXISTS idx_nodes_title ON nodes(title COLLATE NOCASE);
       CREATE INDEX IF NOT EXISTS idx_nodes_type ON nodes(type);
       CREATE INDEX IF NOT EXISTS idx_nodes_path ON nodes(path);
+      CREATE INDEX IF NOT EXISTS idx_nodes_ghost ON nodes(is_ghost);
       CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_id);
       CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_id);
       CREATE INDEX IF NOT EXISTS idx_edges_type ON edges(edge_type);
@@ -1498,6 +1629,10 @@ var ConnectionManager = class _ConnectionManager {
       CREATE INDEX IF NOT EXISTS idx_rejections_source ON wormhole_rejections(source_id);
       CREATE INDEX IF NOT EXISTS idx_rejections_target ON wormhole_rejections(target_id);
       CREATE INDEX IF NOT EXISTS idx_rejections_pair ON wormhole_rejections(source_id, target_id);
+      CREATE INDEX IF NOT EXISTS idx_candidate_from ON candidate_edges(from_id);
+      CREATE INDEX IF NOT EXISTS idx_candidate_to ON candidate_edges(to_id);
+      CREATE INDEX IF NOT EXISTS idx_candidate_status ON candidate_edges(status);
+      CREATE INDEX IF NOT EXISTS idx_candidate_norm ON candidate_edges(from_id_norm, to_id_norm, suggested_edge_type);
     `);
     this.sqlite.exec(FTS5_SCHEMA);
     this.sqlite.exec(FTS5_TRIGGERS);
@@ -1575,6 +1710,1776 @@ function getRawSqlite(vaultPath) {
   const manager = ConnectionManager.getInstance(dbPath);
   return manager.getSqlite();
 }
+
+// src/storage/database/repositories/node-repository.ts
+import { eq, like, and, inArray, sql } from "drizzle-orm";
+import { nanoid } from "nanoid";
+var NodeRepository = class {
+  constructor(db) {
+    this.db = db;
+  }
+  /**
+   * Create a new node
+   */
+  async create(data) {
+    const nodeId = nanoid();
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const row = {
+      nodeId,
+      type: data.type,
+      title: data.title,
+      path: data.path,
+      createdAt: data.createdAt || now,
+      updatedAt: data.updatedAt || now,
+      contentHash: data.contentHash ?? null,
+      metadata: data.metadata ?? null,
+      isGhost: data.isGhost ? 1 : 0
+    };
+    await this.db.insert(nodes).values(row);
+    return this.rowToNode({ ...row, nodeId });
+  }
+  /**
+   * Create or update a node by path
+   */
+  async upsert(data) {
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const nodeId = data.nodeId || nanoid();
+    const existing = await this.findByPath(data.path);
+    if (existing) {
+      return this.update(existing.nodeId, {
+        ...data,
+        updatedAt: now
+      });
+    }
+    const row = {
+      nodeId,
+      type: data.type,
+      title: data.title,
+      path: data.path,
+      createdAt: data.createdAt || now,
+      updatedAt: data.updatedAt || now,
+      contentHash: data.contentHash ?? null,
+      metadata: data.metadata ?? null,
+      isGhost: data.isGhost ? 1 : 0
+    };
+    await this.db.insert(nodes).values(row);
+    return this.rowToNode({ ...row, nodeId });
+  }
+  /**
+   * Find a node by ID
+   */
+  async findById(nodeId) {
+    const result = await this.db.select().from(nodes).where(eq(nodes.nodeId, nodeId)).limit(1);
+    return result[0] ? this.rowToNode(result[0]) : null;
+  }
+  /**
+   * Find a node by path
+   */
+  async findByPath(path2) {
+    const result = await this.db.select().from(nodes).where(eq(nodes.path, path2)).limit(1);
+    return result[0] ? this.rowToNode(result[0]) : null;
+  }
+  /**
+   * Find a node by title (case-insensitive)
+   */
+  async findByTitle(title) {
+    const result = await this.db.select().from(nodes).where(sql`${nodes.title} COLLATE NOCASE = ${title}`);
+    return result.map(this.rowToNode);
+  }
+  /**
+   * Find a node by title or alias
+   */
+  async findByTitleOrAlias(text2) {
+    const titleMatches = await this.db.select().from(nodes).where(sql`${nodes.title} COLLATE NOCASE = ${text2}`);
+    const aliasMatches = await this.db.select({ node: nodes }).from(aliases).innerJoin(nodes, eq(aliases.nodeId, nodes.nodeId)).where(sql`${aliases.alias} COLLATE NOCASE = ${text2}`);
+    const nodeMap = /* @__PURE__ */ new Map();
+    for (const row of titleMatches) {
+      nodeMap.set(row.nodeId, row);
+    }
+    for (const { node } of aliasMatches) {
+      nodeMap.set(node.nodeId, node);
+    }
+    return Array.from(nodeMap.values()).map(this.rowToNode);
+  }
+  /**
+   * Find nodes by type
+   */
+  async findByType(type) {
+    const result = await this.db.select().from(nodes).where(eq(nodes.type, type));
+    return result.map(this.rowToNode);
+  }
+  /**
+   * Get all nodes
+   */
+  async findAll() {
+    const result = await this.db.select().from(nodes);
+    return result.map(this.rowToNode);
+  }
+  /**
+   * Find nodes by IDs
+   */
+  async findByIds(nodeIds) {
+    if (nodeIds.length === 0) return [];
+    const result = await this.db.select().from(nodes).where(inArray(nodes.nodeId, nodeIds));
+    return result.map(this.rowToNode);
+  }
+  /**
+   * Search nodes by title pattern
+   */
+  async searchByTitle(pattern) {
+    const result = await this.db.select().from(nodes).where(like(nodes.title, `%${pattern}%`));
+    return result.map(this.rowToNode);
+  }
+  /**
+   * Update a node
+   */
+  async update(nodeId, data) {
+    const updateData = {};
+    if (data.type !== void 0) updateData.type = data.type;
+    if (data.title !== void 0) updateData.title = data.title;
+    if (data.path !== void 0) updateData.path = data.path;
+    if (data.contentHash !== void 0) updateData.contentHash = data.contentHash;
+    if (data.metadata !== void 0) updateData.metadata = data.metadata;
+    if (data.isGhost !== void 0) updateData.isGhost = data.isGhost ? 1 : 0;
+    updateData.updatedAt = data.updatedAt || (/* @__PURE__ */ new Date()).toISOString();
+    await this.db.update(nodes).set(updateData).where(eq(nodes.nodeId, nodeId));
+    const updated = await this.findById(nodeId);
+    if (!updated) {
+      throw new Error(`Node ${nodeId} not found after update`);
+    }
+    return updated;
+  }
+  /**
+   * Delete a node
+   */
+  async delete(nodeId) {
+    await this.db.delete(nodes).where(eq(nodes.nodeId, nodeId));
+  }
+  /**
+   * Delete nodes by path pattern
+   */
+  async deleteByPathPattern(pattern) {
+    const result = await this.db.delete(nodes).where(like(nodes.path, pattern));
+    return result.changes;
+  }
+  /**
+   * Count nodes
+   */
+  async count() {
+    const result = await this.db.select({ count: sql`count(*)` }).from(nodes);
+    return result[0]?.count ?? 0;
+  }
+  /**
+   * Count nodes by type
+   */
+  async countByType() {
+    const result = await this.db.select({
+      type: nodes.type,
+      count: sql`count(*)`
+    }).from(nodes).groupBy(nodes.type);
+    const counts = {};
+    for (const row of result) {
+      counts[row.type] = row.count;
+    }
+    return counts;
+  }
+  /**
+   * Add an alias for a node
+   */
+  async addAlias(nodeId, alias) {
+    await this.db.insert(aliases).values({
+      aliasId: nanoid(),
+      nodeId,
+      alias
+    });
+  }
+  /**
+   * Remove an alias
+   */
+  async removeAlias(nodeId, alias) {
+    await this.db.delete(aliases).where(and(eq(aliases.nodeId, nodeId), sql`${aliases.alias} COLLATE NOCASE = ${alias}`));
+  }
+  /**
+   * Get aliases for a node
+   */
+  async getAliases(nodeId) {
+    const result = await this.db.select({ alias: aliases.alias }).from(aliases).where(eq(aliases.nodeId, nodeId));
+    return result.map((r) => r.alias);
+  }
+  /**
+   * Set aliases for a node (replaces existing)
+   */
+  async setAliases(nodeId, newAliases) {
+    await this.db.delete(aliases).where(eq(aliases.nodeId, nodeId));
+    if (newAliases.length > 0) {
+      await this.db.insert(aliases).values(
+        newAliases.map((alias) => ({
+          aliasId: nanoid(),
+          nodeId,
+          alias
+        }))
+      );
+    }
+  }
+  /**
+   * Find all ghost nodes
+   */
+  async findGhosts() {
+    const result = await this.db.select().from(nodes).where(eq(nodes.isGhost, 1));
+    return result.map((row) => this.rowToNode(row));
+  }
+  /**
+   * Find all non-ghost (real) nodes
+   */
+  async findRealNodes() {
+    const result = await this.db.select().from(nodes).where(eq(nodes.isGhost, 0));
+    return result.map((row) => this.rowToNode(row));
+  }
+  /**
+   * Count ghost nodes
+   */
+  async countGhosts() {
+    const result = await this.db.select({ count: sql`count(*)` }).from(nodes).where(eq(nodes.isGhost, 1));
+    return result[0]?.count ?? 0;
+  }
+  /**
+   * Create or find a ghost node by title.
+   * Ghosts are placeholder nodes for unresolved references.
+   * They have a synthetic path based on title.
+   */
+  async getOrCreateGhost(title) {
+    const existing = await this.db.select().from(nodes).where(and(eq(nodes.isGhost, 1), sql`${nodes.title} COLLATE NOCASE = ${title}`)).limit(1);
+    if (existing[0]) {
+      return this.rowToNode(existing[0]);
+    }
+    const nodeId = nanoid();
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const ghostPath = `__ghost__/${title.replace(/[^a-zA-Z0-9-_]/g, "_")}`;
+    const row = {
+      nodeId,
+      type: "note",
+      // Ghosts default to 'note' type
+      title,
+      path: ghostPath,
+      createdAt: now,
+      updatedAt: now,
+      contentHash: null,
+      metadata: null,
+      isGhost: 1
+    };
+    await this.db.insert(nodes).values(row);
+    return this.rowToNode({ ...row, nodeId });
+  }
+  /**
+   * Materialize a ghost - convert it to a real node when the file is created.
+   * Updates the ghost to be a real node with the actual path.
+   */
+  async materializeGhost(nodeId, realPath) {
+    const ghost = await this.findById(nodeId);
+    if (!ghost || !ghost.isGhost) {
+      throw new Error(`Node ${nodeId} is not a ghost`);
+    }
+    return this.update(nodeId, {
+      path: realPath,
+      isGhost: false,
+      updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+    });
+  }
+  /**
+   * Convert database row to Node type
+   */
+  rowToNode(row) {
+    const node = {
+      nodeId: row.nodeId,
+      type: row.type,
+      title: row.title,
+      path: row.path,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt
+    };
+    if (row.contentHash != null) node.contentHash = row.contentHash;
+    if (row.metadata != null) node.metadata = row.metadata;
+    if (row.isGhost === 1) node.isGhost = true;
+    return node;
+  }
+};
+
+// src/storage/database/repositories/edge-repository.ts
+import { eq as eq2, and as and2, or, inArray as inArray2, sql as sql2 } from "drizzle-orm";
+import { nanoid as nanoid2 } from "nanoid";
+var EdgeRepository = class {
+  constructor(db) {
+    this.db = db;
+  }
+  /**
+   * Create a new edge
+   */
+  async create(data) {
+    const edgeId = nanoid2();
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const row = {
+      edgeId,
+      sourceId: data.sourceId,
+      targetId: data.targetId,
+      edgeType: data.edgeType,
+      strength: data.strength ?? null,
+      provenance: data.provenance,
+      createdAt: now,
+      versionStart: data.versionStart ?? null,
+      versionEnd: data.versionEnd ?? null,
+      attributes: data.attributes ?? null
+    };
+    await this.db.insert(edges).values(row);
+    return this.rowToEdge({ ...row, edgeId, createdAt: now });
+  }
+  /**
+   * Create or update an edge
+   */
+  async upsert(data) {
+    const existing = await this.findBySourceTargetType(data.sourceId, data.targetId, data.edgeType);
+    if (existing) {
+      return this.update(existing.edgeId, data);
+    }
+    return this.create(data);
+  }
+  /**
+   * Find an edge by ID
+   */
+  async findById(edgeId) {
+    const result = await this.db.select().from(edges).where(eq2(edges.edgeId, edgeId)).limit(1);
+    return result[0] ? this.rowToEdge(result[0]) : null;
+  }
+  /**
+   * Find edge by source, target, and type
+   */
+  async findBySourceTargetType(sourceId, targetId, edgeType) {
+    const result = await this.db.select().from(edges).where(
+      and2(
+        eq2(edges.sourceId, sourceId),
+        eq2(edges.targetId, targetId),
+        eq2(edges.edgeType, edgeType)
+      )
+    ).limit(1);
+    return result[0] ? this.rowToEdge(result[0]) : null;
+  }
+  /**
+   * Find all outgoing edges from a node
+   */
+  async findOutgoing(nodeId, edgeTypes) {
+    let query = this.db.select().from(edges).where(eq2(edges.sourceId, nodeId));
+    if (edgeTypes && edgeTypes.length > 0) {
+      query = this.db.select().from(edges).where(and2(eq2(edges.sourceId, nodeId), inArray2(edges.edgeType, edgeTypes)));
+    }
+    const result = await query;
+    return result.map(this.rowToEdge);
+  }
+  /**
+   * Find all incoming edges to a node
+   */
+  async findIncoming(nodeId, edgeTypes) {
+    let query = this.db.select().from(edges).where(eq2(edges.targetId, nodeId));
+    if (edgeTypes && edgeTypes.length > 0) {
+      query = this.db.select().from(edges).where(and2(eq2(edges.targetId, nodeId), inArray2(edges.edgeType, edgeTypes)));
+    }
+    const result = await query;
+    return result.map(this.rowToEdge);
+  }
+  /**
+   * Find all edges connected to a node (both directions)
+   */
+  async findConnected(nodeId, edgeTypes) {
+    const condition = or(eq2(edges.sourceId, nodeId), eq2(edges.targetId, nodeId));
+    let result;
+    if (edgeTypes && edgeTypes.length > 0) {
+      result = await this.db.select().from(edges).where(and2(condition, inArray2(edges.edgeType, edgeTypes)));
+    } else {
+      result = await this.db.select().from(edges).where(condition);
+    }
+    return result.map(this.rowToEdge);
+  }
+  /**
+   * Find edges by type
+   */
+  async findByType(edgeType) {
+    const result = await this.db.select().from(edges).where(eq2(edges.edgeType, edgeType));
+    return result.map(this.rowToEdge);
+  }
+  /**
+   * Get all edges, optionally filtered by edge types
+   */
+  async findAll(edgeTypes) {
+    if (edgeTypes && edgeTypes.length > 0) {
+      const result2 = await this.db.select().from(edges).where(inArray2(edges.edgeType, edgeTypes));
+      return result2.map(this.rowToEdge);
+    }
+    const result = await this.db.select().from(edges);
+    return result.map(this.rowToEdge);
+  }
+  /**
+   * Find backlinks (explicit_link edges targeting a node)
+   */
+  async findBacklinks(nodeId) {
+    const result = await this.db.select().from(edges).where(and2(eq2(edges.targetId, nodeId), eq2(edges.edgeType, "explicit_link")));
+    return result.map(this.rowToEdge);
+  }
+  /**
+   * Update an edge
+   */
+  async update(edgeId, data) {
+    const updateData = {};
+    if (data.sourceId !== void 0) updateData.sourceId = data.sourceId;
+    if (data.targetId !== void 0) updateData.targetId = data.targetId;
+    if (data.edgeType !== void 0) updateData.edgeType = data.edgeType;
+    if (data.strength !== void 0) updateData.strength = data.strength;
+    if (data.provenance !== void 0) updateData.provenance = data.provenance;
+    if (data.versionStart !== void 0) updateData.versionStart = data.versionStart;
+    if (data.versionEnd !== void 0) updateData.versionEnd = data.versionEnd;
+    if (data.attributes !== void 0) updateData.attributes = data.attributes;
+    await this.db.update(edges).set(updateData).where(eq2(edges.edgeId, edgeId));
+    const updated = await this.findById(edgeId);
+    if (!updated) {
+      throw new Error(`Edge ${edgeId} not found after update`);
+    }
+    return updated;
+  }
+  /**
+   * Delete an edge
+   */
+  async delete(edgeId) {
+    await this.db.delete(edges).where(eq2(edges.edgeId, edgeId));
+  }
+  /**
+   * Delete all edges for a node
+   */
+  async deleteForNode(nodeId) {
+    const result = await this.db.delete(edges).where(or(eq2(edges.sourceId, nodeId), eq2(edges.targetId, nodeId)));
+    return result.changes;
+  }
+  /**
+   * Delete edges by source and type
+   */
+  async deleteBySourceAndType(sourceId, edgeType) {
+    const result = await this.db.delete(edges).where(and2(eq2(edges.sourceId, sourceId), eq2(edges.edgeType, edgeType)));
+    return result.changes;
+  }
+  /**
+   * Count edges
+   */
+  async count() {
+    const result = await this.db.select({ count: sql2`count(*)` }).from(edges);
+    return result[0]?.count ?? 0;
+  }
+  /**
+   * Count edges by type
+   */
+  async countByType() {
+    const result = await this.db.select({
+      type: edges.edgeType,
+      count: sql2`count(*)`
+    }).from(edges).groupBy(edges.edgeType);
+    const counts = {};
+    for (const row of result) {
+      counts[row.type] = row.count;
+    }
+    return counts;
+  }
+  /**
+   * Find neighbors with node info
+   */
+  async findNeighborsWithNodes(nodeId, edgeTypes) {
+    const outgoing = await this.findOutgoing(nodeId, edgeTypes);
+    const incoming = await this.findIncoming(nodeId, edgeTypes);
+    const results = [];
+    if (outgoing.length > 0) {
+      const targetIds = outgoing.map((e) => e.targetId);
+      const targetNodes = await this.db.select({
+        nodeId: nodes.nodeId,
+        title: nodes.title,
+        type: nodes.type,
+        path: nodes.path
+      }).from(nodes).where(inArray2(nodes.nodeId, targetIds));
+      const nodeMap = new Map(targetNodes.map((n) => [n.nodeId, n]));
+      for (const edge of outgoing) {
+        const node = nodeMap.get(edge.targetId);
+        if (node) {
+          results.push({ edge, node, direction: "outgoing" });
+        }
+      }
+    }
+    if (incoming.length > 0) {
+      const sourceIds = incoming.map((e) => e.sourceId);
+      const sourceNodes = await this.db.select({
+        nodeId: nodes.nodeId,
+        title: nodes.title,
+        type: nodes.type,
+        path: nodes.path
+      }).from(nodes).where(inArray2(nodes.nodeId, sourceIds));
+      const nodeMap = new Map(sourceNodes.map((n) => [n.nodeId, n]));
+      for (const edge of incoming) {
+        const node = nodeMap.get(edge.sourceId);
+        if (node) {
+          results.push({ edge, node, direction: "incoming" });
+        }
+      }
+    }
+    return results;
+  }
+  /**
+   * Convert database row to Edge type
+   */
+  rowToEdge(row) {
+    return {
+      edgeId: row.edgeId,
+      sourceId: row.sourceId,
+      targetId: row.targetId,
+      edgeType: row.edgeType,
+      provenance: row.provenance,
+      createdAt: row.createdAt,
+      ...row.strength != null && { strength: row.strength },
+      ...row.versionStart != null && { versionStart: row.versionStart },
+      ...row.versionEnd != null && { versionEnd: row.versionEnd },
+      ...row.attributes != null && { attributes: row.attributes }
+    };
+  }
+};
+
+// src/storage/database/repositories/version-repository.ts
+import { eq as eq3, and as and3, sql as sql3, desc } from "drizzle-orm";
+import { nanoid as nanoid3 } from "nanoid";
+var VersionRepository = class {
+  constructor(db) {
+    this.db = db;
+  }
+  /**
+   * Create a new version
+   */
+  async create(data) {
+    const versionId = nanoid3();
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const row = {
+      versionId,
+      nodeId: data.nodeId,
+      contentHash: data.contentHash,
+      parentVersionId: data.parentVersionId ?? null,
+      createdAt: now,
+      summary: data.summary ?? null
+    };
+    await this.db.insert(versions).values(row);
+    return this.rowToVersion({ ...row, versionId, createdAt: now });
+  }
+  /**
+   * Find a version by ID
+   */
+  async findById(versionId) {
+    const result = await this.db.select().from(versions).where(eq3(versions.versionId, versionId)).limit(1);
+    return result[0] ? this.rowToVersion(result[0]) : null;
+  }
+  /**
+   * Find all versions for a node
+   */
+  async findByNodeId(nodeId) {
+    const result = await this.db.select().from(versions).where(eq3(versions.nodeId, nodeId)).orderBy(desc(versions.createdAt));
+    return result.map(this.rowToVersion);
+  }
+  /**
+   * Find the latest version for a node
+   */
+  async findLatest(nodeId) {
+    const result = await this.db.select().from(versions).where(eq3(versions.nodeId, nodeId)).orderBy(desc(versions.createdAt)).limit(1);
+    return result[0] ? this.rowToVersion(result[0]) : null;
+  }
+  /**
+   * Find version by content hash
+   */
+  async findByContentHash(nodeId, contentHash) {
+    const result = await this.db.select().from(versions).where(and3(eq3(versions.nodeId, nodeId), eq3(versions.contentHash, contentHash))).limit(1);
+    return result[0] ? this.rowToVersion(result[0]) : null;
+  }
+  /**
+   * Get version chain (all ancestors)
+   */
+  async getVersionChain(versionId) {
+    const chain = [];
+    let currentId = versionId;
+    while (currentId) {
+      const version = await this.findById(currentId);
+      if (!version) break;
+      chain.push(version);
+      currentId = version.parentVersionId ?? null;
+    }
+    return chain;
+  }
+  /**
+   * Get child versions
+   */
+  async findChildren(versionId) {
+    const result = await this.db.select().from(versions).where(eq3(versions.parentVersionId, versionId));
+    return result.map(this.rowToVersion);
+  }
+  /**
+   * Update a version (mainly for summary)
+   */
+  async update(versionId, data) {
+    await this.db.update(versions).set({ summary: data.summary ?? null }).where(eq3(versions.versionId, versionId));
+    const updated = await this.findById(versionId);
+    if (!updated) {
+      throw new Error(`Version ${versionId} not found after update`);
+    }
+    return updated;
+  }
+  /**
+   * Delete a version
+   */
+  async delete(versionId) {
+    await this.db.delete(versions).where(eq3(versions.versionId, versionId));
+  }
+  /**
+   * Delete all versions for a node
+   */
+  async deleteForNode(nodeId) {
+    const result = await this.db.delete(versions).where(eq3(versions.nodeId, nodeId));
+    return result.changes;
+  }
+  /**
+   * Count versions
+   */
+  async count() {
+    const result = await this.db.select({ count: sql3`count(*)` }).from(versions);
+    return result[0]?.count ?? 0;
+  }
+  /**
+   * Count versions per node
+   */
+  async countPerNode() {
+    const result = await this.db.select({
+      nodeId: versions.nodeId,
+      count: sql3`count(*)`
+    }).from(versions).groupBy(versions.nodeId);
+    return new Map(result.map((r) => [r.nodeId, r.count]));
+  }
+  /**
+   * Convert database row to Version type
+   */
+  rowToVersion(row) {
+    return {
+      versionId: row.versionId,
+      nodeId: row.nodeId,
+      contentHash: row.contentHash,
+      createdAt: row.createdAt,
+      ...row.parentVersionId != null && { parentVersionId: row.parentVersionId },
+      ...row.summary != null && { summary: row.summary }
+    };
+  }
+};
+
+// src/storage/database/repositories/chunk-repository.ts
+import { eq as eq4, sql as sql4, inArray as inArray3 } from "drizzle-orm";
+import { nanoid as nanoid4 } from "nanoid";
+var ChunkRepository = class {
+  constructor(db, sqlite) {
+    this.db = db;
+    this.sqlite = sqlite;
+  }
+  /**
+   * Create a new chunk
+   */
+  async create(data) {
+    const chunkId = nanoid4();
+    const row = {
+      chunkId,
+      nodeId: data.nodeId,
+      text: data.text,
+      offsetStart: data.offsetStart,
+      offsetEnd: data.offsetEnd,
+      versionId: data.versionId,
+      tokenCount: data.tokenCount ?? null
+    };
+    await this.db.insert(chunks).values(row);
+    return this.rowToChunk({ ...row, chunkId });
+  }
+  /**
+   * Create multiple chunks
+   */
+  async createMany(dataArray) {
+    if (dataArray.length === 0) return [];
+    const rows = dataArray.map((data) => ({
+      chunkId: nanoid4(),
+      nodeId: data.nodeId,
+      text: data.text,
+      offsetStart: data.offsetStart,
+      offsetEnd: data.offsetEnd,
+      versionId: data.versionId,
+      tokenCount: data.tokenCount ?? null
+    }));
+    await this.db.insert(chunks).values(rows);
+    return rows.map((row) => this.rowToChunk(row));
+  }
+  /**
+   * Find a chunk by ID
+   */
+  async findById(chunkId) {
+    const result = await this.db.select().from(chunks).where(eq4(chunks.chunkId, chunkId)).limit(1);
+    return result[0] ? this.rowToChunk(result[0]) : null;
+  }
+  /**
+   * Find all chunks for a node
+   */
+  async findByNodeId(nodeId) {
+    const result = await this.db.select().from(chunks).where(eq4(chunks.nodeId, nodeId)).orderBy(chunks.offsetStart);
+    return result.map(this.rowToChunk);
+  }
+  /**
+   * Find chunks by version
+   */
+  async findByVersionId(versionId) {
+    const result = await this.db.select().from(chunks).where(eq4(chunks.versionId, versionId)).orderBy(chunks.offsetStart);
+    return result.map(this.rowToChunk);
+  }
+  /**
+   * Find chunks by IDs
+   */
+  async findByIds(chunkIds) {
+    if (chunkIds.length === 0) return [];
+    const result = await this.db.select().from(chunks).where(inArray3(chunks.chunkId, chunkIds));
+    return result.map(this.rowToChunk);
+  }
+  /**
+   * Full-text search using FTS5
+   */
+  searchFullText(query, limit = 20) {
+    const escapedQuery = query.replace(/['"]/g, "").replace(/\*/g, "").split(/\s+/).filter((word) => word.length > 0).join(" OR ");
+    if (!escapedQuery) return [];
+    const stmt = this.sqlite.prepare(`
+      SELECT
+        chunk_id as chunkId,
+        node_id as nodeId,
+        text,
+        rank
+      FROM chunks_fts
+      WHERE chunks_fts MATCH ?
+      ORDER BY rank
+      LIMIT ?
+    `);
+    return stmt.all(escapedQuery, limit);
+  }
+  /**
+   * Full-text search with BM25 ranking
+   */
+  searchBM25(query, limit = 20) {
+    const escapedQuery = query.replace(/['"]/g, "").replace(/\*/g, "").split(/\s+/).filter((word) => word.length > 0).join(" OR ");
+    if (!escapedQuery) return [];
+    const stmt = this.sqlite.prepare(`
+      SELECT
+        chunk_id as chunkId,
+        node_id as nodeId,
+        text,
+        bm25(chunks_fts) as score
+      FROM chunks_fts
+      WHERE chunks_fts MATCH ?
+      ORDER BY bm25(chunks_fts)
+      LIMIT ?
+    `);
+    return stmt.all(escapedQuery, limit);
+  }
+  /**
+   * Update a chunk
+   */
+  async update(chunkId, data) {
+    const updateData = {};
+    if (data.nodeId !== void 0) updateData.nodeId = data.nodeId;
+    if (data.text !== void 0) updateData.text = data.text;
+    if (data.offsetStart !== void 0) updateData.offsetStart = data.offsetStart;
+    if (data.offsetEnd !== void 0) updateData.offsetEnd = data.offsetEnd;
+    if (data.versionId !== void 0) updateData.versionId = data.versionId;
+    if (data.tokenCount !== void 0) updateData.tokenCount = data.tokenCount;
+    await this.db.update(chunks).set(updateData).where(eq4(chunks.chunkId, chunkId));
+    const updated = await this.findById(chunkId);
+    if (!updated) {
+      throw new Error(`Chunk ${chunkId} not found after update`);
+    }
+    return updated;
+  }
+  /**
+   * Delete a chunk
+   */
+  async delete(chunkId) {
+    await this.db.delete(chunks).where(eq4(chunks.chunkId, chunkId));
+  }
+  /**
+   * Delete all chunks for a node
+   */
+  async deleteForNode(nodeId) {
+    const result = await this.db.delete(chunks).where(eq4(chunks.nodeId, nodeId));
+    return result.changes;
+  }
+  /**
+   * Delete chunks by version
+   */
+  async deleteByVersion(versionId) {
+    const result = await this.db.delete(chunks).where(eq4(chunks.versionId, versionId));
+    return result.changes;
+  }
+  /**
+   * Count chunks
+   */
+  async count() {
+    const result = await this.db.select({ count: sql4`count(*)` }).from(chunks);
+    return result[0]?.count ?? 0;
+  }
+  /**
+   * Get total token count
+   */
+  async getTotalTokens() {
+    const result = await this.db.select({ total: sql4`COALESCE(SUM(token_count), 0)` }).from(chunks);
+    return result[0]?.total ?? 0;
+  }
+  /**
+   * Convert database row to Chunk type
+   */
+  rowToChunk(row) {
+    return {
+      chunkId: row.chunkId,
+      nodeId: row.nodeId,
+      text: row.text,
+      offsetStart: row.offsetStart,
+      offsetEnd: row.offsetEnd,
+      versionId: row.versionId,
+      ...row.tokenCount != null && { tokenCount: row.tokenCount }
+    };
+  }
+};
+
+// src/storage/database/repositories/mention-repository.ts
+import { eq as eq5, and as and4, sql as sql5 } from "drizzle-orm";
+import { nanoid as nanoid5 } from "nanoid";
+var MentionRepository = class {
+  constructor(db) {
+    this.db = db;
+  }
+  /**
+   * Create a new mention candidate
+   */
+  async create(data) {
+    const candidateId = nanoid5();
+    const row = {
+      candidateId,
+      sourceId: data.sourceId,
+      targetId: data.targetId,
+      surfaceText: data.surfaceText,
+      spanStart: data.spanStart ?? null,
+      spanEnd: data.spanEnd ?? null,
+      confidence: data.confidence,
+      reasons: data.reasons ?? null,
+      status: data.status
+    };
+    await this.db.insert(mentionCandidates).values(row);
+    return this.rowToMention({ ...row, candidateId });
+  }
+  /**
+   * Create multiple mention candidates
+   */
+  async createMany(dataArray) {
+    if (dataArray.length === 0) return [];
+    const rows = dataArray.map((data) => ({
+      candidateId: nanoid5(),
+      sourceId: data.sourceId,
+      targetId: data.targetId,
+      surfaceText: data.surfaceText,
+      spanStart: data.spanStart ?? null,
+      spanEnd: data.spanEnd ?? null,
+      confidence: data.confidence,
+      reasons: data.reasons ?? null,
+      status: data.status
+    }));
+    await this.db.insert(mentionCandidates).values(rows);
+    return rows.map((row) => this.rowToMention(row));
+  }
+  /**
+   * Find a mention by ID
+   */
+  async findById(candidateId) {
+    const result = await this.db.select().from(mentionCandidates).where(eq5(mentionCandidates.candidateId, candidateId)).limit(1);
+    return result[0] ? this.rowToMention(result[0]) : null;
+  }
+  /**
+   * Find mentions by source node
+   */
+  async findBySourceId(sourceId) {
+    const result = await this.db.select().from(mentionCandidates).where(eq5(mentionCandidates.sourceId, sourceId));
+    return result.map(this.rowToMention);
+  }
+  /**
+   * Find mentions by target node
+   */
+  async findByTargetId(targetId) {
+    const result = await this.db.select().from(mentionCandidates).where(eq5(mentionCandidates.targetId, targetId));
+    return result.map(this.rowToMention);
+  }
+  /**
+   * Find mentions by status
+   */
+  async findByStatus(status) {
+    const result = await this.db.select().from(mentionCandidates).where(eq5(mentionCandidates.status, status));
+    return result.map(this.rowToMention);
+  }
+  /**
+   * Find new (pending review) mentions for a source
+   */
+  async findNewForSource(sourceId) {
+    const result = await this.db.select().from(mentionCandidates).where(and4(eq5(mentionCandidates.sourceId, sourceId), eq5(mentionCandidates.status, "new")));
+    return result.map(this.rowToMention);
+  }
+  /**
+   * Check if a mention already exists
+   */
+  async exists(sourceId, targetId, spanStart, spanEnd) {
+    const result = await this.db.select({ count: sql5`count(*)` }).from(mentionCandidates).where(
+      and4(
+        eq5(mentionCandidates.sourceId, sourceId),
+        eq5(mentionCandidates.targetId, targetId),
+        eq5(mentionCandidates.spanStart, spanStart),
+        eq5(mentionCandidates.spanEnd, spanEnd)
+      )
+    );
+    return (result[0]?.count ?? 0) > 0;
+  }
+  /**
+   * Update mention status
+   */
+  async updateStatus(candidateId, status) {
+    await this.db.update(mentionCandidates).set({ status }).where(eq5(mentionCandidates.candidateId, candidateId));
+    const updated = await this.findById(candidateId);
+    if (!updated) {
+      throw new Error(`Mention ${candidateId} not found after update`);
+    }
+    return updated;
+  }
+  /**
+   * Approve a mention (converts to edge)
+   */
+  async approve(candidateId) {
+    return this.updateStatus(candidateId, "approved");
+  }
+  /**
+   * Reject a mention
+   */
+  async reject(candidateId) {
+    return this.updateStatus(candidateId, "rejected");
+  }
+  /**
+   * Defer a mention for later review
+   */
+  async defer(candidateId) {
+    return this.updateStatus(candidateId, "deferred");
+  }
+  /**
+   * Update confidence score
+   */
+  async updateConfidence(candidateId, confidence) {
+    await this.db.update(mentionCandidates).set({ confidence }).where(eq5(mentionCandidates.candidateId, candidateId));
+    const updated = await this.findById(candidateId);
+    if (!updated) {
+      throw new Error(`Mention ${candidateId} not found after update`);
+    }
+    return updated;
+  }
+  /**
+   * Delete a mention
+   */
+  async delete(candidateId) {
+    await this.db.delete(mentionCandidates).where(eq5(mentionCandidates.candidateId, candidateId));
+  }
+  /**
+   * Delete all mentions for a source
+   */
+  async deleteForSource(sourceId) {
+    const result = await this.db.delete(mentionCandidates).where(eq5(mentionCandidates.sourceId, sourceId));
+    return result.changes;
+  }
+  /**
+   * Delete rejected mentions
+   */
+  async deleteRejected() {
+    const result = await this.db.delete(mentionCandidates).where(eq5(mentionCandidates.status, "rejected"));
+    return result.changes;
+  }
+  /**
+   * Count mentions
+   */
+  async count() {
+    const result = await this.db.select({ count: sql5`count(*)` }).from(mentionCandidates);
+    return result[0]?.count ?? 0;
+  }
+  /**
+   * Count mentions by status
+   */
+  async countByStatus() {
+    const result = await this.db.select({
+      status: mentionCandidates.status,
+      count: sql5`count(*)`
+    }).from(mentionCandidates).groupBy(mentionCandidates.status);
+    const counts = {};
+    for (const row of result) {
+      if (row.status) {
+        counts[row.status] = row.count;
+      }
+    }
+    return counts;
+  }
+  /**
+   * Get top mentions by confidence
+   */
+  async getTopByConfidence(limit = 10) {
+    const result = await this.db.select().from(mentionCandidates).where(eq5(mentionCandidates.status, "new")).orderBy(sql5`${mentionCandidates.confidence} DESC`).limit(limit);
+    return result.map(this.rowToMention);
+  }
+  /**
+   * Convert database row to MentionCandidate type
+   */
+  rowToMention(row) {
+    return {
+      candidateId: row.candidateId,
+      sourceId: row.sourceId,
+      targetId: row.targetId,
+      surfaceText: row.surfaceText,
+      confidence: row.confidence,
+      status: row.status ?? "new",
+      ...row.spanStart != null && { spanStart: row.spanStart },
+      ...row.spanEnd != null && { spanEnd: row.spanEnd },
+      ...row.reasons != null && { reasons: row.reasons }
+    };
+  }
+};
+
+// src/storage/database/repositories/unresolved-link-repository.ts
+import { sql as sql6 } from "drizzle-orm";
+var UnresolvedLinkRepository = class {
+  constructor(db) {
+    this.db = db;
+  }
+  /**
+   * Get all unresolved links grouped by target text for ghost node visualization.
+   * Returns ghost node data sorted by reference count (most referenced first).
+   */
+  async getGhostNodes() {
+    const result = await this.db.select({
+      targetText: unresolvedLinks.targetText,
+      sourceIds: sql6`GROUP_CONCAT(${unresolvedLinks.sourceId}, ',')`,
+      referenceCount: sql6`COUNT(*)`,
+      firstSeen: sql6`MIN(${unresolvedLinks.createdAt})`
+    }).from(unresolvedLinks).groupBy(unresolvedLinks.targetText).orderBy(sql6`COUNT(*) DESC`);
+    return result.filter((row) => row.targetText && row.targetText.trim() !== "").map((row) => ({
+      targetText: row.targetText,
+      sourceIds: row.sourceIds ? row.sourceIds.split(",") : [],
+      referenceCount: row.referenceCount,
+      firstSeen: row.firstSeen
+    }));
+  }
+  /**
+   * Get ghost nodes with a minimum reference count threshold.
+   * Useful for filtering out rarely-referenced unresolved links.
+   */
+  async getGhostNodesWithThreshold(minReferenceCount) {
+    const result = await this.db.select({
+      targetText: unresolvedLinks.targetText,
+      sourceIds: sql6`GROUP_CONCAT(${unresolvedLinks.sourceId}, ',')`,
+      referenceCount: sql6`COUNT(*)`,
+      firstSeen: sql6`MIN(${unresolvedLinks.createdAt})`
+    }).from(unresolvedLinks).groupBy(unresolvedLinks.targetText).having(sql6`COUNT(*) >= ${minReferenceCount}`).orderBy(sql6`COUNT(*) DESC`);
+    return result.filter((row) => row.targetText && row.targetText.trim() !== "").map((row) => ({
+      targetText: row.targetText,
+      sourceIds: row.sourceIds ? row.sourceIds.split(",") : [],
+      referenceCount: row.referenceCount,
+      firstSeen: row.firstSeen
+    }));
+  }
+  /**
+   * Count total number of unique unresolved link targets (ghost nodes)
+   */
+  async countGhostNodes() {
+    const result = await this.db.select({
+      count: sql6`COUNT(DISTINCT ${unresolvedLinks.targetText})`
+    }).from(unresolvedLinks);
+    return result[0]?.count ?? 0;
+  }
+  /**
+   * Count total number of unresolved link references
+   */
+  async countReferences() {
+    const result = await this.db.select({
+      count: sql6`COUNT(*)`
+    }).from(unresolvedLinks);
+    return result[0]?.count ?? 0;
+  }
+  /**
+   * Get ghost nodes with most recent reference time included.
+   * The most recent reference time is the latest of:
+   * - The unresolved_link createdAt timestamp
+   * - The referencing node's updatedAt timestamp
+   *
+   * Returns ghost node data sorted by reference count (most referenced first).
+   */
+  async getGhostNodesWithRecency() {
+    const result = await this.db.select({
+      targetText: unresolvedLinks.targetText,
+      sourceIds: sql6`GROUP_CONCAT(${unresolvedLinks.sourceId}, ',')`,
+      referenceCount: sql6`COUNT(*)`,
+      firstSeen: sql6`MIN(${unresolvedLinks.createdAt})`,
+      mostRecentLinkCreated: sql6`MAX(${unresolvedLinks.createdAt})`
+    }).from(unresolvedLinks).groupBy(unresolvedLinks.targetText).orderBy(sql6`COUNT(*) DESC`);
+    const ghostsWithRecency = await Promise.all(
+      result.filter((row) => row.targetText && row.targetText.trim() !== "").map(async (row) => {
+        const sourceIds = row.sourceIds ? row.sourceIds.split(",") : [];
+        let mostRecentReferencerUpdate = null;
+        if (sourceIds.length > 0) {
+          const referencerResult = await this.db.select({
+            maxUpdatedAt: sql6`MAX(${nodes.updatedAt})`
+          }).from(nodes).where(
+            sql6`${nodes.nodeId} IN (${sql6.join(
+              sourceIds.map((id) => sql6`${id}`),
+              sql6`, `
+            )})`
+          );
+          mostRecentReferencerUpdate = referencerResult[0]?.maxUpdatedAt ?? null;
+        }
+        const mostRecentRef = [row.mostRecentLinkCreated, mostRecentReferencerUpdate].filter((t) => t !== null).sort().reverse()[0];
+        return {
+          targetText: row.targetText,
+          sourceIds,
+          referenceCount: row.referenceCount,
+          firstSeen: row.firstSeen,
+          mostRecentRef
+        };
+      })
+    );
+    return ghostsWithRecency;
+  }
+  /**
+   * Delete unresolved links by target text
+   */
+  async deleteByTargetText(targetText) {
+    const result = await this.db.delete(unresolvedLinks).where(sql6`${unresolvedLinks.targetText} COLLATE NOCASE = ${targetText}`);
+    return result.changes;
+  }
+};
+
+// src/storage/database/repositories/constellation-repository.ts
+import { eq as eq6 } from "drizzle-orm";
+import { randomUUID } from "crypto";
+var ConstellationRepository = class {
+  constructor(db) {
+    this.db = db;
+  }
+  /**
+   * Convert a database row to a Constellation object
+   */
+  rowToConstellation(row) {
+    return {
+      constellationId: row.constellationId,
+      name: row.name,
+      description: row.description ?? void 0,
+      hiddenNodeTypes: row.hiddenNodeTypes ?? [],
+      hiddenEdgeTypes: row.hiddenEdgeTypes ?? [],
+      showGhosts: row.showGhosts === 1,
+      ghostThreshold: row.ghostThreshold,
+      cameraX: row.cameraX ?? void 0,
+      cameraY: row.cameraY ?? void 0,
+      cameraZoom: row.cameraZoom ?? void 0,
+      focusNodeIds: row.focusNodeIds ?? void 0,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt
+    };
+  }
+  /**
+   * Create a new constellation
+   */
+  async create(input) {
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const id = randomUUID();
+    const row = {
+      constellationId: id,
+      name: input.name,
+      description: input.description ?? null,
+      hiddenNodeTypes: input.hiddenNodeTypes ?? [],
+      hiddenEdgeTypes: input.hiddenEdgeTypes ?? [],
+      showGhosts: input.showGhosts !== false ? 1 : 0,
+      ghostThreshold: input.ghostThreshold ?? 1,
+      cameraX: input.cameraX ?? null,
+      cameraY: input.cameraY ?? null,
+      cameraZoom: input.cameraZoom ?? null,
+      focusNodeIds: input.focusNodeIds ?? null,
+      createdAt: now,
+      updatedAt: now
+    };
+    await this.db.insert(constellations).values(row);
+    return this.rowToConstellation(row);
+  }
+  /**
+   * Find a constellation by ID
+   */
+  async findById(id) {
+    const rows = await this.db.select().from(constellations).where(eq6(constellations.constellationId, id)).limit(1);
+    const row = rows[0];
+    if (!row) return null;
+    return this.rowToConstellation(row);
+  }
+  /**
+   * Find a constellation by name
+   */
+  async findByName(name) {
+    const rows = await this.db.select().from(constellations).where(eq6(constellations.name, name)).limit(1);
+    const row = rows[0];
+    if (!row) return null;
+    return this.rowToConstellation(row);
+  }
+  /**
+   * Find all constellations
+   */
+  async findAll() {
+    const rows = await this.db.select().from(constellations);
+    return rows.map((row) => this.rowToConstellation(row));
+  }
+  /**
+   * Update an existing constellation
+   */
+  async update(id, input) {
+    const existing = await this.findById(id);
+    if (!existing) return null;
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const updates = {
+      updatedAt: now
+    };
+    if (input.name !== void 0) updates.name = input.name;
+    if (input.description !== void 0) updates.description = input.description;
+    if (input.hiddenNodeTypes !== void 0) updates.hiddenNodeTypes = input.hiddenNodeTypes;
+    if (input.hiddenEdgeTypes !== void 0) updates.hiddenEdgeTypes = input.hiddenEdgeTypes;
+    if (input.showGhosts !== void 0) updates.showGhosts = input.showGhosts ? 1 : 0;
+    if (input.ghostThreshold !== void 0) updates.ghostThreshold = input.ghostThreshold;
+    if (input.cameraX !== void 0) updates.cameraX = input.cameraX;
+    if (input.cameraY !== void 0) updates.cameraY = input.cameraY;
+    if (input.cameraZoom !== void 0) updates.cameraZoom = input.cameraZoom;
+    if (input.focusNodeIds !== void 0) updates.focusNodeIds = input.focusNodeIds;
+    await this.db.update(constellations).set(updates).where(eq6(constellations.constellationId, id));
+    return this.findById(id);
+  }
+  /**
+   * Delete a constellation by ID
+   */
+  async delete(id) {
+    const result = await this.db.delete(constellations).where(eq6(constellations.constellationId, id));
+    return result.changes !== 0;
+  }
+  /**
+   * Delete a constellation by name
+   */
+  async deleteByName(name) {
+    const result = await this.db.delete(constellations).where(eq6(constellations.name, name));
+    return result.changes !== 0;
+  }
+};
+
+// src/storage/database/repositories/embedding-repository.ts
+import { eq as eq7, inArray as inArray4, sql as sql7 } from "drizzle-orm";
+import { nanoid as nanoid6 } from "nanoid";
+var EmbeddingRepository = class {
+  constructor(db) {
+    this.db = db;
+  }
+  /**
+   * Create a new embedding
+   */
+  async create(data) {
+    const embeddingId = nanoid6();
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const row = {
+      embeddingId,
+      nodeId: data.nodeId,
+      embedding: data.embedding,
+      model: data.model,
+      dimensions: data.dimensions,
+      contentHash: data.contentHash,
+      computedAt: now
+    };
+    await this.db.insert(nodeEmbeddings).values(row);
+    return this.rowToEmbedding({ ...row, embeddingId, computedAt: now });
+  }
+  /**
+   * Create or update an embedding for a node
+   */
+  async upsert(data) {
+    const existing = await this.findByNodeId(data.nodeId);
+    if (existing) {
+      return this.update(existing.embeddingId, data);
+    }
+    return this.create(data);
+  }
+  /**
+   * Find an embedding by ID
+   */
+  async findById(embeddingId) {
+    const result = await this.db.select().from(nodeEmbeddings).where(eq7(nodeEmbeddings.embeddingId, embeddingId)).limit(1);
+    return result[0] ? this.rowToEmbedding(result[0]) : null;
+  }
+  /**
+   * Find embedding by node ID
+   */
+  async findByNodeId(nodeId) {
+    const result = await this.db.select().from(nodeEmbeddings).where(eq7(nodeEmbeddings.nodeId, nodeId)).limit(1);
+    return result[0] ? this.rowToEmbedding(result[0]) : null;
+  }
+  /**
+   * Find all embeddings
+   */
+  async findAll() {
+    const result = await this.db.select().from(nodeEmbeddings);
+    return result.map((row) => this.rowToEmbedding(row));
+  }
+  /**
+   * Find embeddings by model
+   */
+  async findByModel(model) {
+    const result = await this.db.select().from(nodeEmbeddings).where(eq7(nodeEmbeddings.model, model));
+    return result.map((row) => this.rowToEmbedding(row));
+  }
+  /**
+   * Find embeddings by node IDs
+   */
+  async findByNodeIds(nodeIds) {
+    if (nodeIds.length === 0) return [];
+    const result = await this.db.select().from(nodeEmbeddings).where(inArray4(nodeEmbeddings.nodeId, nodeIds));
+    return result.map((row) => this.rowToEmbedding(row));
+  }
+  /**
+   * Find nodes that need embedding computation
+   * Returns nodes where either:
+   * - No embedding exists
+   * - The content hash has changed since last embedding
+   */
+  async findDirtyNodeIds() {
+    const allNodes = await this.db.select({
+      nodeId: nodes.nodeId,
+      contentHash: nodes.contentHash
+    }).from(nodes);
+    const embeddings = await this.db.select({
+      nodeId: nodeEmbeddings.nodeId,
+      contentHash: nodeEmbeddings.contentHash
+    }).from(nodeEmbeddings);
+    const embeddingMap = new Map(embeddings.map((e) => [e.nodeId, e.contentHash]));
+    const dirtyNodeIds = [];
+    for (const node of allNodes) {
+      const existingHash = embeddingMap.get(node.nodeId);
+      if (!existingHash || existingHash !== node.contentHash) {
+        dirtyNodeIds.push(node.nodeId);
+      }
+    }
+    return dirtyNodeIds;
+  }
+  /**
+   * Update an embedding
+   */
+  async update(embeddingId, data) {
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const updateData = {
+      computedAt: now
+    };
+    if (data.embedding !== void 0) updateData.embedding = data.embedding;
+    if (data.model !== void 0) updateData.model = data.model;
+    if (data.dimensions !== void 0) updateData.dimensions = data.dimensions;
+    if (data.contentHash !== void 0) updateData.contentHash = data.contentHash;
+    await this.db.update(nodeEmbeddings).set(updateData).where(eq7(nodeEmbeddings.embeddingId, embeddingId));
+    const updated = await this.findById(embeddingId);
+    if (!updated) {
+      throw new Error(`Embedding ${embeddingId} not found after update`);
+    }
+    return updated;
+  }
+  /**
+   * Delete an embedding by ID
+   */
+  async delete(embeddingId) {
+    await this.db.delete(nodeEmbeddings).where(eq7(nodeEmbeddings.embeddingId, embeddingId));
+  }
+  /**
+   * Delete embedding by node ID
+   */
+  async deleteByNodeId(nodeId) {
+    await this.db.delete(nodeEmbeddings).where(eq7(nodeEmbeddings.nodeId, nodeId));
+  }
+  /**
+   * Delete all embeddings for a model
+   */
+  async deleteByModel(model) {
+    const result = await this.db.delete(nodeEmbeddings).where(eq7(nodeEmbeddings.model, model));
+    return result.changes;
+  }
+  /**
+   * Count embeddings
+   */
+  async count() {
+    const result = await this.db.select({ count: sql7`count(*)` }).from(nodeEmbeddings);
+    return result[0]?.count ?? 0;
+  }
+  /**
+   * Count embeddings by model
+   */
+  async countByModel() {
+    const result = await this.db.select({
+      model: nodeEmbeddings.model,
+      count: sql7`count(*)`
+    }).from(nodeEmbeddings).groupBy(nodeEmbeddings.model);
+    const counts = {};
+    for (const row of result) {
+      counts[row.model] = row.count;
+    }
+    return counts;
+  }
+  /**
+   * Convert database row to NodeEmbedding type
+   */
+  rowToEmbedding(row) {
+    return {
+      embeddingId: row.embeddingId,
+      nodeId: row.nodeId,
+      embedding: row.embedding,
+      model: row.model,
+      dimensions: row.dimensions,
+      contentHash: row.contentHash,
+      computedAt: row.computedAt
+    };
+  }
+};
+
+// src/storage/database/repositories/wormhole-repository.ts
+import { eq as eq8, and as and5, or as or2, sql as sql8 } from "drizzle-orm";
+import { nanoid as nanoid7 } from "nanoid";
+var WormholeRepository = class {
+  constructor(db) {
+    this.db = db;
+  }
+  /**
+   * Create a new rejection
+   */
+  async createRejection(data) {
+    const rejectionId = nanoid7();
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const [normalizedSourceId, normalizedTargetId, normalizedSourceHash, normalizedTargetHash] = data.sourceId < data.targetId ? [data.sourceId, data.targetId, data.sourceContentHash, data.targetContentHash] : [data.targetId, data.sourceId, data.targetContentHash, data.sourceContentHash];
+    const row = {
+      rejectionId,
+      sourceId: normalizedSourceId,
+      targetId: normalizedTargetId,
+      sourceContentHash: normalizedSourceHash,
+      targetContentHash: normalizedTargetHash,
+      rejectedAt: now
+    };
+    await this.db.insert(wormholeRejections).values(row);
+    return this.rowToRejection({ ...row, rejectionId, rejectedAt: now });
+  }
+  /**
+   * Check if a pair is rejected (considering content hashes)
+   * Returns true if the pair was rejected AND the content hasn't changed
+   */
+  async isRejected(sourceId, targetId, sourceContentHash, targetContentHash) {
+    const [normalizedSourceId, normalizedTargetId, normalizedSourceHash, normalizedTargetHash] = sourceId < targetId ? [sourceId, targetId, sourceContentHash, targetContentHash] : [targetId, sourceId, targetContentHash, sourceContentHash];
+    const result = await this.db.select().from(wormholeRejections).where(
+      and5(
+        eq8(wormholeRejections.sourceId, normalizedSourceId),
+        eq8(wormholeRejections.targetId, normalizedTargetId),
+        eq8(wormholeRejections.sourceContentHash, normalizedSourceHash),
+        eq8(wormholeRejections.targetContentHash, normalizedTargetHash)
+      )
+    ).limit(1);
+    return result.length > 0;
+  }
+  /**
+   * Check if any rejection exists for a pair (regardless of content hash)
+   */
+  async hasAnyRejection(sourceId, targetId) {
+    const [normalizedSourceId, normalizedTargetId] = sourceId < targetId ? [sourceId, targetId] : [targetId, sourceId];
+    const result = await this.db.select().from(wormholeRejections).where(
+      and5(
+        eq8(wormholeRejections.sourceId, normalizedSourceId),
+        eq8(wormholeRejections.targetId, normalizedTargetId)
+      )
+    ).limit(1);
+    return result.length > 0;
+  }
+  /**
+   * Find all rejections
+   */
+  async findAll() {
+    const result = await this.db.select().from(wormholeRejections);
+    return result.map((row) => this.rowToRejection(row));
+  }
+  /**
+   * Find rejections for a specific node
+   */
+  async findByNodeId(nodeId) {
+    const result = await this.db.select().from(wormholeRejections).where(or2(eq8(wormholeRejections.sourceId, nodeId), eq8(wormholeRejections.targetId, nodeId)));
+    return result.map((row) => this.rowToRejection(row));
+  }
+  /**
+   * Delete a rejection by ID
+   */
+  async delete(rejectionId) {
+    await this.db.delete(wormholeRejections).where(eq8(wormholeRejections.rejectionId, rejectionId));
+  }
+  /**
+   * Delete rejections for a node pair
+   */
+  async deleteForPair(sourceId, targetId) {
+    const [normalizedSourceId, normalizedTargetId] = sourceId < targetId ? [sourceId, targetId] : [targetId, sourceId];
+    await this.db.delete(wormholeRejections).where(
+      and5(
+        eq8(wormholeRejections.sourceId, normalizedSourceId),
+        eq8(wormholeRejections.targetId, normalizedTargetId)
+      )
+    );
+  }
+  /**
+   * Delete all rejections for a node
+   */
+  async deleteForNode(nodeId) {
+    const result = await this.db.delete(wormholeRejections).where(or2(eq8(wormholeRejections.sourceId, nodeId), eq8(wormholeRejections.targetId, nodeId)));
+    return result.changes;
+  }
+  /**
+   * Clear all rejections
+   */
+  async clearAll() {
+    const result = await this.db.delete(wormholeRejections);
+    return result.changes;
+  }
+  /**
+   * Count rejections
+   */
+  async count() {
+    const result = await this.db.select({ count: sql8`count(*)` }).from(wormholeRejections);
+    return result[0]?.count ?? 0;
+  }
+  /**
+   * Convert database row to WormholeRejection type
+   */
+  rowToRejection(row) {
+    return {
+      rejectionId: row.rejectionId,
+      sourceId: row.sourceId,
+      targetId: row.targetId,
+      sourceContentHash: row.sourceContentHash,
+      targetContentHash: row.targetContentHash,
+      rejectedAt: row.rejectedAt
+    };
+  }
+};
+
+// src/storage/database/repositories/candidate-edge-repository.ts
+import { eq as eq9, and as and6, inArray as inArray5, sql as sql9 } from "drizzle-orm";
+var CandidateEdgeRepository = class {
+  constructor(db) {
+    this.db = db;
+  }
+  /**
+   * Create a new candidate edge
+   */
+  async create(data) {
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const [fromIdNorm, toIdNorm] = data.fromId < data.toId ? [data.fromId, data.toId] : [data.toId, data.fromId];
+    const row = {
+      suggestionId: data.suggestionId,
+      fromId: data.fromId,
+      toId: data.toId,
+      suggestedEdgeType: data.suggestedEdgeType,
+      fromIdNorm,
+      toIdNorm,
+      status: "suggested",
+      signals: data.signals ?? null,
+      reasons: data.reasons ?? null,
+      provenance: data.provenance ?? null,
+      createdAt: now,
+      lastComputedAt: now
+    };
+    await this.db.insert(candidateEdges).values(row);
+    return this.rowToCandidateEdge({
+      ...row,
+      statusChangedAt: null,
+      lastSeenAt: null,
+      writebackStatus: null,
+      writebackReason: null,
+      approvedEdgeId: null
+    });
+  }
+  /**
+   * Create or update a candidate edge (upsert by suggestionId)
+   */
+  async upsert(data) {
+    const existing = await this.findById(data.suggestionId);
+    if (existing) {
+      const mergedSignals = { ...existing.signals, ...data.signals };
+      const mergedReasons = [.../* @__PURE__ */ new Set([...existing.reasons || [], ...data.reasons || []])];
+      const mergedProvenance = [...existing.provenance || [], ...data.provenance || []];
+      return this.update(data.suggestionId, {
+        signals: mergedSignals,
+        reasons: mergedReasons.slice(0, 3),
+        // Keep top 3
+        provenance: mergedProvenance
+      });
+    }
+    return this.create(data);
+  }
+  /**
+   * Find a candidate edge by ID
+   */
+  async findById(suggestionId) {
+    const result = await this.db.select().from(candidateEdges).where(eq9(candidateEdges.suggestionId, suggestionId)).limit(1);
+    return result[0] ? this.rowToCandidateEdge(result[0]) : null;
+  }
+  /**
+   * Find candidate edges by status
+   */
+  async findByStatus(status) {
+    const result = await this.db.select().from(candidateEdges).where(eq9(candidateEdges.status, status));
+    return result.map((row) => this.rowToCandidateEdge(row));
+  }
+  /**
+   * Find candidate edges involving a specific node (as source or target)
+   */
+  async findByNodeId(nodeId) {
+    const result = await this.db.select().from(candidateEdges).where(
+      sql9`${candidateEdges.fromId} = ${nodeId} OR ${candidateEdges.toId} = ${nodeId}`
+    );
+    return result.map((row) => this.rowToCandidateEdge(row));
+  }
+  /**
+   * Find suggested candidate edges for nodes in a given set
+   */
+  async findSuggestedForNodes(nodeIds) {
+    if (nodeIds.length === 0) return [];
+    const result = await this.db.select().from(candidateEdges).where(
+      and6(
+        eq9(candidateEdges.status, "suggested"),
+        sql9`(${candidateEdges.fromId} IN ${nodeIds} OR ${candidateEdges.toId} IN ${nodeIds})`
+      )
+    );
+    return result.map((row) => this.rowToCandidateEdge(row));
+  }
+  /**
+   * Find by normalized pair (for checking duplicates)
+   */
+  async findByNormalizedPair(nodeId1, nodeId2, edgeType) {
+    const [fromIdNorm, toIdNorm] = nodeId1 < nodeId2 ? [nodeId1, nodeId2] : [nodeId2, nodeId1];
+    const result = await this.db.select().from(candidateEdges).where(
+      and6(
+        eq9(candidateEdges.fromIdNorm, fromIdNorm),
+        eq9(candidateEdges.toIdNorm, toIdNorm),
+        eq9(candidateEdges.suggestedEdgeType, edgeType)
+      )
+    ).limit(1);
+    return result[0] ? this.rowToCandidateEdge(result[0]) : null;
+  }
+  /**
+   * Update a candidate edge
+   */
+  async update(suggestionId, data) {
+    const updateData = {
+      lastComputedAt: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    if (data.status !== void 0) {
+      updateData.status = data.status;
+      updateData.statusChangedAt = (/* @__PURE__ */ new Date()).toISOString();
+    }
+    if (data.signals !== void 0) updateData.signals = data.signals;
+    if (data.reasons !== void 0) updateData.reasons = data.reasons;
+    if (data.provenance !== void 0) updateData.provenance = data.provenance;
+    if (data.writebackStatus !== void 0) updateData.writebackStatus = data.writebackStatus;
+    if (data.writebackReason !== void 0) updateData.writebackReason = data.writebackReason;
+    if (data.approvedEdgeId !== void 0) updateData.approvedEdgeId = data.approvedEdgeId;
+    await this.db.update(candidateEdges).set(updateData).where(eq9(candidateEdges.suggestionId, suggestionId));
+    const updated = await this.findById(suggestionId);
+    if (!updated) {
+      throw new Error(`Candidate edge ${suggestionId} not found after update`);
+    }
+    return updated;
+  }
+  /**
+   * Update status of a candidate edge
+   */
+  async updateStatus(suggestionId, status, approvedEdgeId) {
+    const updateData = { status };
+    if (approvedEdgeId !== void 0) {
+      updateData.approvedEdgeId = approvedEdgeId;
+    }
+    return this.update(suggestionId, updateData);
+  }
+  /**
+   * Mark last seen time for candidate edges (for pruning stale suggestions)
+   */
+  async markSeen(suggestionIds) {
+    if (suggestionIds.length === 0) return;
+    await this.db.update(candidateEdges).set({ lastSeenAt: (/* @__PURE__ */ new Date()).toISOString() }).where(inArray5(candidateEdges.suggestionId, suggestionIds));
+  }
+  /**
+   * Delete a candidate edge
+   */
+  async delete(suggestionId) {
+    await this.db.delete(candidateEdges).where(eq9(candidateEdges.suggestionId, suggestionId));
+  }
+  /**
+   * Delete all candidate edges for a node
+   */
+  async deleteForNode(nodeId) {
+    const result = await this.db.delete(candidateEdges).where(
+      sql9`${candidateEdges.fromId} = ${nodeId} OR ${candidateEdges.toId} = ${nodeId}`
+    );
+    return result.changes;
+  }
+  /**
+   * Count candidate edges by status
+   */
+  async countByStatus() {
+    const result = await this.db.select({
+      status: candidateEdges.status,
+      count: sql9`count(*)`
+    }).from(candidateEdges).groupBy(candidateEdges.status);
+    const counts = {
+      suggested: 0,
+      approved: 0,
+      rejected: 0
+    };
+    for (const row of result) {
+      counts[row.status] = row.count;
+    }
+    return counts;
+  }
+  /**
+   * Count total candidate edges
+   */
+  async count() {
+    const result = await this.db.select({ count: sql9`count(*)` }).from(candidateEdges);
+    return result[0]?.count ?? 0;
+  }
+  /**
+   * Convert database row to CandidateEdge type
+   */
+  rowToCandidateEdge(row) {
+    const result = {
+      suggestionId: row.suggestionId,
+      fromId: row.fromId,
+      toId: row.toId,
+      suggestedEdgeType: row.suggestedEdgeType,
+      status: row.status,
+      createdAt: row.createdAt,
+      lastComputedAt: row.lastComputedAt
+    };
+    if (row.statusChangedAt) result.statusChangedAt = row.statusChangedAt;
+    if (row.signals) result.signals = row.signals;
+    if (row.reasons) result.reasons = row.reasons;
+    if (row.provenance) result.provenance = row.provenance;
+    if (row.lastSeenAt) result.lastSeenAt = row.lastSeenAt;
+    if (row.writebackStatus) result.writebackStatus = row.writebackStatus;
+    if (row.writebackReason) result.writebackReason = row.writebackReason;
+    if (row.approvedEdgeId) result.approvedEdgeId = row.approvedEdgeId;
+    return result;
+  }
+};
 
 // src/parser/markdown.ts
 import { unified } from "unified";
@@ -2925,17 +4830,24 @@ ${combinedText}`);
   }
 };
 export {
+  CandidateEdgeRepository,
+  CandidateEdgeSourceSchema,
+  CandidateEdgeStatusSchema,
+  ChunkRepository,
   ChunkSchema,
   ConfigError,
   ConnectionManager,
+  ConstellationRepository,
   ContextAssembler,
   ContinuityError,
   DEFAULT_CONFIG,
   DatabaseError,
   EdgeProvenanceSchema,
+  EdgeRepository,
   EdgeSchema,
   EdgeTypeSchema,
   EmbeddingError,
+  EmbeddingRepository,
   FileSystemError,
   FrontmatterSchema,
   GraphEngine,
@@ -2943,9 +4855,14 @@ export {
   GraphMetricsSchema,
   InMemoryLinkResolver,
   IndexingPipeline,
+  LAYER_A_EDGES,
+  LAYER_B_EDGES,
+  LAYER_C_EDGES,
   LinkResolver,
   MentionCandidateSchema,
+  MentionRepository,
   MentionStatusSchema,
+  NodeRepository,
   NodeSchema,
   NodeTypeSchema,
   ParseError,
@@ -2955,8 +4872,11 @@ export {
   ProposalTypeSchema,
   ResolutionError,
   RetrievalError,
+  UnresolvedLinkRepository,
   ValidationError,
+  VersionRepository,
   VersionSchema,
+  WormholeRepository,
   ZettelScriptError,
   createLinkResolver,
   createWikilink,
@@ -2966,17 +4886,21 @@ export {
   extractPlainText,
   extractTitle,
   extractWikilinks,
+  generateSuggestionId,
   getDatabase,
+  getEdgeLayer,
   getRawSqlite,
   getUniqueTargets,
   getWikilinkContext,
   hasWikilinks,
   insertWikilink,
+  isUndirectedEdgeType,
   normalizeTarget,
   parseFrontmatter,
   parseMarkdown,
   parseWikilinkString,
   serializeFrontmatter,
+  shouldRenderEdge,
   splitIntoParagraphs,
   splitIntoSections,
   stringifyMarkdown,

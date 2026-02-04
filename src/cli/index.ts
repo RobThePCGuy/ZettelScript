@@ -20,6 +20,8 @@ import { wormholeCommand } from './commands/wormhole.js';
 import { pathCommand } from './commands/path.js';
 import { doctorCommand } from './commands/doctor.js';
 import { focusCommand } from './commands/focus.js';
+import { approveCommand } from './commands/approve.js';
+import { rejectCommand } from './commands/reject.js';
 
 const program = new Command();
 
@@ -48,6 +50,8 @@ program.addCommand(wormholeCommand);
 program.addCommand(pathCommand);
 program.addCommand(doctorCommand);
 program.addCommand(focusCommand);
+program.addCommand(approveCommand);
+program.addCommand(rejectCommand);
 
 // Parse arguments
 program.parse();

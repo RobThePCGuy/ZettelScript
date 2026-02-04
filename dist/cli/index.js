@@ -6,7 +6,7 @@ var __export = (target, all) => {
 };
 
 // src/cli/index.ts
-import { Command as Command18 } from "commander";
+import { Command as Command22 } from "commander";
 
 // src/cli/commands/init.ts
 import { Command } from "commander";
@@ -22,6 +22,7 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 var schema_exports = {};
 __export(schema_exports, {
   aliases: () => aliases,
+  candidateEdges: () => candidateEdges,
   chunks: () => chunks,
   constellations: () => constellations,
   edges: () => edges,
@@ -45,12 +46,15 @@ var nodes = sqliteTable(
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
     contentHash: text("content_hash"),
-    metadata: text("metadata", { mode: "json" })
+    metadata: text("metadata", { mode: "json" }),
+    isGhost: integer("is_ghost").notNull().default(0)
+    // 0 = real node, 1 = ghost
   },
   (table) => [
     index("idx_nodes_title").on(table.title),
     index("idx_nodes_type").on(table.type),
-    index("idx_nodes_path").on(table.path)
+    index("idx_nodes_path").on(table.path),
+    index("idx_nodes_ghost").on(table.isGhost)
   ]
 );
 var edges = sqliteTable(
@@ -234,6 +238,42 @@ var wormholeRejections = sqliteTable(
     index("idx_rejections_pair").on(table.sourceId, table.targetId)
   ]
 );
+var candidateEdges = sqliteTable(
+  "candidate_edges",
+  {
+    suggestionId: text("suggestion_id").primaryKey(),
+    fromId: text("from_id").notNull(),
+    toId: text("to_id").notNull(),
+    suggestedEdgeType: text("suggested_edge_type").notNull(),
+    // For undirected uniqueness (canonical ordering)
+    fromIdNorm: text("from_id_norm").notNull(),
+    toIdNorm: text("to_id_norm").notNull(),
+    // Status lifecycle
+    status: text("status").default("suggested").notNull(),
+    statusChangedAt: text("status_changed_at"),
+    // Evidence (merged from multiple sources)
+    signals: text("signals", { mode: "json" }),
+    // { semantic?, mentionCount?, graphProximity? }
+    reasons: text("reasons", { mode: "json" }),
+    // string[]
+    provenance: text("provenance", { mode: "json" }),
+    // array of evidence objects
+    // Timestamps
+    createdAt: text("created_at").notNull(),
+    lastComputedAt: text("last_computed_at").notNull(),
+    lastSeenAt: text("last_seen_at"),
+    // Writeback tracking
+    writebackStatus: text("writeback_status"),
+    writebackReason: text("writeback_reason"),
+    approvedEdgeId: text("approved_edge_id")
+  },
+  (table) => [
+    index("idx_candidate_from").on(table.fromId),
+    index("idx_candidate_to").on(table.toId),
+    index("idx_candidate_status").on(table.status),
+    index("idx_candidate_norm").on(table.fromIdNorm, table.toIdNorm, table.suggestedEdgeType)
+  ]
+);
 
 // src/core/errors.ts
 var ZettelScriptError = class extends Error {
@@ -302,7 +342,7 @@ CREATE TRIGGER IF NOT EXISTS chunks_au AFTER UPDATE ON chunks BEGIN
   VALUES (new.chunk_id, new.node_id, new.text);
 END;
 `;
-var SCHEMA_VERSION = 2;
+var SCHEMA_VERSION = 4;
 var ConnectionManager = class _ConnectionManager {
   static instance = null;
   sqlite = null;
@@ -390,7 +430,8 @@ var ConnectionManager = class _ConnectionManager {
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         content_hash TEXT,
-        metadata TEXT
+        metadata TEXT,
+        is_ghost INTEGER NOT NULL DEFAULT 0
       );
 
       -- Edges with version ranges
@@ -517,10 +558,32 @@ var ConnectionManager = class _ConnectionManager {
         rejected_at TEXT NOT NULL
       );
 
+      -- Candidate edges (Phase 2: Suggestions)
+      CREATE TABLE IF NOT EXISTS candidate_edges (
+        suggestion_id TEXT PRIMARY KEY,
+        from_id TEXT NOT NULL,
+        to_id TEXT NOT NULL,
+        suggested_edge_type TEXT NOT NULL,
+        from_id_norm TEXT NOT NULL,
+        to_id_norm TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'suggested',
+        status_changed_at TEXT,
+        signals TEXT,
+        reasons TEXT,
+        provenance TEXT,
+        created_at TEXT NOT NULL,
+        last_computed_at TEXT NOT NULL,
+        last_seen_at TEXT,
+        writeback_status TEXT,
+        writeback_reason TEXT,
+        approved_edge_id TEXT
+      );
+
       -- Performance indexes
       CREATE INDEX IF NOT EXISTS idx_nodes_title ON nodes(title COLLATE NOCASE);
       CREATE INDEX IF NOT EXISTS idx_nodes_type ON nodes(type);
       CREATE INDEX IF NOT EXISTS idx_nodes_path ON nodes(path);
+      CREATE INDEX IF NOT EXISTS idx_nodes_ghost ON nodes(is_ghost);
       CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_id);
       CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_id);
       CREATE INDEX IF NOT EXISTS idx_edges_type ON edges(edge_type);
@@ -544,6 +607,10 @@ var ConnectionManager = class _ConnectionManager {
       CREATE INDEX IF NOT EXISTS idx_rejections_source ON wormhole_rejections(source_id);
       CREATE INDEX IF NOT EXISTS idx_rejections_target ON wormhole_rejections(target_id);
       CREATE INDEX IF NOT EXISTS idx_rejections_pair ON wormhole_rejections(source_id, target_id);
+      CREATE INDEX IF NOT EXISTS idx_candidate_from ON candidate_edges(from_id);
+      CREATE INDEX IF NOT EXISTS idx_candidate_to ON candidate_edges(to_id);
+      CREATE INDEX IF NOT EXISTS idx_candidate_status ON candidate_edges(status);
+      CREATE INDEX IF NOT EXISTS idx_candidate_norm ON candidate_edges(from_id_norm, to_id_norm, suggested_edge_type);
     `);
     this.sqlite.exec(FTS5_SCHEMA);
     this.sqlite.exec(FTS5_TRIGGERS);
@@ -613,6 +680,7 @@ var ConnectionManager = class _ConnectionManager {
 
 // src/core/types/index.ts
 import { Type } from "@sinclair/typebox";
+import { createHash } from "crypto";
 var NodeTypeSchema = Type.Union([
   Type.Literal("note"),
   Type.Literal("scene"),
@@ -633,7 +701,8 @@ var NodeSchema = Type.Object({
   createdAt: Type.String({ format: "date-time" }),
   updatedAt: Type.String({ format: "date-time" }),
   contentHash: Type.Optional(Type.String()),
-  metadata: Type.Optional(Type.Record(Type.String(), Type.Unknown()))
+  metadata: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
+  isGhost: Type.Optional(Type.Boolean())
 });
 var EdgeTypeSchema = Type.Union([
   Type.Literal("explicit_link"),
@@ -839,8 +908,74 @@ var DEFAULT_CONFIG = {
   llm: {
     provider: "none",
     model: "gpt-4"
+  },
+  visualization: {
+    mode: "focus"
+    // v2 default: hide Layer C edges (mentions, suggestions)
   }
 };
+var LAYER_A_EDGES = [
+  "explicit_link",
+  // User-authored [[wikilinks]]
+  "hierarchy",
+  // Parent/child, folder structure
+  "sequence",
+  // Chapter/scene order (chronology_next)
+  "causes",
+  // Causal relationships
+  "setup_payoff",
+  // Narrative foreshadowing
+  "participation",
+  // Character in scene
+  "pov_visible_to"
+  // POV constraints
+];
+var LAYER_B_EDGES = [
+  "semantic"
+  // Accepted wormholes (similarity > threshold)
+];
+var LAYER_C_EDGES = [
+  "mention",
+  // Approved mention (co-occurrence)
+  "semantic_suggestion",
+  // Wormhole below threshold
+  "backlink",
+  // Computed incoming (can be noisy)
+  "alias"
+  // Alternative name reference
+];
+function getEdgeLayer(edgeType) {
+  if (LAYER_A_EDGES.includes(edgeType)) return "A";
+  if (LAYER_B_EDGES.includes(edgeType)) return "B";
+  if (LAYER_C_EDGES.includes(edgeType)) return "C";
+  return "unknown";
+}
+function shouldRenderEdge(edgeType, mode) {
+  if (mode === "classic") return true;
+  const layer = getEdgeLayer(edgeType);
+  if (layer === "A" || layer === "B") return true;
+  if (layer === "C") return false;
+  console.warn(`Unknown edge type: ${edgeType}`);
+  return false;
+}
+var CandidateEdgeStatusSchema = Type.Union([
+  Type.Literal("suggested"),
+  Type.Literal("approved"),
+  Type.Literal("rejected")
+]);
+var CandidateEdgeSourceSchema = Type.Union([
+  Type.Literal("mention"),
+  Type.Literal("semantic"),
+  Type.Literal("heuristic")
+]);
+function generateSuggestionId(fromId, toId, edgeType, isUndirected = true) {
+  const [a, b] = isUndirected && fromId > toId ? [toId, fromId] : [fromId, toId];
+  const input = `v1|${a}|${b}|${edgeType}`;
+  return createHash("sha256").update(input).digest("hex").slice(0, 32);
+}
+function isUndirectedEdgeType(edgeType) {
+  return edgeType === "semantic" || edgeType === "semantic_suggestion";
+}
 
 // src/cli/utils.ts
 import * as fs2 from "fs";
@@ -868,7 +1003,8 @@ var NodeRepository = class {
       createdAt: data.createdAt || now,
       updatedAt: data.updatedAt || now,
       contentHash: data.contentHash ?? null,
-      metadata: data.metadata ?? null
+      metadata: data.metadata ?? null,
+      isGhost: data.isGhost ? 1 : 0
     };
     await this.db.insert(nodes).values(row);
     return this.rowToNode({ ...row, nodeId });
@@ -894,7 +1030,8 @@ var NodeRepository = class {
       createdAt: data.createdAt || now,
       updatedAt: data.updatedAt || now,
       contentHash: data.contentHash ?? null,
-      metadata: data.metadata ?? null
+      metadata: data.metadata ?? null,
+      isGhost: data.isGhost ? 1 : 0
     };
     await this.db.insert(nodes).values(row);
     return this.rowToNode({ ...row, nodeId });
@@ -909,8 +1046,8 @@ var NodeRepository = class {
   /**
    * Find a node by path
    */
-  async findByPath(path19) {
-    const result = await this.db.select().from(nodes).where(eq(nodes.path, path19)).limit(1);
+  async findByPath(path22) {
+    const result = await this.db.select().from(nodes).where(eq(nodes.path, path22)).limit(1);
     return result[0] ? this.rowToNode(result[0]) : null;
   }
   /**
@@ -974,6 +1111,7 @@ var NodeRepository = class {
     if (data.path !== void 0) updateData.path = data.path;
     if (data.contentHash !== void 0) updateData.contentHash = data.contentHash;
     if (data.metadata !== void 0) updateData.metadata = data.metadata;
+    if (data.isGhost !== void 0) updateData.isGhost = data.isGhost ? 1 : 0;
     updateData.updatedAt = data.updatedAt || (/* @__PURE__ */ new Date()).toISOString();
     await this.db.update(nodes).set(updateData).where(eq(nodes.nodeId, nodeId));
     const updated = await this.findById(nodeId);
@@ -1055,19 +1193,85 @@ var NodeRepository = class {
     }
   }
   /**
+   * Find all ghost nodes
+   */
+  async findGhosts() {
+    const result = await this.db.select().from(nodes).where(eq(nodes.isGhost, 1));
+    return result.map((row) => this.rowToNode(row));
+  }
+  /**
+   * Find all non-ghost (real) nodes
+   */
+  async findRealNodes() {
+    const result = await this.db.select().from(nodes).where(eq(nodes.isGhost, 0));
+    return result.map((row) => this.rowToNode(row));
+  }
+  /**
+   * Count ghost nodes
+   */
+  async countGhosts() {
+    const result = await this.db.select({ count: sql`count(*)` }).from(nodes).where(eq(nodes.isGhost, 1));
+    return result[0]?.count ?? 0;
+  }
+  /**
+   * Create or find a ghost node by title.
+   * Ghosts are placeholder nodes for unresolved references.
+   * They have a synthetic path based on title.
+   */
+  async getOrCreateGhost(title) {
+    const existing = await this.db.select().from(nodes).where(and(eq(nodes.isGhost, 1), sql`${nodes.title} COLLATE NOCASE = ${title}`)).limit(1);
+    if (existing[0]) {
+      return this.rowToNode(existing[0]);
+    }
+    const nodeId = nanoid();
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const ghostPath = `__ghost__/${title.replace(/[^a-zA-Z0-9-_]/g, "_")}`;
+    const row = {
+      nodeId,
+      type: "note",
+      // Ghosts default to 'note' type
+      title,
+      path: ghostPath,
+      createdAt: now,
+      updatedAt: now,
+      contentHash: null,
+      metadata: null,
+      isGhost: 1
+    };
+    await this.db.insert(nodes).values(row);
+    return this.rowToNode({ ...row, nodeId });
+  }
+  /**
+   * Materialize a ghost - convert it to a real node when the file is created.
+   * Updates the ghost to be a real node with the actual path.
+   */
+  async materializeGhost(nodeId, realPath) {
+    const ghost = await this.findById(nodeId);
+    if (!ghost || !ghost.isGhost) {
+      throw new Error(`Node ${nodeId} is not a ghost`);
+    }
+    return this.update(nodeId, {
+      path: realPath,
+      isGhost: false,
+      updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+    });
+  }
+  /**
    * Convert database row to Node type
    */
   rowToNode(row) {
-    return {
+    const node = {
       nodeId: row.nodeId,
       type: row.type,
       title: row.title,
       path: row.path,
       createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-      ...row.contentHash != null && { contentHash: row.contentHash },
-      ...row.metadata != null && { metadata: row.metadata }
+      updatedAt: row.updatedAt
     };
+    if (row.contentHash != null) node.contentHash = row.contentHash;
+    if (row.metadata != null) node.metadata = row.metadata;
+    if (row.isGhost === 1) node.isGhost = true;
+    return node;
   }
 };
 
@@ -2338,6 +2542,216 @@ var WormholeRepository = class {
   }
 };
 
+// src/storage/database/repositories/candidate-edge-repository.ts
+import { eq as eq9, and as and6, inArray as inArray5, sql as sql9 } from "drizzle-orm";
+var CandidateEdgeRepository = class {
+  constructor(db) {
+    this.db = db;
+  }
+  /**
+   * Create a new candidate edge
+   */
+  async create(data) {
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const [fromIdNorm, toIdNorm] = data.fromId < data.toId ? [data.fromId, data.toId] : [data.toId, data.fromId];
+    const row = {
+      suggestionId: data.suggestionId,
+      fromId: data.fromId,
+      toId: data.toId,
+      suggestedEdgeType: data.suggestedEdgeType,
+      fromIdNorm,
+      toIdNorm,
+      status: "suggested",
+      signals: data.signals ?? null,
+      reasons: data.reasons ?? null,
+      provenance: data.provenance ?? null,
+      createdAt: now,
+      lastComputedAt: now
+    };
+    await this.db.insert(candidateEdges).values(row);
+    return this.rowToCandidateEdge({
+      ...row,
+      statusChangedAt: null,
+      lastSeenAt: null,
+      writebackStatus: null,
+      writebackReason: null,
+      approvedEdgeId: null
+    });
+  }
+  /**
+   * Create or update a candidate edge (upsert by suggestionId)
+   */
+  async upsert(data) {
+    const existing = await this.findById(data.suggestionId);
+    if (existing) {
+      const mergedSignals = { ...existing.signals, ...data.signals };
+      const mergedReasons = [.../* @__PURE__ */ new Set([...existing.reasons || [], ...data.reasons || []])];
+      const mergedProvenance = [...existing.provenance || [], ...data.provenance || []];
+      return this.update(data.suggestionId, {
+        signals: mergedSignals,
+        reasons: mergedReasons.slice(0, 3),
+        // Keep top 3
+        provenance: mergedProvenance
+      });
+    }
+    return this.create(data);
+  }
+  /**
+   * Find a candidate edge by ID
+   */
+  async findById(suggestionId) {
+    const result = await this.db.select().from(candidateEdges).where(eq9(candidateEdges.suggestionId, suggestionId)).limit(1);
+    return result[0] ? this.rowToCandidateEdge(result[0]) : null;
+  }
+  /**
+   * Find candidate edges by status
+   */
+  async findByStatus(status) {
+    const result = await this.db.select().from(candidateEdges).where(eq9(candidateEdges.status, status));
+    return result.map((row) => this.rowToCandidateEdge(row));
+  }
+  /**
+   * Find candidate edges involving a specific node (as source or target)
+   */
+  async findByNodeId(nodeId) {
+    const result = await this.db.select().from(candidateEdges).where(
+      sql9`${candidateEdges.fromId} = ${nodeId} OR ${candidateEdges.toId} = ${nodeId}`
+    );
+    return result.map((row) => this.rowToCandidateEdge(row));
+  }
+  /**
+   * Find suggested candidate edges for nodes in a given set
+   */
+  async findSuggestedForNodes(nodeIds) {
+    if (nodeIds.length === 0) return [];
+    const result = await this.db.select().from(candidateEdges).where(
+      and6(
+        eq9(candidateEdges.status, "suggested"),
+        sql9`(${candidateEdges.fromId} IN ${nodeIds} OR ${candidateEdges.toId} IN ${nodeIds})`
+      )
+    );
+    return result.map((row) => this.rowToCandidateEdge(row));
+  }
+  /**
+   * Find by normalized pair (for checking duplicates)
+   */
+  async findByNormalizedPair(nodeId1, nodeId2, edgeType) {
+    const [fromIdNorm, toIdNorm] = nodeId1 < nodeId2 ? [nodeId1, nodeId2] : [nodeId2, nodeId1];
+    const result = await this.db.select().from(candidateEdges).where(
+      and6(
+        eq9(candidateEdges.fromIdNorm, fromIdNorm),
+        eq9(candidateEdges.toIdNorm, toIdNorm),
+        eq9(candidateEdges.suggestedEdgeType, edgeType)
+      )
+    ).limit(1);
+    return result[0] ? this.rowToCandidateEdge(result[0]) : null;
+  }
+  /**
+   * Update a candidate edge
+   */
+  async update(suggestionId, data) {
+    const updateData = {
+      lastComputedAt: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    if (data.status !== void 0) {
+      updateData.status = data.status;
+      updateData.statusChangedAt = (/* @__PURE__ */ new Date()).toISOString();
+    }
+    if (data.signals !== void 0) updateData.signals = data.signals;
+    if (data.reasons !== void 0) updateData.reasons = data.reasons;
+    if (data.provenance !== void 0) updateData.provenance = data.provenance;
+    if (data.writebackStatus !== void 0) updateData.writebackStatus = data.writebackStatus;
+    if (data.writebackReason !== void 0) updateData.writebackReason = data.writebackReason;
+    if (data.approvedEdgeId !== void 0) updateData.approvedEdgeId = data.approvedEdgeId;
+    await this.db.update(candidateEdges).set(updateData).where(eq9(candidateEdges.suggestionId, suggestionId));
+    const updated = await this.findById(suggestionId);
+    if (!updated) {
+      throw new Error(`Candidate edge ${suggestionId} not found after update`);
+    }
+    return updated;
+  }
+  /**
+   * Update status of a candidate edge
+   */
+  async updateStatus(suggestionId, status, approvedEdgeId) {
+    const updateData = { status };
+    if (approvedEdgeId !== void 0) {
+      updateData.approvedEdgeId = approvedEdgeId;
+    }
+    return this.update(suggestionId, updateData);
+  }
+  /**
+   * Mark last seen time for candidate edges (for pruning stale suggestions)
+   */
+  async markSeen(suggestionIds) {
+    if (suggestionIds.length === 0) return;
+    await this.db.update(candidateEdges).set({ lastSeenAt: (/* @__PURE__ */ new Date()).toISOString() }).where(inArray5(candidateEdges.suggestionId, suggestionIds));
+  }
+  /**
+   * Delete a candidate edge
+   */
+  async delete(suggestionId) {
+    await this.db.delete(candidateEdges).where(eq9(candidateEdges.suggestionId, suggestionId));
+  }
+  /**
+   * Delete all candidate edges for a node
+   */
+  async deleteForNode(nodeId) {
+    const result = await this.db.delete(candidateEdges).where(
+      sql9`${candidateEdges.fromId} = ${nodeId} OR ${candidateEdges.toId} = ${nodeId}`
+    );
+    return result.changes;
+  }
+  /**
+   * Count candidate edges by status
+   */
+  async countByStatus() {
+    const result = await this.db.select({
+      status: candidateEdges.status,
+      count: sql9`count(*)`
+    }).from(candidateEdges).groupBy(candidateEdges.status);
+    const counts = {
+      suggested: 0,
+      approved: 0,
+      rejected: 0
+    };
+    for (const row of result) {
+      counts[row.status] = row.count;
+    }
+    return counts;
+  }
+  /**
+   * Count total candidate edges
+   */
+  async count() {
+    const result = await this.db.select({ count: sql9`count(*)` }).from(candidateEdges);
+    return result[0]?.count ?? 0;
+  }
+  /**
+   * Convert database row to CandidateEdge type
+   */
+  rowToCandidateEdge(row) {
+    const result = {
+      suggestionId: row.suggestionId,
+      fromId: row.fromId,
+      toId: row.toId,
+      suggestedEdgeType: row.suggestedEdgeType,
+      status: row.status,
+      createdAt: row.createdAt,
+      lastComputedAt: row.lastComputedAt
+    };
+    if (row.statusChangedAt) result.statusChangedAt = row.statusChangedAt;
+    if (row.signals) result.signals = row.signals;
+    if (row.reasons) result.reasons = row.reasons;
+    if (row.provenance) result.provenance = row.provenance;
+    if (row.lastSeenAt) result.lastSeenAt = row.lastSeenAt;
+    if (row.writebackStatus) result.writebackStatus = row.writebackStatus;
+    if (row.writebackReason) result.writebackReason = row.writebackReason;
+    if (row.approvedEdgeId) result.approvedEdgeId = row.approvedEdgeId;
+    return result;
+  }
+};
+
 // src/parser/markdown.ts
 import { unified } from "unified";
 import remarkParse from "remark-parse";
@@ -2936,8 +3350,8 @@ var IndexingPipeline = class {
   /**
    * Remove a node by path
    */
-  async removeByPath(path19) {
-    const node = await this.nodeRepo.findByPath(path19);
+  async removeByPath(path22) {
+    const node = await this.nodeRepo.findByPath(path22);
     if (node) {
       await this.removeNode(node.nodeId);
     }
@@ -3097,9 +3511,9 @@ function bidirectionalBFS(startId, endId, forward, backward, maxDepth, disabledE
     }
     current = info?.parent ?? null;
   }
-  const path19 = [...pathToMeeting, ...pathFromMeeting];
+  const path22 = [...pathToMeeting, ...pathFromMeeting];
   const edges2 = [...edgesToMeeting, ...edgesFromMeeting];
-  return { path: path19, edges: edges2 };
+  return { path: path22, edges: edges2 };
 }
 function calculateJaccardOverlap(pathA, pathB, excludeEndpoints = false) {
   let nodesA = new Set(pathA);
@@ -3124,9 +3538,9 @@ function calculatePathScore(edges2) {
   }
   return hopCount + penalty;
 }
-function isSimplePath(path19) {
+function isSimplePath(path22) {
   const seen = /* @__PURE__ */ new Set();
-  for (const nodeId of path19) {
+  for (const nodeId of path22) {
     if (seen.has(nodeId)) return false;
     seen.add(nodeId);
   }
@@ -3277,13 +3691,13 @@ function simpleBFS(startId, endId, forward, maxDepth = 15) {
       const neighbors = forward.get(nodeId) || [];
       for (const { nodeId: neighborId } of neighbors) {
         if (neighborId === endId) {
-          const path19 = [endId, nodeId];
+          const path22 = [endId, nodeId];
           let current = nodeId;
           while (visited.get(current) !== null) {
             current = visited.get(current);
-            path19.push(current);
+            path22.push(current);
           }
-          return path19.reverse();
+          return path22.reverse();
         }
         if (!visited.has(neighborId)) {
           visited.set(neighborId, nodeId);
@@ -3312,8 +3726,8 @@ var GraphEngine = class {
   async getNode(nodeId) {
     return this.nodeRepo.findById(nodeId);
   }
-  async getNodeByPath(path19) {
-    return this.nodeRepo.findByPath(path19);
+  async getNodeByPath(path22) {
+    return this.nodeRepo.findByPath(path22);
   }
   async getNodeByTitle(title) {
     return this.nodeRepo.findByTitle(title);
@@ -3699,7 +4113,12 @@ function loadConfig(vaultPath) {
         weights: { ...DEFAULT_CONFIG.discovery.weights, ...userConfig.discovery?.weights }
       },
       cache: { ...DEFAULT_CONFIG.cache, ...userConfig.cache },
-      impact: { ...DEFAULT_CONFIG.impact, ...userConfig.impact }
+      impact: { ...DEFAULT_CONFIG.impact, ...userConfig.impact },
+      moc: { ...DEFAULT_CONFIG.moc, ...userConfig.moc },
+      versioning: { ...DEFAULT_CONFIG.versioning, ...userConfig.versioning },
+      search: { ...DEFAULT_CONFIG.search, ...userConfig.search },
+      llm: { ...DEFAULT_CONFIG.llm, ...userConfig.llm },
+      visualization: { ...DEFAULT_CONFIG.visualization, ...userConfig.visualization }
     };
   } catch (error) {
     console.warn(`Warning: Could not parse config file: ${error}`);
@@ -3726,6 +4145,7 @@ async function initContext(vaultPath) {
   const constellationRepository = new ConstellationRepository(db);
   const embeddingRepository = new EmbeddingRepository(db);
   const wormholeRepository = new WormholeRepository(db);
+  const candidateEdgeRepository = new CandidateEdgeRepository(db);
   const pipeline = new IndexingPipeline({
     nodeRepository,
     edgeRepository,
@@ -3748,6 +4168,7 @@ async function initContext(vaultPath) {
     constellationRepository,
     embeddingRepository,
     wormholeRepository,
+    candidateEdgeRepository,
     pipeline,
     graphEngine
   };
@@ -3873,7 +4294,7 @@ import { Command as Command2 } from "commander";
 // src/storage/filesystem/reader.ts
 import * as fs4 from "fs";
 import * as path4 from "path";
-import { createHash } from "crypto";
+import { createHash as createHash2 } from "crypto";
 
 // src/core/logger.ts
 var Logger = class _Logger {
@@ -3950,7 +4371,7 @@ function getLogger() {
 var DEFAULT_EXTENSIONS = [".md", ".markdown"];
 var DEFAULT_EXCLUDE = ["node_modules", ".git", ".zettelscript", ".obsidian", ".vscode", ".idea"];
 function hashContent(content) {
-  return createHash("sha256").update(content).digest("hex");
+  return createHash2("sha256").update(content).digest("hex");
 }
 async function readFile(filePath, basePath) {
   try {
@@ -4060,10 +4481,10 @@ var indexCommand = new Command2("index").description("Index all markdown files i
     let lastProgress = 0;
     const result = await fullIndex(ctx.pipeline, ctx.vaultPath, {
       excludePatterns: ctx.config.vault.excludePatterns,
-      onProgress: (current, total, path19) => {
+      onProgress: (current, total, path22) => {
         if (current > lastProgress) {
           lastProgress = current;
-          spinner.update(`Indexing ${current}/${total}: ${path19}`);
+          spinner.update(`Indexing ${current}/${total}: ${path22}`);
         }
       }
     });
@@ -4524,22 +4945,22 @@ queryCommand.command("path <from> <to>").description("Find shortest path between
     }
     console.log(`Path from "${fromNode.title}" to "${toNode.title}":
 `);
-    const path19 = await ctx.graphEngine.findShortestPath(fromNode.nodeId, toNode.nodeId);
-    if (!path19) {
+    const path22 = await ctx.graphEngine.findShortestPath(fromNode.nodeId, toNode.nodeId);
+    if (!path22) {
       console.log("No path found.");
     } else {
-      const pathNodes = await ctx.nodeRepository.findByIds(path19);
+      const pathNodes = await ctx.nodeRepository.findByIds(path22);
       const nodeMap = new Map(pathNodes.map((n) => [n.nodeId, n]));
-      for (let i = 0; i < path19.length; i++) {
-        const nodeId = path19[i];
+      for (let i = 0; i < path22.length; i++) {
+        const nodeId = path22[i];
         if (nodeId) {
           const node = nodeMap.get(nodeId);
-          const prefix = i === 0 ? "\u2192" : i === path19.length - 1 ? "\u25C9" : "\u2193";
+          const prefix = i === 0 ? "\u2192" : i === path22.length - 1 ? "\u25C9" : "\u2193";
           console.log(`  ${prefix} ${node?.title || nodeId}`);
         }
       }
       console.log(`
-Path length: ${path19.length - 1} hops`);
+Path length: ${path22.length - 1} hops`);
     }
     ctx.connectionManager.close();
   } catch (error) {
@@ -5897,14 +6318,14 @@ var discoverCommand = new Command6("discover").description("Find unlinked mentio
       return;
     }
     let totalMentions = 0;
-    for (const { nodeId, path: path19, title } of nodesToCheck) {
+    for (const { nodeId, path: path22, title } of nodesToCheck) {
       const mentions = await detector.detectInNode(nodeId);
       if (mentions.length === 0) continue;
       const ranked = await ranker.rank(mentions);
       const filtered = ranked.filter((m) => m.confidence >= threshold);
       if (filtered.length === 0) continue;
       console.log(`
-${title} (${path19}):`);
+${title} (${path22}):`);
       const display = filtered.slice(0, limit);
       const rows = display.map((m) => [
         m.surfaceText,
@@ -10922,10 +11343,10 @@ Errors (${result.errors.length}):`);
 });
 
 // src/cli/commands/visualize.ts
-import { Command as Command12 } from "commander";
+import { Command as Command13 } from "commander";
 import process2 from "process";
-import * as fs13 from "fs";
-import * as path16 from "path";
+import * as fs14 from "fs";
+import * as path17 from "path";
 import open from "open";
 
 // src/cli/server/visualize-server.ts
@@ -11469,6 +11890,251 @@ async function createVisualizeServer(ctx, options) {
   return { server, info };
 }
 
+// src/cli/commands/doctor.ts
+import { Command as Command12 } from "commander";
+import * as fs13 from "fs";
+import * as path16 from "path";
+var EMBEDDING_OK_THRESHOLD = 95;
+var EMBEDDING_WARN_THRESHOLD = 60;
+function getEmbeddingHealthLevel(coverage) {
+  if (coverage >= EMBEDDING_OK_THRESHOLD) return "ok";
+  if (coverage >= EMBEDDING_WARN_THRESHOLD) return "warn";
+  return "fail";
+}
+async function computeDoctorStats(ctx) {
+  const { vaultPath, config, nodeRepository, edgeRepository, embeddingRepository } = ctx;
+  const nodeCount = await nodeRepository.count();
+  const edgeCount = await edgeRepository.count();
+  const edgesByType = await edgeRepository.countByType();
+  const edgesByLayer = { A: 0, B: 0, C: 0 };
+  for (const [edgeType, count] of Object.entries(edgesByType)) {
+    const layer = getEdgeLayer(edgeType);
+    if (layer === "A") edgesByLayer.A += count;
+    else if (layer === "B") edgesByLayer.B += count;
+    else if (layer === "C") edgesByLayer.C += count;
+  }
+  const dbPath = getDbPath(vaultPath);
+  let dbSizeBytes = 0;
+  try {
+    const stat = fs13.statSync(dbPath);
+    dbSizeBytes = stat.size;
+  } catch {
+  }
+  const embeddingCount = await embeddingRepository.count();
+  const embeddingCoverage = nodeCount > 0 ? embeddingCount / nodeCount * 100 : 0;
+  const embeddingLevel = getEmbeddingHealthLevel(embeddingCoverage);
+  const pendingEmbeddings = await embeddingRepository.findDirtyNodeIds();
+  let embeddingModel;
+  const byModel = await embeddingRepository.countByModel();
+  const models = Object.keys(byModel);
+  if (models.length > 0) {
+    embeddingModel = models[0];
+  }
+  const wormholeCount = edgesByType["semantic"] || 0;
+  const wormholeThreshold = 0.75;
+  let wormholeDisabledReason;
+  if (embeddingLevel === "fail") {
+    wormholeDisabledReason = "Insufficient embeddings";
+  } else if (embeddingCount === 0) {
+    wormholeDisabledReason = "No embeddings computed";
+  }
+  const zettelDir = getZettelScriptDir(vaultPath);
+  const badChunksPath = path16.join(zettelDir, "extract-bad-chunks.jsonl");
+  let parseFailCount = 0;
+  if (fs13.existsSync(badChunksPath)) {
+    try {
+      const content = fs13.readFileSync(badChunksPath, "utf-8");
+      parseFailCount = content.split("\n").filter((line) => line.trim()).length;
+    } catch {
+    }
+  }
+  const vizMode = config.visualization.mode;
+  let filteredEdgeCount = edgesByLayer.A + edgesByLayer.B;
+  if (vizMode === "classic") {
+    filteredEdgeCount = edgeCount;
+  }
+  let overallLevel = "ok";
+  if (embeddingLevel === "fail" || parseFailCount > 10) {
+    overallLevel = "fail";
+  } else if (embeddingLevel === "warn" || parseFailCount > 0) {
+    overallLevel = "warn";
+  }
+  return {
+    version: "0.4.1",
+    // TODO: read from package.json
+    vaultPath,
+    overallLevel,
+    index: {
+      nodeCount,
+      edgeCount,
+      edgesByLayer,
+      dbPath,
+      dbSizeBytes
+    },
+    embeddings: {
+      level: embeddingLevel,
+      total: nodeCount,
+      embedded: embeddingCount,
+      coverage: embeddingCoverage,
+      pending: pendingEmbeddings.length,
+      errorCount: 0,
+      // TODO: track embedding errors
+      model: embeddingModel
+    },
+    wormholes: {
+      enabled: !wormholeDisabledReason,
+      count: wormholeCount,
+      threshold: wormholeThreshold,
+      disabledReason: wormholeDisabledReason
+    },
+    extraction: {
+      badChunksPath: parseFailCount > 0 ? badChunksPath : void 0,
+      parseFailCount
+    },
+    visualization: {
+      mode: vizMode,
+      filteredEdgeCount,
+      totalEdgeCount: edgeCount
+    }
+  };
+}
+function formatBytes2(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+function levelIcon(level) {
+  switch (level) {
+    case "ok":
+      return "\u2713";
+    case "warn":
+      return "\u26A0";
+    case "fail":
+      return "\u2717";
+  }
+}
+function levelColor(level) {
+  switch (level) {
+    case "ok":
+      return "\x1B[32m";
+    // green
+    case "warn":
+      return "\x1B[33m";
+    // yellow
+    case "fail":
+      return "\x1B[31m";
+  }
+}
+var RESET = "\x1B[0m";
+var DIM = "\x1B[2m";
+function printStats(stats) {
+  console.log("");
+  console.log("ZettelScript Health Check");
+  console.log("\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500");
+  console.log("");
+  console.log(`${DIM}Index${RESET}`);
+  console.log(`  Nodes:       ${stats.index.nodeCount}`);
+  console.log(
+    `  Edges:       ${stats.index.edgeCount} (A: ${stats.index.edgesByLayer.A}, B: ${stats.index.edgesByLayer.B}, C: ${stats.index.edgesByLayer.C})`
+  );
+  console.log(`  Database:    ${formatBytes2(stats.index.dbSizeBytes)}`);
+  console.log("");
+  const embColor = levelColor(stats.embeddings.level);
+  const embIcon = levelIcon(stats.embeddings.level);
+  console.log(`${DIM}Embeddings${RESET}`);
+  console.log(
+    `  Coverage:    ${embColor}${stats.embeddings.embedded}/${stats.embeddings.total} (${stats.embeddings.coverage.toFixed(0)}%) ${embIcon}${RESET}`
+  );
+  if (stats.embeddings.pending > 0) {
+    console.log(`  Pending:     ${stats.embeddings.pending} nodes`);
+  }
+  if (stats.embeddings.model) {
+    console.log(`  Model:       ${stats.embeddings.model}`);
+  }
+  if (stats.embeddings.level !== "ok") {
+    console.log(`  ${DIM}Run: zs embed compute${RESET}`);
+  }
+  console.log("");
+  console.log(`${DIM}Wormholes${RESET}`);
+  if (stats.wormholes.enabled) {
+    console.log(`  Status:      \x1B[32menabled\x1B[0m`);
+    console.log(`  Count:       ${stats.wormholes.count} edges`);
+    console.log(`  Threshold:   ${stats.wormholes.threshold}`);
+  } else {
+    console.log(`  Status:      \x1B[33mdisabled\x1B[0m (${stats.wormholes.disabledReason})`);
+    console.log(`  ${DIM}Run: zs embed compute && zs wormhole detect${RESET}`);
+  }
+  console.log("");
+  if (stats.extraction.parseFailCount > 0) {
+    console.log(`${DIM}Extraction${RESET}`);
+    console.log(`  Parse fails: \x1B[33m${stats.extraction.parseFailCount}\x1B[0m`);
+    if (stats.extraction.badChunksPath) {
+      console.log(`  Log:         ${stats.extraction.badChunksPath}`);
+    }
+    console.log(`  ${DIM}Run: zs extract --retry-failed${RESET}`);
+    console.log("");
+  }
+  console.log(`${DIM}Visualization${RESET}`);
+  console.log(`  Mode:        ${stats.visualization.mode}`);
+  if (stats.visualization.mode === "focus") {
+    const hidden = stats.visualization.totalEdgeCount - stats.visualization.filteredEdgeCount;
+    console.log(
+      `  Visible:     ${stats.visualization.filteredEdgeCount}/${stats.visualization.totalEdgeCount} edges (${hidden} Layer C hidden)`
+    );
+  }
+  console.log("");
+  const overallColor = levelColor(stats.overallLevel);
+  const overallIcon = levelIcon(stats.overallLevel);
+  console.log("\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500");
+  console.log(`Overall: ${overallColor}${stats.overallLevel.toUpperCase()} ${overallIcon}${RESET}`);
+  console.log("");
+}
+function printEmbeddingStatus(stats) {
+  const { embeddings } = stats;
+  const color = levelColor(embeddings.level);
+  const icon = levelIcon(embeddings.level);
+  let line = `Embeddings: ${color}${embeddings.level.toUpperCase()}${RESET} (${embeddings.coverage.toFixed(0)}% in view)`;
+  if (embeddings.pending > 0) {
+    line += `, ${embeddings.pending} pending`;
+  }
+  if (embeddings.level === "fail") {
+    line += `. Run: zs embed compute`;
+  }
+  console.log(line);
+}
+function printWormholeStatus(stats) {
+  if (!stats.wormholes.enabled && stats.embeddings.level !== "ok") {
+    console.log(
+      `\x1B[33mWormholes disabled in view (${stats.wormholes.disabledReason}). See: zs doctor\x1B[0m`
+    );
+  }
+}
+var doctorCommand = new Command12("doctor").description("Check vault health and diagnose issues").option("--json", "Output as JSON").action(async (options) => {
+  try {
+    const ctx = await initContext();
+    const stats = await computeDoctorStats(ctx);
+    if (options.json) {
+      console.log(JSON.stringify(stats, null, 2));
+    } else {
+      printStats(stats);
+    }
+    ctx.connectionManager.close();
+    if (stats.overallLevel === "fail") {
+      process.exit(2);
+    } else if (stats.overallLevel === "warn") {
+      process.exit(1);
+    }
+    process.exit(0);
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("Not in a ZettelScript vault")) {
+      console.error('Error: Not in a ZettelScript vault. Run "zs init" first.');
+      process.exit(2);
+    }
+    console.error("Error:", error);
+    process.exit(2);
+  }
+});
+
 // src/cli/commands/visualize.ts
 var typeColors = {
   note: "#94a3b8",
@@ -11522,10 +12188,12 @@ var edgeStyles = {
   ghost_ref: { color: "#64748b", dash: [2, 2], label: "Ghost Reference" }
   // Slate 500
 };
-function generateVisualizationHtml(graphData, nodeTypeColors, constellation, pathData, wsConfig) {
+function generateVisualizationHtml(graphData, nodeTypeColors, constellation, pathData, wsConfig, statusData, focusBundle) {
   const constellationState = constellation ? JSON.stringify(constellation) : "null";
   const pathDataJson = pathData ? JSON.stringify(pathData) : "null";
   const wsConfigJson = wsConfig ? JSON.stringify(wsConfig) : "null";
+  const statusDataJson = statusData ? JSON.stringify(statusData) : "null";
+  const focusBundleJson = focusBundle ? JSON.stringify(focusBundle) : "null";
   return `
 <!DOCTYPE html>
 <html lang="en">
@@ -12244,6 +12912,124 @@ function generateVisualizationHtml(graphData, nodeTypeColors, constellation, pat
       background: rgba(56, 189, 248, 0.3);
     }
 
+    /* Health Status Panel */
+    #status-panel {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      min-width: 200px;
+      max-width: 300px;
+      z-index: 1000;
+    }
+    #status-panel .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: pointer;
+      padding: 8px 12px;
+      border-radius: 8px;
+      background: var(--panel-bg);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+    }
+    #status-panel .panel-header:hover {
+      background: rgba(30, 41, 59, 0.9);
+    }
+    #status-panel .panel-content {
+      margin-top: 8px;
+      padding: 12px;
+      border-radius: 8px;
+      background: var(--panel-bg);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      display: none;
+    }
+    #status-panel.expanded .panel-content {
+      display: block;
+    }
+    #status-panel .status-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+      font-size: 0.85rem;
+    }
+    #status-panel .status-row:last-child {
+      margin-bottom: 0;
+    }
+    #status-panel .status-label {
+      color: var(--text-muted);
+    }
+    #status-panel .status-value {
+      font-weight: 500;
+    }
+    #status-panel .status-ok { color: #34d399; }
+    #status-panel .status-warn { color: #fbbf24; }
+    #status-panel .status-fail { color: #f87171; }
+    #status-panel .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    #status-panel .badge-ok {
+      background: rgba(52, 211, 153, 0.2);
+      color: #34d399;
+    }
+    #status-panel .badge-warn {
+      background: rgba(251, 191, 36, 0.2);
+      color: #fbbf24;
+    }
+    #status-panel .badge-fail {
+      background: rgba(248, 113, 113, 0.2);
+      color: #f87171;
+    }
+    #status-panel .mode-toggle {
+      display: flex;
+      gap: 4px;
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+    }
+    #status-panel .mode-btn {
+      flex: 1;
+      padding: 6px 12px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 0.8rem;
+      transition: all 0.2s;
+    }
+    #status-panel .mode-btn:hover {
+      background: rgba(56, 189, 248, 0.1);
+      color: var(--text-main);
+    }
+    #status-panel .mode-btn.active {
+      background: rgba(56, 189, 248, 0.2);
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+    #status-panel .help-link {
+      display: block;
+      margin-top: 12px;
+      padding-top: 8px;
+      border-top: 1px solid var(--border);
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      text-decoration: none;
+    }
+    #status-panel .help-link code {
+      background: rgba(0,0,0,0.3);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: monospace;
+    }
+
     /* WebSocket Status Indicator */
     .ws-status {
       position: fixed;
@@ -12266,6 +13052,70 @@ function generateVisualizationHtml(graphData, nodeTypeColors, constellation, pat
     .ws-status.error {
       background: #f87171;
       box-shadow: 0 0 8px #f87171;
+    }
+
+    /* Upgrade Banner */
+    #upgrade-banner {
+      position: fixed;
+      top: 80px;
+      left: 50%;
+      transform: translateX(-50%);
+      max-width: 500px;
+      padding: 16px 20px;
+      background: rgba(56, 189, 248, 0.1);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      border-radius: 12px;
+      z-index: 1002;
+      display: none;
+    }
+    #upgrade-banner.show {
+      display: block;
+      animation: slideDown 0.3s ease;
+    }
+    @keyframes slideDown {
+      from { opacity: 0; transform: translateX(-50%) translateY(-20px); }
+      to { opacity: 1; transform: translateX(-50%) translateY(0); }
+    }
+    #upgrade-banner h3 {
+      margin: 0 0 8px 0;
+      font-size: 1rem;
+      color: var(--accent);
+    }
+    #upgrade-banner p {
+      margin: 0 0 12px 0;
+      font-size: 0.9rem;
+      color: var(--text-main);
+      line-height: 1.4;
+    }
+    #upgrade-banner .banner-actions {
+      display: flex;
+      gap: 8px;
+    }
+    #upgrade-banner .banner-btn {
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    #upgrade-banner .banner-btn-primary {
+      background: var(--accent);
+      color: var(--bg);
+      border: none;
+      font-weight: 600;
+    }
+    #upgrade-banner .banner-btn-primary:hover {
+      background: #7dd3fc;
+    }
+    #upgrade-banner .banner-btn-secondary {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+    }
+    #upgrade-banner .banner-btn-secondary:hover {
+      border-color: var(--text-main);
+      color: var(--text-main);
     }
 
     /* Toast Notifications */
@@ -12304,6 +13154,237 @@ function generateVisualizationHtml(graphData, nodeTypeColors, constellation, pat
     @keyframes pulse {
       0%, 100% { opacity: 1; }
       50% { opacity: 0.5; }
+    }
+
+    /* Suggestions Panel */
+    #suggestions-panel {
+      position: fixed;
+      top: 20px;
+      right: 350px;
+      width: 320px;
+      max-height: calc(100vh - 40px);
+      overflow-y: auto;
+      z-index: 100;
+    }
+    #suggestions-panel::-webkit-scrollbar { width: 6px; }
+    #suggestions-panel::-webkit-scrollbar-track { background: transparent; }
+    #suggestions-panel::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.3); border-radius: 3px; }
+
+    .suggestions-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: pointer;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .suggestions-header h3 {
+      margin: 0;
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+    .suggestions-toggle {
+      color: var(--text-muted);
+      font-size: 0.8rem;
+    }
+
+    .suggestion-section {
+      margin-top: 12px;
+    }
+    .suggestion-section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+      cursor: pointer;
+    }
+    .suggestion-section-header:hover {
+      color: var(--accent);
+    }
+    .suggestion-section-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.9rem;
+      font-weight: 500;
+    }
+    .suggestion-count {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 20px;
+      height: 20px;
+      padding: 0 6px;
+      border-radius: 10px;
+      background: rgba(56, 189, 248, 0.2);
+      color: var(--accent);
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .suggestion-section-toggle {
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      transition: transform 0.2s;
+    }
+    .suggestion-section.collapsed .suggestion-section-toggle {
+      transform: rotate(-90deg);
+    }
+    .suggestion-section.collapsed .suggestion-list {
+      display: none;
+    }
+
+    .suggestion-list {
+      margin-top: 8px;
+    }
+    .suggestion-item {
+      padding: 8px 10px;
+      margin-bottom: 6px;
+      border-radius: 6px;
+      background: rgba(15, 23, 42, 0.4);
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .suggestion-item:hover {
+      background: rgba(56, 189, 248, 0.1);
+      border-color: var(--border);
+    }
+    .suggestion-item.active {
+      background: rgba(56, 189, 248, 0.15);
+      border-color: var(--accent);
+    }
+
+    .suggestion-item-title {
+      font-size: 0.85rem;
+      color: var(--text-main);
+      margin-bottom: 4px;
+    }
+    .suggestion-item-meta {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+    .suggestion-score {
+      display: inline-block;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: rgba(52, 211, 153, 0.2);
+      color: #34d399;
+      font-size: 0.7rem;
+      margin-right: 6px;
+    }
+
+    /* Candidate link specific */
+    .candidate-link-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .candidate-link-info {
+      flex: 1;
+      min-width: 0;
+    }
+    .candidate-link-arrow {
+      color: var(--text-muted);
+      margin: 0 4px;
+    }
+    .candidate-from, .candidate-to {
+      display: inline;
+      max-width: 100px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .candidate-to.ghost {
+      font-style: italic;
+      color: #64748b;
+    }
+
+    .approve-btn {
+      padding: 4px 8px;
+      border: 1px solid rgba(52, 211, 153, 0.5);
+      border-radius: 4px;
+      background: rgba(52, 211, 153, 0.1);
+      color: #34d399;
+      font-size: 0.7rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+    .approve-btn:hover {
+      background: rgba(52, 211, 153, 0.2);
+      border-color: #34d399;
+    }
+    .approve-btn.copied {
+      background: rgba(52, 211, 153, 0.3);
+      border-color: #34d399;
+    }
+
+    .batch-copy-btn {
+      padding: 4px 10px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: rgba(15, 23, 42, 0.6);
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .batch-copy-btn:hover {
+      background: rgba(56, 189, 248, 0.1);
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+    .batch-copy-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    /* Orphan specific */
+    .orphan-severity {
+      display: inline-block;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-size: 0.7rem;
+      margin-right: 6px;
+    }
+    .orphan-severity.high {
+      background: rgba(248, 113, 113, 0.2);
+      color: #f87171;
+    }
+    .orphan-severity.med {
+      background: rgba(251, 191, 36, 0.2);
+      color: #fbbf24;
+    }
+    .orphan-severity.low {
+      background: rgba(148, 163, 184, 0.2);
+      color: #94a3b8;
+    }
+
+    /* Empty state */
+    .suggestion-empty {
+      padding: 12px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.8rem;
+    }
+    .suggestion-empty code {
+      display: block;
+      margin-top: 8px;
+      padding: 6px 10px;
+      background: rgba(0,0,0,0.3);
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 0.75rem;
+      color: var(--accent);
+    }
+
+    /* Tooltip for reasons */
+    .suggestion-reasons {
+      margin-top: 4px;
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      font-style: italic;
     }
   </style>
   <script src="https://unpkg.com/force-graph"></script>
@@ -12446,8 +13527,99 @@ function generateVisualizationHtml(graphData, nodeTypeColors, constellation, pat
     </div>
   </div>
 
+  <!-- Upgrade Banner (first-run) -->
+  <div id="upgrade-banner">
+    <h3>New: Focus-first view</h3>
+    <p>Suggestion edges (mentions, pending wormholes) are now hidden by default for a cleaner graph. Toggle <strong>Classic mode</strong> in the Status panel to see all edges.</p>
+    <div class="banner-actions">
+      <button class="banner-btn banner-btn-secondary" onclick="dismissUpgradeBanner()">Got it</button>
+      <button class="banner-btn banner-btn-primary" onclick="switchToClassicFromBanner()">Switch to Classic</button>
+    </div>
+  </div>
+
+  <!-- Health Status Panel -->
+  <div id="status-panel" class="panel">
+    <div class="panel-header" onclick="toggleStatusPanel()">
+      <span id="status-header-text">Status</span>
+      <span id="status-toggle-icon">\u25BC</span>
+    </div>
+    <div class="panel-content">
+      <div class="status-row">
+        <span class="status-label">Mode</span>
+        <span id="status-mode" class="status-value"></span>
+      </div>
+      <div class="status-row">
+        <span class="status-label">Nodes</span>
+        <span id="status-nodes" class="status-value"></span>
+      </div>
+      <div class="status-row">
+        <span class="status-label">Edges</span>
+        <span id="status-edges" class="status-value"></span>
+      </div>
+      <div class="status-row">
+        <span class="status-label">Embeddings</span>
+        <span id="status-embeddings" class="status-value"></span>
+      </div>
+      <div class="status-row">
+        <span class="status-label">Wormholes</span>
+        <span id="status-wormholes" class="status-value"></span>
+      </div>
+      <div class="mode-toggle">
+        <button id="mode-focus-btn" class="mode-btn" onclick="setVisualizationMode('focus')">Focus</button>
+        <button id="mode-classic-btn" class="mode-btn" onclick="setVisualizationMode('classic')">Classic</button>
+      </div>
+      <span class="help-link">Run <code>zs doctor</code> for details</span>
+    </div>
+  </div>
+
   <!-- WebSocket Status Indicator -->
   <div id="ws-status" class="ws-status disconnected" title="Disconnected"></div>
+
+  <!-- Suggestions Panel -->
+  <div id="suggestions-panel" class="panel" style="display: none;">
+    <div class="suggestions-header" onclick="toggleSuggestionsPanel()">
+      <h3>Suggestions</h3>
+      <span class="suggestions-toggle" id="suggestions-toggle-icon">\u25BC</span>
+    </div>
+
+    <!-- Related Notes Section -->
+    <div class="suggestion-section" id="related-section">
+      <div class="suggestion-section-header" onclick="toggleSuggestionSection('related')">
+        <span class="suggestion-section-title">
+          Related Notes <span class="suggestion-count" id="related-count">0</span>
+        </span>
+        <span class="suggestion-section-toggle">\u25BC</span>
+      </div>
+      <div class="suggestion-list" id="related-list"></div>
+    </div>
+
+    <!-- Candidate Links Section -->
+    <div class="suggestion-section" id="links-section">
+      <div class="suggestion-section-header" onclick="toggleSuggestionSection('links')">
+        <span class="suggestion-section-title">
+          Candidate Links <span class="suggestion-count" id="links-count">0</span>
+        </span>
+        <span class="suggestion-section-toggle">\u25BC</span>
+      </div>
+      <div style="display: flex; justify-content: flex-end; margin-top: 4px;">
+        <button class="batch-copy-btn" id="batch-copy-btn" onclick="batchCopyApproveCommands(event)">
+          Copy All
+        </button>
+      </div>
+      <div class="suggestion-list" id="links-list"></div>
+    </div>
+
+    <!-- Orphans Section -->
+    <div class="suggestion-section" id="orphans-section">
+      <div class="suggestion-section-header" onclick="toggleSuggestionSection('orphans')">
+        <span class="suggestion-section-title">
+          Orphans <span class="suggestion-count" id="orphans-count">0</span>
+        </span>
+        <span class="suggestion-section-toggle">\u25BC</span>
+      </div>
+      <div class="suggestion-list" id="orphans-list"></div>
+    </div>
+  </div>
 
   <script>
     const data = ${JSON.stringify(graphData)};
@@ -12456,6 +13628,118 @@ function generateVisualizationHtml(graphData, nodeTypeColors, constellation, pat
     const loadedConstellation = ${constellationState};
     const pathData = ${pathDataJson};
     const wsConfig = ${wsConfigJson};
+    const statusData = ${statusDataJson};
+    const focusBundle = ${focusBundleJson};
+
+    // Status panel state
+    let statusPanelExpanded = false;
+
+    function toggleStatusPanel() {
+      const panel = document.getElementById('status-panel');
+      const icon = document.getElementById('status-toggle-icon');
+      statusPanelExpanded = !statusPanelExpanded;
+      panel.classList.toggle('expanded', statusPanelExpanded);
+      icon.textContent = statusPanelExpanded ? '\u25B2' : '\u25BC';
+    }
+
+    function updateStatusPanel() {
+      if (!statusData) {
+        document.getElementById('status-panel').style.display = 'none';
+        return;
+      }
+
+      // Mode
+      document.getElementById('status-mode').textContent = statusData.visualization.mode;
+
+      // Nodes/Edges
+      document.getElementById('status-nodes').textContent = statusData.index.nodeCount;
+      const { A, B, C } = statusData.index.edgesByLayer;
+      const hiddenCount = statusData.visualization.totalEdgeCount - statusData.visualization.filteredEdgeCount;
+      document.getElementById('status-edges').innerHTML =
+        statusData.visualization.mode === 'focus' && hiddenCount > 0
+          ? \`\${statusData.visualization.filteredEdgeCount} <span style="color:var(--text-muted)">(\${hiddenCount} hidden)</span>\`
+          : statusData.index.edgeCount;
+
+      // Embeddings
+      const embEl = document.getElementById('status-embeddings');
+      const embLevel = statusData.embeddings.level;
+      const embPct = statusData.embeddings.coverage.toFixed(0);
+      const badgeClass = embLevel === 'ok' ? 'badge-ok' : embLevel === 'warn' ? 'badge-warn' : 'badge-fail';
+      embEl.innerHTML = \`<span class="status-badge \${badgeClass}">\${embLevel.toUpperCase()} \${embPct}%</span>\`;
+
+      // Wormholes
+      const whEl = document.getElementById('status-wormholes');
+      if (statusData.wormholes.enabled) {
+        whEl.innerHTML = \`<span style="color:#34d399">\${statusData.wormholes.count} edges</span>\`;
+      } else {
+        whEl.innerHTML = \`<span style="color:#fbbf24">disabled</span>\`;
+      }
+
+      // Mode buttons
+      document.getElementById('mode-focus-btn').classList.toggle('active', statusData.visualization.mode === 'focus');
+      document.getElementById('mode-classic-btn').classList.toggle('active', statusData.visualization.mode === 'classic');
+
+      // Header badge
+      const headerText = document.getElementById('status-header-text');
+      if (embLevel === 'fail') {
+        headerText.innerHTML = 'Status <span class="status-badge badge-fail">!</span>';
+      } else if (embLevel === 'warn') {
+        headerText.innerHTML = 'Status <span class="status-badge badge-warn">!</span>';
+      } else {
+        headerText.textContent = 'Status';
+      }
+    }
+
+    function setVisualizationMode(mode) {
+      // Note: This just updates UI state. The actual mode switch requires
+      // re-running the visualize command with different config.
+      // Show a toast indicating how to switch modes
+      showToast(\`To switch to \${mode} mode, update config: visualization.mode: "\${mode}"\`, 'info', 5000);
+    }
+
+    // Initialize status panel on load
+    setTimeout(updateStatusPanel, 100);
+
+    // Upgrade banner logic
+    const UPGRADE_BANNER_KEY = 'zs-upgrade-banner-dismissed';
+    const CURRENT_VERSION = statusData ? statusData.version : '0.4.1';
+
+    function shouldShowUpgradeBanner() {
+      if (!statusData) return false;
+      if (statusData.visualization.mode !== 'focus') return false;
+
+      const dismissed = localStorage.getItem(UPGRADE_BANNER_KEY);
+      if (!dismissed) return true;
+
+      // Check if dismissed for older version
+      try {
+        const { version } = JSON.parse(dismissed);
+        // Simple version comparison - show if current is newer
+        return version !== CURRENT_VERSION;
+      } catch {
+        return true;
+      }
+    }
+
+    function dismissUpgradeBanner() {
+      localStorage.setItem(UPGRADE_BANNER_KEY, JSON.stringify({
+        version: CURRENT_VERSION,
+        dismissedAt: new Date().toISOString()
+      }));
+      document.getElementById('upgrade-banner').classList.remove('show');
+    }
+
+    function switchToClassicFromBanner() {
+      dismissUpgradeBanner();
+      showToast('To switch to Classic mode: edit .zettelscript/config.yaml \u2192 visualization.mode: "classic"', 'info', 6000);
+    }
+
+    // Show upgrade banner if conditions met
+    setTimeout(() => {
+      if (shouldShowUpgradeBanner()) {
+        document.getElementById('upgrade-banner').classList.add('show');
+      }
+    }, 500);
 
     // Pre-compute adjacency index for O(1) lookups
     const adjacency = {};
@@ -14248,6 +15532,305 @@ function generateVisualizationHtml(graphData, nodeTypeColors, constellation, pat
       }
     });
 
+    // ========================================================================
+    // Suggestions Panel
+    // ========================================================================
+
+    let suggestionsPanelExpanded = true;
+    let activeSuggestionId = null;
+    let previewEdge = null;
+
+    function initSuggestionsPanel() {
+      if (!focusBundle) {
+        document.getElementById('suggestions-panel').style.display = 'none';
+        return;
+      }
+
+      const panel = document.getElementById('suggestions-panel');
+      panel.style.display = 'block';
+
+      // Render each section
+      renderRelatedNotes();
+      renderCandidateLinks();
+      renderOrphans();
+    }
+
+    function toggleSuggestionsPanel() {
+      const icon = document.getElementById('suggestions-toggle-icon');
+      suggestionsPanelExpanded = !suggestionsPanelExpanded;
+      icon.textContent = suggestionsPanelExpanded ? '\u25BC' : '\u25B2';
+
+      // Toggle all sections
+      document.querySelectorAll('.suggestion-section').forEach(section => {
+        section.style.display = suggestionsPanelExpanded ? 'block' : 'none';
+      });
+    }
+
+    function toggleSuggestionSection(sectionName) {
+      const section = document.getElementById(sectionName + '-section');
+      section.classList.toggle('collapsed');
+    }
+
+    function renderRelatedNotes() {
+      const list = document.getElementById('related-list');
+      const countEl = document.getElementById('related-count');
+      const notes = focusBundle?.suggestions?.relatedNotes || [];
+
+      countEl.textContent = notes.length;
+
+      if (notes.length === 0) {
+        // Empty state with health context
+        const health = focusBundle?.health;
+        let message = 'No related notes found for this view.';
+        let command = '';
+
+        if (health?.embeddings?.level === 'fail' || health?.embeddings?.level === 'warn') {
+          message = 'Embeddings incomplete.';
+          command = 'zs embed compute';
+        }
+
+        list.innerHTML = \`
+          <div class="suggestion-empty">
+            \${message}
+            \${command ? \`<code>\${command}</code>\` : ''}
+          </div>
+        \`;
+        return;
+      }
+
+      list.innerHTML = notes.map(note => \`
+        <div class="suggestion-item" data-node-id="\${note.nodeId}" onclick="handleRelatedNoteClick('\${note.nodeId}')">
+          <div class="suggestion-item-title">\${escapeHtml(note.title)}</div>
+          <div class="suggestion-item-meta">
+            <span class="suggestion-score">\${(note.score * 100).toFixed(0)}%</span>
+            \${note.isInView ? '<span style="color: var(--accent);">in view</span>' : ''}
+          </div>
+          \${note.reasons.length > 0 ? \`<div class="suggestion-reasons">\${escapeHtml(note.reasons[0])}</div>\` : ''}
+        </div>
+      \`).join('');
+    }
+
+    function renderCandidateLinks() {
+      const list = document.getElementById('links-list');
+      const countEl = document.getElementById('links-count');
+      const batchBtn = document.getElementById('batch-copy-btn');
+      const links = focusBundle?.suggestions?.candidateLinks || [];
+
+      countEl.textContent = links.length;
+      batchBtn.disabled = links.length === 0;
+
+      if (links.length === 0) {
+        list.innerHTML = \`
+          <div class="suggestion-empty">
+            No link suggestions for this view.
+          </div>
+        \`;
+        return;
+      }
+
+      list.innerHTML = links.map(link => \`
+        <div class="suggestion-item" data-suggestion-id="\${link.suggestionId}" onclick="handleCandidateLinkClick('\${link.suggestionId}', '\${link.fromId}', '\${link.toId}')">
+          <div class="candidate-link-row">
+            <div class="candidate-link-info">
+              <div class="suggestion-item-title">
+                <span class="candidate-from">\${escapeHtml(link.fromTitle)}</span>
+                <span class="candidate-link-arrow">\u2192</span>
+                <span class="candidate-to \${link.toIsGhost ? 'ghost' : ''}">\${escapeHtml(link.toTitle)}</span>
+              </div>
+              <div class="suggestion-item-meta">
+                <span class="suggestion-score">\${(link.confidence * 100).toFixed(0)}%</span>
+                <span>\${link.source}</span>
+              </div>
+            </div>
+            <button class="approve-btn" data-suggestion-id="\${link.suggestionId}" onclick="handleApprove(event, '\${link.suggestionId}')">
+              Approve
+            </button>
+          </div>
+          \${link.reasons.length > 0 ? \`<div class="suggestion-reasons">\${escapeHtml(link.reasons[0])}</div>\` : ''}
+        </div>
+      \`).join('');
+    }
+
+    function renderOrphans() {
+      const list = document.getElementById('orphans-list');
+      const countEl = document.getElementById('orphans-count');
+      const orphans = focusBundle?.suggestions?.orphans || [];
+
+      countEl.textContent = orphans.length;
+
+      if (orphans.length === 0) {
+        list.innerHTML = \`
+          <div class="suggestion-empty">
+            No orphans detected. Your notes are well-connected!
+          </div>
+        \`;
+        return;
+      }
+
+      list.innerHTML = orphans.map(orphan => \`
+        <div class="suggestion-item" data-node-id="\${orphan.nodeId}" onclick="handleOrphanClick('\${orphan.nodeId}')">
+          <div class="suggestion-item-title">\${escapeHtml(orphan.title)}</div>
+          <div class="suggestion-item-meta">
+            <span class="orphan-severity \${orphan.severity}">\${orphan.severity}</span>
+            <span>\${orphan.percentile.toFixed(0)}th percentile</span>
+          </div>
+          \${orphan.reasons.length > 0 ? \`<div class="suggestion-reasons">\${escapeHtml(orphan.reasons[0])}</div>\` : ''}
+        </div>
+      \`).join('');
+    }
+
+    function handleRelatedNoteClick(nodeId) {
+      clearActiveSuggestion();
+
+      // Highlight the node
+      if (nodeMap[nodeId]) {
+        activeSuggestionId = nodeId;
+        markSuggestionActive(nodeId, 'related');
+        highlightSuggestionNodes([nodeId]);
+      } else {
+        // Node not in current view - could navigate
+        showToast('Note not in current view', 'info');
+      }
+    }
+
+    function handleCandidateLinkClick(suggestionId, fromId, toId) {
+      clearActiveSuggestion();
+
+      activeSuggestionId = suggestionId;
+      markSuggestionActive(suggestionId, 'links');
+
+      // Highlight both nodes
+      const nodeIds = [];
+      if (nodeMap[fromId]) nodeIds.push(fromId);
+      if (nodeMap[toId]) nodeIds.push(toId);
+
+      highlightSuggestionNodes(nodeIds);
+
+      // Show preview edge (dashed line between nodes)
+      if (nodeMap[fromId] && nodeMap[toId]) {
+        showPreviewEdge(fromId, toId);
+      }
+    }
+
+    function handleOrphanClick(nodeId) {
+      clearActiveSuggestion();
+
+      if (nodeMap[nodeId]) {
+        activeSuggestionId = nodeId;
+        markSuggestionActive(nodeId, 'orphans');
+        highlightSuggestionNodes([nodeId]);
+      }
+    }
+
+    function markSuggestionActive(id, section) {
+      // Clear all active states
+      document.querySelectorAll('.suggestion-item.active').forEach(el => {
+        el.classList.remove('active');
+      });
+
+      // Mark the clicked item as active
+      const sectionEl = document.getElementById(section + '-list');
+      const item = sectionEl.querySelector(\`[data-\${section === 'links' ? 'suggestion' : 'node'}-id="\${id}"]\`);
+      if (item) {
+        item.classList.add('active');
+      }
+    }
+
+    function highlightSuggestionNodes(nodeIds) {
+      // Clear existing highlights
+      highlightNodes.clear();
+      highlightLinks.clear();
+
+      // Add new highlights
+      nodeIds.forEach(id => highlightNodes.add(id));
+
+      // Refresh the graph
+      Graph.refresh();
+    }
+
+    function showPreviewEdge(fromId, toId) {
+      // Store preview edge for rendering
+      previewEdge = { source: fromId, target: toId };
+      Graph.refresh();
+    }
+
+    function clearActiveSuggestion() {
+      activeSuggestionId = null;
+      previewEdge = null;
+
+      // Clear visual states
+      document.querySelectorAll('.suggestion-item.active').forEach(el => {
+        el.classList.remove('active');
+      });
+
+      highlightNodes.clear();
+      highlightLinks.clear();
+      Graph.refresh();
+    }
+
+    function handleApprove(event, suggestionId) {
+      event.stopPropagation();
+
+      // Build command from template
+      const template = focusBundle?.actions?.approve?.template || 'zs approve --suggestion-id {suggestionId} --json';
+      const command = template.replace('{suggestionId}', suggestionId);
+
+      // Copy to clipboard
+      navigator.clipboard.writeText(command).then(() => {
+        showToast('Command copied', 'success');
+
+        // Visual feedback
+        const btn = event.target;
+        const originalText = btn.textContent;
+        btn.textContent = 'Copied \u2713';
+        btn.classList.add('copied');
+
+        setTimeout(() => {
+          btn.textContent = originalText;
+          btn.classList.remove('copied');
+        }, 2000);
+      }).catch(err => {
+        showToast('Failed to copy command', 'error');
+        console.error('Copy failed:', err);
+      });
+    }
+
+    function batchCopyApproveCommands(event) {
+      event.stopPropagation();
+
+      const links = focusBundle?.suggestions?.candidateLinks || [];
+      if (links.length === 0) return;
+
+      const template = focusBundle?.actions?.approve?.template || 'zs approve --suggestion-id {suggestionId} --json';
+      const commands = links.map(link =>
+        template.replace('{suggestionId}', link.suggestionId)
+      ).join('\\n');
+
+      navigator.clipboard.writeText(commands).then(() => {
+        showToast(\`Copied \${links.length} approve commands\`, 'success');
+
+        // Visual feedback
+        const btn = event.target;
+        const originalText = btn.textContent;
+        btn.textContent = 'Copied \u2713';
+        setTimeout(() => {
+          btn.textContent = originalText;
+        }, 2000);
+      }).catch(err => {
+        showToast('Failed to copy commands', 'error');
+        console.error('Copy failed:', err);
+      });
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // Initialize suggestions panel after graph is ready
+    setTimeout(initSuggestionsPanel, 200);
+
     // Helper
     function convertHexToRGBA(hex, opacity) {
       let c;
@@ -14266,7 +15849,7 @@ function generateVisualizationHtml(graphData, nodeTypeColors, constellation, pat
 </html>
   `;
 }
-var visualizeCommand = new Command12("visualize").alias("viz").description("Visualize the knowledge graph in the browser").option("-o, --output <path>", "Custom output path for the HTML file").option("--no-open", "Do not open the browser automatically").option("-l, --live", "Enable live updates via WebSocket (allows creating notes from ghosts)").option("-c, --constellation <name>", "Load a saved constellation view").option("--list-constellations", "List all saved constellations").option("--path-from <node>", "Starting node for path highlighting (title or path)").option("--path-to <node>", "Ending node for path highlighting (title or path)").option("--path-k <n>", "Number of paths to compute", "3").action(
+var visualizeCommand = new Command13("visualize").alias("viz").description("Visualize the knowledge graph in the browser").option("-o, --output <path>", "Custom output path for the HTML file").option("--no-open", "Do not open the browser automatically").option("-l, --live", "Enable live updates via WebSocket (allows creating notes from ghosts)").option("-c, --constellation <name>", "Load a saved constellation view").option("--list-constellations", "List all saved constellations").option("--path-from <node>", "Starting node for path highlighting (title or path)").option("--path-to <node>", "Ending node for path highlighting (title or path)").option("--path-k <n>", "Number of paths to compute", "3").action(
   async (options) => {
     try {
       const ctx = await initContext();
@@ -14322,7 +15905,16 @@ var visualizeCommand = new Command12("visualize").alias("viz").description("Visu
         metadata: n.metadata,
         updatedAtMs: n.updatedAt ? new Date(n.updatedAt).getTime() : void 0
       }));
-      const graphLinks = edges2.map((e) => ({
+      const vizMode = ctx.config.visualization.mode;
+      const filteredEdges = edges2.filter(
+        (e) => shouldRenderEdge(e.edgeType, vizMode)
+      );
+      if (vizMode === "focus" && edges2.length !== filteredEdges.length) {
+        console.log(
+          `Focus mode: showing ${filteredEdges.length}/${edges2.length} edges (Layer C edges hidden)`
+        );
+      }
+      const graphLinks = filteredEdges.map((e) => ({
         source: e.sourceId,
         target: e.targetId,
         type: e.edgeType,
@@ -14440,19 +16032,21 @@ var visualizeCommand = new Command12("visualize").alias("viz").description("Visu
         };
         console.log(`Live updates enabled on port ${info.port}`);
       }
+      const statusData = await computeDoctorStats(ctx);
       const htmlContent = generateVisualizationHtml(
         graphData,
         typeColors,
         constellation,
         computedPathData,
-        wsConfig
+        wsConfig,
+        statusData
       );
-      const outputDir = options.output ? path16.dirname(options.output) : getZettelScriptDir(ctx.vaultPath);
-      if (!fs13.existsSync(outputDir)) {
-        fs13.mkdirSync(outputDir, { recursive: true });
+      const outputDir = options.output ? path17.dirname(options.output) : getZettelScriptDir(ctx.vaultPath);
+      if (!fs14.existsSync(outputDir)) {
+        fs14.mkdirSync(outputDir, { recursive: true });
       }
-      const outputPath = options.output || path16.join(outputDir, "graph.html");
-      fs13.writeFileSync(outputPath, htmlContent, "utf-8");
+      const outputPath = options.output || path17.join(outputDir, "graph.html");
+      fs14.writeFileSync(outputPath, htmlContent, "utf-8");
       console.log(`
 Graph visualization generated at: ${outputPath}`);
       if (options.open) {
@@ -14484,9 +16078,9 @@ Graph visualization generated at: ${outputPath}`);
 );
 
 // src/cli/commands/setup.ts
-import { Command as Command13 } from "commander";
-import * as fs14 from "fs";
-import * as path17 from "path";
+import { Command as Command14 } from "commander";
+import * as fs15 from "fs";
+import * as path18 from "path";
 import * as readline3 from "readline";
 import process3 from "process";
 import { stringify as stringifyYaml7 } from "yaml";
@@ -14852,19 +16446,19 @@ async function promptYesNo2(question) {
     });
   });
 }
-function formatBytes2(bytes) {
+function formatBytes3(bytes) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
-var setupCommand = new Command13("setup").alias("go").description("Initialize vault, index files, and generate visualization (0 to hero)").option("-f, --force", "Reinitialize even if already set up").option("--manuscript", "Enable manuscript mode with POV and timeline validation").option("--extract", "Extract entities from prose using LLM").option("--extract-model <model>", "Ollama model for extraction", "qwen2.5:7b").option("--embed", "Compute embeddings for semantic features").option("--wormholes", "Detect semantic wormholes (implies --embed)").option("--no-viz", "Skip visualization generation").option("-v, --verbose", "Show detailed output").action(async (options) => {
+var setupCommand = new Command14("setup").alias("go").description("Initialize vault, index files, and generate visualization (0 to hero)").option("-f, --force", "Reinitialize even if already set up").option("--manuscript", "Enable manuscript mode with POV and timeline validation").option("--extract", "Extract entities from prose using LLM").option("--extract-model <model>", "Ollama model for extraction", "qwen2.5:7b").option("--embed", "Compute embeddings for semantic features").option("--wormholes", "Detect semantic wormholes (implies --embed)").option("--no-viz", "Skip visualization generation").option("-v, --verbose", "Show detailed output").action(async (options) => {
   const vaultPath = process3.cwd();
   const zettelDir = getZettelScriptDir(vaultPath);
   let needsInit = true;
   console.log("ZettelScript Setup");
   console.log("==================\n");
-  if (fs14.existsSync(zettelDir) && !options.force) {
+  if (fs15.existsSync(zettelDir) && !options.force) {
     const existingRoot = findVaultRoot(vaultPath);
     if (existingRoot) {
       console.log("Step 1: Initialize");
@@ -14875,8 +16469,8 @@ var setupCommand = new Command13("setup").alias("go").description("Initialize va
   if (needsInit) {
     console.log("Step 1: Initialize");
     try {
-      fs14.mkdirSync(zettelDir, { recursive: true });
-      console.log(`  Created ${path17.relative(vaultPath, zettelDir)}/`);
+      fs15.mkdirSync(zettelDir, { recursive: true });
+      console.log(`  Created ${path18.relative(vaultPath, zettelDir)}/`);
       const config = {
         ...DEFAULT_CONFIG,
         vault: {
@@ -14889,16 +16483,16 @@ var setupCommand = new Command13("setup").alias("go").description("Initialize va
         }
       };
       const configPath = getConfigPath(vaultPath);
-      fs14.writeFileSync(configPath, stringifyYaml7(config), "utf-8");
-      console.log(`  Created ${path17.relative(vaultPath, configPath)}`);
+      fs15.writeFileSync(configPath, stringifyYaml7(config), "utf-8");
+      console.log(`  Created ${path18.relative(vaultPath, configPath)}`);
       const dbPath = getDbPath(vaultPath);
       const manager = ConnectionManager.getInstance(dbPath);
       await manager.initialize();
       manager.close();
       ConnectionManager.resetInstance();
-      console.log(`  Created ${path17.relative(vaultPath, dbPath)}`);
-      const gitignorePath = path17.join(zettelDir, ".gitignore");
-      fs14.writeFileSync(
+      console.log(`  Created ${path18.relative(vaultPath, dbPath)}`);
+      const gitignorePath = path18.join(zettelDir, ".gitignore");
+      fs15.writeFileSync(
         gitignorePath,
         "# Ignore database (regenerated from files)\nzettelscript.db\nzettelscript.db-*\n",
         "utf-8"
@@ -14968,7 +16562,7 @@ var setupCommand = new Command13("setup").alias("go").description("Initialize va
                 if (progress.completed !== void 0 && progress.total !== void 0) {
                   const percent = (progress.completed / progress.total * 100).toFixed(0);
                   process3.stdout.write(
-                    `\r  ${progress.status}: ${formatBytes2(progress.completed)} / ${formatBytes2(progress.total)} (${percent}%)    `
+                    `\r  ${progress.status}: ${formatBytes3(progress.completed)} / ${formatBytes3(progress.total)} (${percent}%)    `
                   );
                 } else {
                   process3.stdout.write(`\r  ${progress.status}...    `);
@@ -14999,9 +16593,9 @@ var setupCommand = new Command13("setup").alias("go").description("Initialize va
           });
           const findMarkdown = (dir) => {
             const results = [];
-            const entries = fs14.readdirSync(dir, { withFileTypes: true });
+            const entries = fs15.readdirSync(dir, { withFileTypes: true });
             for (const entry of entries) {
-              const fullPath = path17.join(dir, entry.name);
+              const fullPath = path18.join(dir, entry.name);
               if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
               if (entry.isDirectory()) {
                 results.push(...findMarkdown(fullPath));
@@ -15017,7 +16611,7 @@ var setupCommand = new Command13("setup").alias("go").description("Initialize va
           const spinner2 = new Spinner(`  Extracting from ${files.length} files...`);
           spinner2.start();
           for (const filePath of files) {
-            const content = fs14.readFileSync(filePath, "utf-8");
+            const content = fs15.readFileSync(filePath, "utf-8");
             if (content.length < 100) continue;
             try {
               const result2 = await extractor.extractFromText(content);
@@ -15038,16 +16632,16 @@ var setupCommand = new Command13("setup").alias("go").description("Initialize va
             }
           }
           spinner2.stop();
-          const outputDir = path17.join(ctx.vaultPath, "entities");
-          if (!fs14.existsSync(outputDir)) {
-            fs14.mkdirSync(outputDir, { recursive: true });
+          const outputDir = path18.join(ctx.vaultPath, "entities");
+          if (!fs15.existsSync(outputDir)) {
+            fs15.mkdirSync(outputDir, { recursive: true });
           }
           let created = 0;
           for (const entity of allEntities.values()) {
             if (entity.mentions < 2) continue;
             const safeName = entity.name.replace(/[<>:"/\\|?*]/g, "-");
-            const filePath = path17.join(outputDir, `${safeName}.md`);
-            if (!fs14.existsSync(filePath)) {
+            const filePath = path18.join(outputDir, `${safeName}.md`);
+            if (!fs15.existsSync(filePath)) {
               const frontmatter = {
                 id: nanoid10(12),
                 title: entity.name,
@@ -15059,7 +16653,7 @@ ${stringifyYaml7(frontmatter)}---
 
 ${entity.description}
 `;
-              fs14.writeFileSync(filePath, content, "utf-8");
+              fs15.writeFileSync(filePath, content, "utf-8");
               created++;
             }
           }
@@ -15096,10 +16690,10 @@ ${entity.description}
           const spinner2 = new Spinner(`  Computing embeddings for ${nodes2.length} nodes...`);
           spinner2.start();
           for (const node of nodes2) {
-            const filePath = path17.join(ctx.vaultPath, node.path);
+            const filePath = path18.join(ctx.vaultPath, node.path);
             let text2 = node.title;
-            if (fs14.existsSync(filePath)) {
-              text2 = fs14.readFileSync(filePath, "utf-8");
+            if (fs15.existsSync(filePath)) {
+              text2 = fs15.readFileSync(filePath, "utf-8");
             }
             try {
               const embedding = await provider.embed(text2);
@@ -15178,9 +16772,9 @@ ${entity.description}
           }))
         };
         const htmlContent = generateVisualizationHtml(graphData, typeColors);
-        const outputPath = path17.join(getZettelScriptDir(ctx.vaultPath), "graph.html");
-        fs14.writeFileSync(outputPath, htmlContent, "utf-8");
-        console.log(`  Generated: ${path17.relative(vaultPath, outputPath)}`);
+        const outputPath = path18.join(getZettelScriptDir(ctx.vaultPath), "graph.html");
+        fs15.writeFileSync(outputPath, htmlContent, "utf-8");
+        console.log(`  Generated: ${path18.relative(vaultPath, outputPath)}`);
         console.log("  Done!\n");
       }
     }
@@ -15215,8 +16809,8 @@ ${entity.description}
 });
 
 // src/cli/commands/constellation.ts
-import { Command as Command14 } from "commander";
-var constellationCommand = new Command14("constellation").alias("const").description("Manage saved graph views (constellations)");
+import { Command as Command15 } from "commander";
+var constellationCommand = new Command15("constellation").alias("const").description("Manage saved graph views (constellations)");
 constellationCommand.command("save <name>").description("Save a constellation from JSON state").option("-s, --state <json>", "State JSON from visualizer").option("-d, --description <text>", "Description for the constellation").action(async (name, options) => {
   try {
     const ctx = await initContext();
@@ -15386,10 +16980,10 @@ constellationCommand.command("update <name>").description("Update an existing co
 );
 
 // src/cli/commands/embed.ts
-import { Command as Command15 } from "commander";
-import * as fs15 from "fs";
-import * as path18 from "path";
-var embedCommand = new Command15("embed").description(
+import { Command as Command16 } from "commander";
+import * as fs16 from "fs";
+import * as path19 from "path";
+var embedCommand = new Command16("embed").description(
   "Manage node embeddings for semantic wormholes"
 );
 embedCommand.command("compute").description("Compute embeddings for nodes that need them").option("-p, --provider <name>", "Embedding provider (openai|ollama|mock)", "openai").option("-m, --model <name>", "Model name (provider-specific)").option("--force", "Recompute all embeddings, not just dirty nodes").option("--batch-size <n>", "Batch size for API calls", "10").action(
@@ -15452,9 +17046,9 @@ embedCommand.command("compute").description("Compute embeddings for nodes that n
             if (chunks2.length > 0) {
               texts.push(chunks2.map((c) => c.text).join("\n"));
             } else {
-              const filePath = path18.join(ctx.vaultPath, node.path);
-              if (fs15.existsSync(filePath)) {
-                const content = fs15.readFileSync(filePath, "utf-8");
+              const filePath = path19.join(ctx.vaultPath, node.path);
+              if (fs16.existsSync(filePath)) {
+                const content = fs16.readFileSync(filePath, "utf-8");
                 texts.push(content);
               } else {
                 texts.push(node.title);
@@ -15540,8 +17134,8 @@ embedCommand.command("clear").description("Clear all embeddings").option("-m, --
 });
 
 // src/cli/commands/wormhole.ts
-import { Command as Command16 } from "commander";
-var wormholeCommand = new Command16("wormhole").description(
+import { Command as Command17 } from "commander";
+var wormholeCommand = new Command17("wormhole").description(
   "Detect and manage semantic wormholes (similar but unlinked nodes)"
 );
 wormholeCommand.command("detect").description("Detect semantic wormholes and create suggestion edges").option("-t, --threshold <number>", "Similarity threshold (0-1)", "0.75").option("-k, --max-per-node <number>", "Maximum wormholes per node", "5").option("--dry-run", "Preview without creating edges").action(async (options) => {
@@ -15780,8 +17374,8 @@ function truncate(str, maxLen) {
 }
 
 // src/cli/commands/path.ts
-import { Command as Command17 } from "commander";
-import * as fs16 from "fs";
+import { Command as Command18 } from "commander";
+import * as fs17 from "fs";
 import process4 from "process";
 var DEFAULT_EDGE_TYPES = ["explicit_link", "sequence", "causes", "semantic"];
 var DEFAULT_EXCLUDED = ["semantic_suggestion", "backlink", "mention", "hierarchy"];
@@ -15933,7 +17527,7 @@ function formatJson(fromNode, toNode, paths, options, effectiveEdgeTypes, reason
   };
   return JSON.stringify(output, null, 2);
 }
-var pathCommand = new Command17("path").description("Find narrative paths between two nodes").argument("<from>", "Starting node (title or path)").argument("<to>", "Ending node (title or path)").option("-k, --max-paths <n>", "Maximum paths to return", "3").option("--max-depth <n>", "Maximum hops to search", "15").option("--max-extra <n>", "Max extra hops beyond shortest", "2").option("--format <type>", "Output format: table|verbose|md|json", "table").option("-o, --output <file>", "Write output to file").option("--edge-types <types>", "Comma-separated edge types to include").option("--exclude-edges <types>", "Comma-separated edge types to exclude").option("--ids", "Show node IDs in output").action(async (from, to, options) => {
+var pathCommand = new Command18("path").description("Find narrative paths between two nodes").argument("<from>", "Starting node (title or path)").argument("<to>", "Ending node (title or path)").option("-k, --max-paths <n>", "Maximum paths to return", "3").option("--max-depth <n>", "Maximum hops to search", "15").option("--max-extra <n>", "Max extra hops beyond shortest", "2").option("--format <type>", "Output format: table|verbose|md|json", "table").option("-o, --output <file>", "Write output to file").option("--edge-types <types>", "Comma-separated edge types to include").option("--exclude-edges <types>", "Comma-separated edge types to exclude").option("--ids", "Show node IDs in output").action(async (from, to, options) => {
   const spinner = new Spinner("Finding paths...");
   try {
     const ctx = await initContext();
@@ -16007,7 +17601,7 @@ var pathCommand = new Command17("path").description("Find narrative paths betwee
       case "md":
         output = formatMarkdown(fromNode, toNode, paths, nodeMap);
         if (options.output) {
-          fs16.writeFileSync(options.output, output, "utf-8");
+          fs17.writeFileSync(options.output, output, "utf-8");
           console.log(`Markdown written to: ${options.output}`);
         } else {
           console.log(output);
@@ -16016,7 +17610,7 @@ var pathCommand = new Command17("path").description("Find narrative paths betwee
       case "json":
         output = formatJson(fromNode, toNode, paths, options, effectiveEdgeTypes, reason, k);
         if (options.output) {
-          fs16.writeFileSync(options.output, output, "utf-8");
+          fs17.writeFileSync(options.output, output, "utf-8");
           console.log(`JSON written to: ${options.output}`);
         } else {
           console.log(output);
@@ -16035,8 +17629,1320 @@ var pathCommand = new Command17("path").description("Find narrative paths betwee
   }
 });
 
+// src/cli/commands/focus.ts
+import { Command as Command19 } from "commander";
+import * as fs18 from "fs";
+import * as path20 from "path";
+import open2 from "open";
+
+// src/discovery/focus-bundle.ts
+var FOCUS_SCHEMA_VERSION = 1;
+var APP_VERSION = "2.0.0";
+var SUGGESTION_CAPS = {
+  relatedNotesPerFocus: 10,
+  candidateLinksPerFocus: 20,
+  orphansPerFocus: 10,
+  reasonsPerSuggestion: 3,
+  excerptMaxLength: 200
+};
+function assembleFocusBundle(input) {
+  const {
+    focusNode,
+    nodesInView,
+    edgesInView,
+    candidateEdges: candidateEdges2,
+    orphanEntries,
+    relatedNotes,
+    doctorStats,
+    mode
+  } = input;
+  const nodeIdsInView = new Set(nodesInView.map((n) => n.nodeId));
+  const degreesA = /* @__PURE__ */ new Map();
+  const degreesB = /* @__PURE__ */ new Map();
+  const degreesC = /* @__PURE__ */ new Map();
+  for (const edge of edgesInView) {
+    const layer = getEdgeLayer(edge.edgeType);
+    const map = layer === "A" ? degreesA : layer === "B" ? degreesB : degreesC;
+    map.set(edge.sourceId, (map.get(edge.sourceId) || 0) + 1);
+    map.set(edge.targetId, (map.get(edge.targetId) || 0) + 1);
+  }
+  const nodeDTOs = nodesInView.map((node) => ({
+    id: node.nodeId,
+    title: node.title,
+    path: node.path,
+    type: node.type,
+    updatedAtMs: node.updatedAt ? new Date(node.updatedAt).getTime() : void 0,
+    isGhost: node.isGhost || false,
+    degreeA: degreesA.get(node.nodeId) || 0,
+    degreeB: degreesB.get(node.nodeId) || 0,
+    degreeC: degreesC.get(node.nodeId) || 0
+  }));
+  const edgeDTOs = edgesInView.map((edge) => ({
+    id: edge.edgeId,
+    fromId: edge.sourceId,
+    toId: edge.targetId,
+    type: edge.edgeType,
+    status: "truth",
+    layer: getEdgeLayer(edge.edgeType),
+    confidence: edge.strength,
+    provenance: edge.provenance
+  }));
+  const nodeMap = new Map(nodesInView.map((n) => [n.nodeId, n]));
+  const candidateLinks = candidateEdges2.filter((ce) => ce.status === "suggested").map((ce) => {
+    const fromNode = nodeMap.get(ce.fromId);
+    const toNode = nodeMap.get(ce.toId);
+    let source = "heuristic";
+    if (ce.signals?.mentionCount !== void 0 && ce.signals.mentionCount > 0) {
+      source = "mention";
+    } else if (ce.signals?.semantic !== void 0) {
+      source = "semantic";
+    }
+    let confidence = 0.5;
+    if (ce.signals?.semantic !== void 0) {
+      confidence = ce.signals.semantic;
+    } else if (ce.signals?.mentionCount !== void 0) {
+      confidence = Math.min(1, ce.signals.mentionCount / 10);
+    }
+    return {
+      suggestionId: ce.suggestionId,
+      fromId: ce.fromId,
+      fromTitle: fromNode?.title || "Unknown",
+      toId: ce.toId,
+      toTitle: toNode?.title || "Unknown",
+      toIsGhost: toNode?.isGhost || false,
+      suggestedEdgeType: ce.suggestedEdgeType,
+      confidence,
+      reasons: (ce.reasons || []).slice(0, SUGGESTION_CAPS.reasonsPerSuggestion),
+      source,
+      status: ce.status,
+      signals: ce.signals || {},
+      provenance: ce.provenance && ce.provenance.length > 0 ? {
+        model: ce.provenance[0].model,
+        excerpt: ce.provenance[0].excerpt?.slice(0, SUGGESTION_CAPS.excerptMaxLength),
+        createdAt: ce.provenance[0].createdAt
+      } : void 0
+    };
+  }).sort((a, b) => {
+    if (b.confidence !== a.confidence) return b.confidence - a.confidence;
+    return a.toTitle.localeCompare(b.toTitle);
+  }).slice(0, SUGGESTION_CAPS.candidateLinksPerFocus);
+  const orphanDTOs = orphanEntries.map((entry) => ({
+    nodeId: entry.nodeId,
+    title: entry.title,
+    path: entry.path,
+    orphanScore: entry.orphanScore,
+    severity: entry.severity,
+    percentile: entry.percentile,
+    reasons: entry.reasons.slice(0, SUGGESTION_CAPS.reasonsPerSuggestion),
+    relatedNodeIds: entry.relatedNodeIds.slice(0, 3),
+    suggestedActions: buildOrphanActions(entry, nodeMap)
+  })).sort((a, b) => {
+    if (b.orphanScore !== a.orphanScore) return b.orphanScore - a.orphanScore;
+    return a.title.localeCompare(b.title);
+  }).slice(0, SUGGESTION_CAPS.orphansPerFocus);
+  const relatedNotesDTO = relatedNotes.map((rn) => ({
+    ...rn,
+    isInView: nodeIdsInView.has(rn.nodeId),
+    reasons: rn.reasons.slice(0, SUGGESTION_CAPS.reasonsPerSuggestion)
+  })).sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    return a.title.localeCompare(b.title);
+  }).slice(0, SUGGESTION_CAPS.relatedNotesPerFocus);
+  const health = buildHealthSummary(doctorStats, nodesInView, edgesInView);
+  const actions = {
+    approve: {
+      template: "zs approve --suggestion-id {suggestionId} --json",
+      supportsBatch: true
+    },
+    reject: {
+      template: "zs reject --suggestion-id {suggestionId} --json"
+    },
+    focus: {
+      template: 'zs focus "{path}" --json-stdout'
+    },
+    createNote: {
+      template: 'zs create --title "{title}" --link-from {fromId} --json'
+    }
+  };
+  return {
+    meta: {
+      schemaVersion: FOCUS_SCHEMA_VERSION,
+      appVersion: APP_VERSION,
+      generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+      mode,
+      scope: {
+        kind: "node",
+        focusNodeId: focusNode.nodeId,
+        focusNodePath: focusNode.path,
+        focusNodeTitle: focusNode.title
+      }
+    },
+    health,
+    graph: {
+      nodes: nodeDTOs,
+      edges: edgeDTOs
+    },
+    suggestions: {
+      relatedNotes: relatedNotesDTO,
+      candidateLinks,
+      orphans: orphanDTOs
+    },
+    actions
+  };
+}
+function buildHealthSummary(stats, nodesInView, edgesInView) {
+  const eligibleNodes = nodesInView.filter((n) => !n.isGhost);
+  const eligibleInView = eligibleNodes.length;
+  const embeddedInView = eligibleNodes.filter((n) => n.contentHash).length;
+  const missingInView = eligibleInView - embeddedInView;
+  const coverageInView = eligibleInView > 0 ? embeddedInView / eligibleInView * 100 : 100;
+  const wormholesInView = edgesInView.filter((e) => e.edgeType === "semantic").length;
+  const edgeCountsByLayer = { A: 0, B: 0, C: 0 };
+  for (const edge of edgesInView) {
+    const layer = getEdgeLayer(edge.edgeType);
+    if (layer === "A") edgeCountsByLayer.A++;
+    else if (layer === "B") edgeCountsByLayer.B++;
+    else if (layer === "C") edgeCountsByLayer.C++;
+  }
+  let wormholeLevel = "ok";
+  if (!stats.wormholes.enabled) {
+    wormholeLevel = stats.embeddings.level === "fail" ? "fail" : "warn";
+  }
+  return {
+    level: stats.overallLevel,
+    embeddings: {
+      level: stats.embeddings.level,
+      coverageInView,
+      eligibleInView,
+      embeddedInView,
+      missingInView,
+      pending: stats.embeddings.pending,
+      errors: stats.embeddings.errorCount,
+      lastError: stats.embeddings.lastError
+    },
+    wormholes: {
+      enabled: stats.wormholes.enabled,
+      level: wormholeLevel,
+      countInView: wormholesInView,
+      threshold: stats.wormholes.threshold,
+      disabledReason: stats.wormholes.disabledReason
+    },
+    index: {
+      lastRunAt: stats.index.lastIndexTime?.toISOString(),
+      nodeCount: stats.index.nodeCount,
+      edgeCountsByLayer
+    },
+    extraction: {
+      parseFailures: stats.extraction.parseFailCount,
+      badChunksPath: stats.extraction.badChunksPath
+    }
+  };
+}
+function buildOrphanActions(entry, nodeMap) {
+  const actions = [];
+  for (const relatedId of entry.relatedNodeIds.slice(0, 2)) {
+    const relatedNode = nodeMap.get(relatedId);
+    if (relatedNode) {
+      actions.push({
+        actionType: "link_to",
+        targetNodeId: relatedId,
+        label: `Link to "${relatedNode.title}"`,
+        template: `zs link --from "${entry.path}" --to "${relatedNode.path}" --json`
+      });
+    }
+  }
+  actions.push({
+    actionType: "ignore",
+    label: "Ignore this orphan",
+    template: `zs orphan ignore --node-id ${entry.nodeId} --json`
+  });
+  return actions;
+}
+
+// src/discovery/suggestion-engine.ts
+var DEFAULT_SUGGESTION_CONFIG = {
+  mentions: {
+    minOccurrences: 2,
+    maxResults: 20
+  },
+  semantic: {
+    minSimilarity: 0.4,
+    maxSimilarity: 0.74,
+    maxResults: 20
+  }
+};
+var SuggestionEngine = class {
+  constructor(nodeRepository, edgeRepository, mentionRepository, embeddingRepository, candidateEdgeRepository, config) {
+    this.nodeRepository = nodeRepository;
+    this.edgeRepository = edgeRepository;
+    this.mentionRepository = mentionRepository;
+    this.embeddingRepository = embeddingRepository;
+    this.candidateEdgeRepository = candidateEdgeRepository;
+    this.config = {
+      mentions: { ...DEFAULT_SUGGESTION_CONFIG.mentions, ...config?.mentions },
+      semantic: { ...DEFAULT_SUGGESTION_CONFIG.semantic, ...config?.semantic }
+    };
+  }
+  config;
+  /**
+   * Compute candidate edges for mentions in a given scope.
+   *
+   * Per Phase 2 Design Section 3.3:
+   * - Filter: mentionMinOccurrences >= 2
+   * - Group by (fromId, toId) pair
+   * - Create/upsert CandidateEdge records
+   */
+  async computeMentionCandidates(scopeNodeIds) {
+    if (scopeNodeIds.length === 0) {
+      return { created: [], updated: [], total: 0 };
+    }
+    const existingLayerA = await this.getLayerAConnections(scopeNodeIds);
+    const aggregations = await this.aggregateMentionsForScope(scopeNodeIds);
+    const filtered = aggregations.filter((agg) => {
+      if (agg.count < this.config.mentions.minOccurrences) return false;
+      if (this.isAlreadyConnected(agg.fromId, agg.toId, existingLayerA)) return false;
+      return true;
+    });
+    filtered.sort((a, b) => b.count - a.count);
+    const limited = filtered.slice(0, this.config.mentions.maxResults);
+    const created = [];
+    const updated = [];
+    for (const agg of limited) {
+      const edgeType = "mention";
+      const suggestionId = generateSuggestionId(
+        agg.fromId,
+        agg.toId,
+        edgeType,
+        isUndirectedEdgeType(edgeType)
+      );
+      const existing = await this.candidateEdgeRepository.findById(suggestionId);
+      if (existing) {
+        const updatedCandidate = await this.candidateEdgeRepository.update(suggestionId, {
+          signals: {
+            ...existing.signals,
+            mentionCount: agg.count
+          },
+          reasons: mergeReasons(existing.reasons || [], agg.reasons)
+        });
+        updated.push(updatedCandidate);
+      } else {
+        const candidate = await this.candidateEdgeRepository.create({
+          suggestionId,
+          fromId: agg.fromId,
+          toId: agg.toId,
+          suggestedEdgeType: edgeType,
+          signals: { mentionCount: agg.count },
+          reasons: agg.reasons.slice(0, 3)
+        });
+        created.push(candidate);
+      }
+    }
+    return {
+      created,
+      updated,
+      total: created.length + updated.length
+    };
+  }
+  /**
+   * Compute candidate edges from semantic similarity.
+   *
+   * Per Phase 2 Design Section 3.1:
+   * - semanticMinSimilarity: 0.4 (below this, too weak)
+   * - semanticMaxSimilarity: 0.74 (at 0.75+, it's a wormhole)
+   */
+  async computeSemanticCandidates(scopeNodeIds) {
+    if (scopeNodeIds.length === 0) {
+      return { created: [], updated: [], total: 0 };
+    }
+    const existingLayerA = await this.getLayerAConnections(scopeNodeIds);
+    const embeddings = await this.embeddingRepository.findByNodeIds(scopeNodeIds);
+    if (embeddings.length < 2) {
+      return { created: [], updated: [], total: 0 };
+    }
+    const candidates = [];
+    for (let i = 0; i < embeddings.length; i++) {
+      for (let j = i + 1; j < embeddings.length; j++) {
+        const e1 = embeddings[i];
+        const e2 = embeddings[j];
+        if (this.isAlreadyConnected(e1.nodeId, e2.nodeId, existingLayerA)) {
+          continue;
+        }
+        const similarity = cosineSimilarity2(e1.embedding, e2.embedding);
+        if (similarity >= this.config.semantic.minSimilarity && similarity < this.config.semantic.maxSimilarity) {
+          candidates.push({
+            fromId: e1.nodeId,
+            toId: e2.nodeId,
+            similarity
+          });
+        }
+      }
+    }
+    candidates.sort((a, b) => b.similarity - a.similarity);
+    const limited = candidates.slice(0, this.config.semantic.maxResults);
+    const created = [];
+    const updated = [];
+    for (const cand of limited) {
+      const edgeType = "semantic_suggestion";
+      const suggestionId = generateSuggestionId(
+        cand.fromId,
+        cand.toId,
+        edgeType,
+        isUndirectedEdgeType(edgeType)
+      );
+      const existing = await this.candidateEdgeRepository.findById(suggestionId);
+      if (existing) {
+        const updatedCandidate = await this.candidateEdgeRepository.update(suggestionId, {
+          signals: {
+            ...existing.signals,
+            semantic: cand.similarity
+          },
+          reasons: mergeReasons(existing.reasons || [], [
+            `Semantic similarity: ${(cand.similarity * 100).toFixed(0)}%`
+          ])
+        });
+        updated.push(updatedCandidate);
+      } else {
+        const candidate = await this.candidateEdgeRepository.create({
+          suggestionId,
+          fromId: cand.fromId,
+          toId: cand.toId,
+          suggestedEdgeType: edgeType,
+          signals: { semantic: cand.similarity },
+          reasons: [`Semantic similarity: ${(cand.similarity * 100).toFixed(0)}%`]
+        });
+        created.push(candidate);
+      }
+    }
+    return {
+      created,
+      updated,
+      total: created.length + updated.length
+    };
+  }
+  /**
+   * Compute all candidate types for a scope.
+   */
+  async computeAllCandidates(scopeNodeIds) {
+    const mentions = await this.computeMentionCandidates(scopeNodeIds);
+    const semantic = await this.computeSemanticCandidates(scopeNodeIds);
+    return {
+      mentions,
+      semantic,
+      total: mentions.total + semantic.total
+    };
+  }
+  /**
+   * Get all Layer A edge connections for nodes in scope.
+   * Returns a Set of normalized pair keys for fast lookup.
+   */
+  async getLayerAConnections(nodeIds) {
+    const connections = /* @__PURE__ */ new Set();
+    for (const nodeId of nodeIds) {
+      const edges2 = await this.edgeRepository.findConnected(nodeId);
+      for (const edge of edges2) {
+        if (!LAYER_A_EDGES.includes(edge.edgeType)) {
+          continue;
+        }
+        const key = normalizeEdgePair(edge.sourceId, edge.targetId);
+        connections.add(key);
+      }
+    }
+    return connections;
+  }
+  /**
+   * Check if two nodes are already connected by Layer A edge.
+   */
+  isAlreadyConnected(nodeId1, nodeId2, layerAConnections) {
+    const key = normalizeEdgePair(nodeId1, nodeId2);
+    return layerAConnections.has(key);
+  }
+  /**
+   * Aggregate mentions by (source, target) pair.
+   * Counts occurrences and collects reasons.
+   */
+  async aggregateMentionsForScope(nodeIds) {
+    const aggregations = /* @__PURE__ */ new Map();
+    for (const nodeId of nodeIds) {
+      const mentions = await this.mentionRepository.findBySourceId(nodeId);
+      for (const mention of mentions) {
+        if (mention.status === "rejected") continue;
+        const key = normalizeEdgePair(mention.sourceId, mention.targetId);
+        if (!aggregations.has(key)) {
+          aggregations.set(key, {
+            fromId: mention.sourceId,
+            toId: mention.targetId,
+            count: 0,
+            reasons: []
+          });
+        }
+        const agg = aggregations.get(key);
+        agg.count++;
+        if (mention.surfaceText && agg.reasons.length < 3) {
+          const reason = `Mentioned as "${mention.surfaceText}"`;
+          if (!agg.reasons.includes(reason)) {
+            agg.reasons.push(reason);
+          }
+        }
+      }
+    }
+    return Array.from(aggregations.values());
+  }
+};
+function cosineSimilarity2(a, b) {
+  if (a.length !== b.length) return 0;
+  let dotProduct = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dotProduct += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+  if (normA === 0 || normB === 0) return 0;
+  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+function normalizeEdgePair(id1, id2) {
+  return id1 < id2 ? `${id1}|${id2}` : `${id2}|${id1}`;
+}
+function mergeReasons(existing, newReasons) {
+  const merged = [...existing];
+  for (const reason of newReasons) {
+    if (!merged.includes(reason) && merged.length < 3) {
+      merged.push(reason);
+    }
+  }
+  return merged;
+}
+var ORPHAN_WEIGHTS = {
+  semanticPull: 0.45,
+  lowTruthDegree: 0.25,
+  mentionPressure: 0.2,
+  importance: 0.1
+};
+var DEFAULT_ORPHAN_CONFIG = {
+  minScore: 0.3,
+  maxResults: 10,
+  topSemanticNeighbors: 5,
+  recencyDays: 30
+};
+var OrphanEngine = class {
+  constructor(nodeRepository, edgeRepository, mentionRepository, embeddingRepository, config) {
+    this.nodeRepository = nodeRepository;
+    this.edgeRepository = edgeRepository;
+    this.mentionRepository = mentionRepository;
+    this.embeddingRepository = embeddingRepository;
+    this.config = { ...DEFAULT_ORPHAN_CONFIG, ...config };
+  }
+  config;
+  /**
+   * Compute orphan scores for nodes in scope.
+   *
+   * Per DESIGN.md Section 12.2:
+   * orphanScore = 0.45 * semanticPull + 0.25 * (1/(1+truthDegree)) + 0.20 * mentionPressure + 0.10 * importance
+   */
+  async computeOrphanScores(scopeNodeIds) {
+    if (scopeNodeIds.length === 0) {
+      return [];
+    }
+    const nodes2 = await this.nodeRepository.findByIds(scopeNodeIds);
+    if (nodes2.length === 0) {
+      return [];
+    }
+    const layerADegrees = await this.computeLayerADegrees(scopeNodeIds);
+    const unresolvedMentionCounts = await this.computeUnresolvedMentionCounts(scopeNodeIds);
+    const maxMentionCount = Math.max(...Array.from(unresolvedMentionCounts.values()), 1);
+    const semanticNeighbors = await this.computeSemanticNeighbors(scopeNodeIds);
+    const entries = [];
+    const now = Date.now();
+    for (const node of nodes2) {
+      if (node.isGhost) continue;
+      const truthDegree = layerADegrees.get(node.nodeId) || 0;
+      const mentionCount = unresolvedMentionCounts.get(node.nodeId) || 0;
+      const neighbors = semanticNeighbors.get(node.nodeId) || [];
+      const unconnectedNeighbors = neighbors.filter((n) => {
+        return true;
+      });
+      const semanticPull = unconnectedNeighbors.length > 0 ? unconnectedNeighbors.reduce((sum, n) => sum + n.similarity, 0) / unconnectedNeighbors.length : 0;
+      const lowTruthDegree = 1 / (1 + truthDegree);
+      const mentionPressure = mentionCount / maxMentionCount;
+      const importance = this.computeRecencyScore(node.updatedAt, now);
+      const orphanScore = ORPHAN_WEIGHTS.semanticPull * semanticPull + ORPHAN_WEIGHTS.lowTruthDegree * lowTruthDegree + ORPHAN_WEIGHTS.mentionPressure * mentionPressure + ORPHAN_WEIGHTS.importance * importance;
+      const reasons = [];
+      if (semanticPull > 0.3) {
+        reasons.push(`Similar to ${unconnectedNeighbors.length} unlinked note(s)`);
+      }
+      if (truthDegree === 0) {
+        reasons.push("No explicit links");
+      } else if (truthDegree < 3) {
+        reasons.push(`Only ${truthDegree} explicit link(s)`);
+      }
+      if (mentionCount > 0) {
+        reasons.push(`Mentioned ${mentionCount} time(s) without link`);
+      }
+      entries.push({
+        nodeId: node.nodeId,
+        title: node.title,
+        path: node.path,
+        orphanScore,
+        severity: "low",
+        // Will be set after percentile calculation
+        percentile: 0,
+        // Will be calculated
+        reasons: reasons.slice(0, 3),
+        relatedNodeIds: unconnectedNeighbors.slice(0, 3).map((n) => n.nodeId),
+        components: {
+          semanticPull,
+          lowTruthDegree,
+          mentionPressure,
+          importance
+        }
+      });
+    }
+    entries.sort((a, b) => b.orphanScore - a.orphanScore);
+    for (let i = 0; i < entries.length; i++) {
+      const percentile = (entries.length - i) / entries.length * 100;
+      entries[i].percentile = Math.round(percentile);
+      entries[i].severity = percentile >= 75 ? "high" : percentile >= 50 ? "med" : "low";
+    }
+    return entries.filter((e) => e.orphanScore >= this.config.minScore).slice(0, this.config.maxResults);
+  }
+  /**
+   * Compute Layer A degree for each node in scope.
+   */
+  async computeLayerADegrees(nodeIds) {
+    const degrees = /* @__PURE__ */ new Map();
+    for (const nodeId of nodeIds) {
+      const edges2 = await this.edgeRepository.findConnected(nodeId);
+      const layerACount = edges2.filter(
+        (e) => LAYER_A_EDGES.includes(e.edgeType)
+      ).length;
+      degrees.set(nodeId, layerACount);
+    }
+    return degrees;
+  }
+  /**
+   * Count unresolved mentions (new or pending) pointing to each node.
+   */
+  async computeUnresolvedMentionCounts(nodeIds) {
+    const counts = /* @__PURE__ */ new Map();
+    for (const nodeId of nodeIds) {
+      const mentions = await this.mentionRepository.findByTargetId(nodeId);
+      const unresolvedCount = mentions.filter(
+        (m) => m.status === "new" || m.status === "deferred"
+      ).length;
+      counts.set(nodeId, unresolvedCount);
+    }
+    return counts;
+  }
+  /**
+   * Compute semantic neighbors for each node.
+   * Returns top-K neighbors NOT connected by Layer A edges.
+   */
+  async computeSemanticNeighbors(nodeIds) {
+    const result = /* @__PURE__ */ new Map();
+    const embeddings = await this.embeddingRepository.findByNodeIds(nodeIds);
+    const embeddingMap = new Map(embeddings.map((e) => [e.nodeId, e.embedding]));
+    const layerAConnections = /* @__PURE__ */ new Set();
+    for (const nodeId of nodeIds) {
+      const edges2 = await this.edgeRepository.findConnected(nodeId);
+      for (const edge of edges2) {
+        if (LAYER_A_EDGES.includes(edge.edgeType)) {
+          layerAConnections.add(normalizeEdgePair(edge.sourceId, edge.targetId));
+        }
+      }
+    }
+    for (const nodeId of nodeIds) {
+      const embedding = embeddingMap.get(nodeId);
+      if (!embedding) {
+        result.set(nodeId, []);
+        continue;
+      }
+      const neighbors = [];
+      for (const [otherNodeId, otherEmbedding] of embeddingMap) {
+        if (otherNodeId === nodeId) continue;
+        if (layerAConnections.has(normalizeEdgePair(nodeId, otherNodeId))) {
+          continue;
+        }
+        const similarity = cosineSimilarity2(embedding, otherEmbedding);
+        if (similarity > 0.1) {
+          neighbors.push({ nodeId: otherNodeId, similarity });
+        }
+      }
+      neighbors.sort((a, b) => b.similarity - a.similarity);
+      result.set(nodeId, neighbors.slice(0, this.config.topSemanticNeighbors));
+    }
+    return result;
+  }
+  /**
+   * Compute recency score (0-1) based on days since last update.
+   * More recent = higher score.
+   */
+  computeRecencyScore(updatedAt, nowMs) {
+    const updatedMs = new Date(updatedAt).getTime();
+    const daysSinceUpdate = (nowMs - updatedMs) / (1e3 * 60 * 60 * 24);
+    return Math.exp(-daysSinceUpdate / this.config.recencyDays);
+  }
+};
+
+// src/cli/commands/focus.ts
+function getStatePath(vaultPath) {
+  return path20.join(getZettelScriptDir(vaultPath), "state.json");
+}
+function loadFocusState(vaultPath) {
+  const statePath = getStatePath(vaultPath);
+  try {
+    if (fs18.existsSync(statePath)) {
+      return JSON.parse(fs18.readFileSync(statePath, "utf-8"));
+    }
+  } catch {
+  }
+  return {};
+}
+function saveFocusState(vaultPath, state) {
+  const statePath = getStatePath(vaultPath);
+  fs18.writeFileSync(statePath, JSON.stringify(state, null, 2), "utf-8");
+}
+async function resolveTargetNode(ctx, target) {
+  const { nodeRepository, vaultPath } = ctx;
+  if (target) {
+    let node = await nodeRepository.findByPath(target);
+    if (node) return node;
+    const byTitle = await nodeRepository.findByTitle(target);
+    if (byTitle.length > 0) return byTitle[0];
+    const byAlias = await nodeRepository.findByTitleOrAlias(target);
+    if (byAlias.length > 0) return byAlias[0];
+    node = await nodeRepository.findById(target);
+    if (node) return node;
+    return null;
+  }
+  const nodes2 = await nodeRepository.findAll();
+  if (nodes2.length === 0) return null;
+  nodes2.sort((a, b) => {
+    const aTime = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+    const bTime = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+    return bTime - aTime;
+  });
+  const mostRecent = nodes2[0];
+  const state = loadFocusState(vaultPath);
+  if (state.lastFocusedNodeId) {
+    const lastFocused = await nodeRepository.findById(state.lastFocusedNodeId);
+    if (lastFocused) {
+      const lastFocusedTime = lastFocused.updatedAt ? new Date(lastFocused.updatedAt).getTime() : 0;
+      const oneDayAgo = Date.now() - 24 * 60 * 60 * 1e3;
+      if (lastFocusedTime > oneDayAgo) {
+        return lastFocused;
+      }
+    }
+  }
+  return mostRecent;
+}
+async function buildBoundedSubgraph(ctx, focusNode, options) {
+  const { nodeRepository, edgeRepository } = ctx;
+  const { nodeBudget, maxDepth } = options;
+  const visitedNodes = /* @__PURE__ */ new Set([focusNode.nodeId]);
+  const collectedNodes = [focusNode];
+  const collectedEdges = [];
+  const edgeSet = /* @__PURE__ */ new Set();
+  let frontier = [focusNode.nodeId];
+  let depth = 0;
+  while (frontier.length > 0 && collectedNodes.length < nodeBudget && depth < maxDepth) {
+    const nextFrontier = [];
+    depth++;
+    for (const nodeId of frontier) {
+      if (collectedNodes.length >= nodeBudget) break;
+      const allEdges = await edgeRepository.findConnected(nodeId);
+      allEdges.sort((a, b) => {
+        const layerA = getEdgeLayer(a.edgeType);
+        const layerB = getEdgeLayer(b.edgeType);
+        const priority = { A: 0, B: 1, C: 2, unknown: 3 };
+        return (priority[layerA] || 3) - (priority[layerB] || 3);
+      });
+      for (const edge of allEdges) {
+        if (collectedNodes.length >= nodeBudget) break;
+        const layer = getEdgeLayer(edge.edgeType);
+        if (layer === "C") continue;
+        if (!edgeSet.has(edge.edgeId)) {
+          edgeSet.add(edge.edgeId);
+          collectedEdges.push(edge);
+        }
+        const neighborId = edge.sourceId === nodeId ? edge.targetId : edge.sourceId;
+        if (!visitedNodes.has(neighborId)) {
+          visitedNodes.add(neighborId);
+          const neighborNode = await nodeRepository.findById(neighborId);
+          if (neighborNode) {
+            collectedNodes.push(neighborNode);
+            nextFrontier.push(neighborId);
+          }
+        }
+      }
+    }
+    frontier = nextFrontier;
+  }
+  return {
+    nodes: collectedNodes,
+    edges: collectedEdges,
+    focusNodeId: focusNode.nodeId
+  };
+}
+function subgraphToGraphData(result, nodeColors) {
+  const { nodes: nodes2, edges: edges2, focusNodeId } = result;
+  const nodeWeights = /* @__PURE__ */ new Map();
+  edges2.forEach((e) => {
+    nodeWeights.set(e.sourceId, (nodeWeights.get(e.sourceId) || 0) + 1);
+    nodeWeights.set(e.targetId, (nodeWeights.get(e.targetId) || 0) + 1);
+  });
+  const graphNodes = nodes2.map((n) => ({
+    id: n.nodeId,
+    name: n.title,
+    type: n.type,
+    val: n.nodeId === focusNodeId ? 15 : Math.max(1, Math.min(10, (nodeWeights.get(n.nodeId) || 0) / 2)),
+    color: nodeColors[n.type] || "#94a3b8",
+    path: n.path,
+    metadata: n.metadata || {},
+    updatedAtMs: n.updatedAt ? new Date(n.updatedAt).getTime() : void 0
+  }));
+  const graphLinks = edges2.map((e) => ({
+    source: e.sourceId,
+    target: e.targetId,
+    type: e.edgeType,
+    strength: e.strength ?? 1,
+    provenance: e.provenance
+  }));
+  return { nodes: graphNodes, links: graphLinks };
+}
+function writeFileAtomic(filePath, content) {
+  const dir = path20.dirname(filePath);
+  const basename3 = path20.basename(filePath);
+  const tmpPath = path20.join(dir, `.${basename3}.tmp.${process.pid}`);
+  try {
+    fs18.writeFileSync(tmpPath, content, "utf-8");
+    fs18.renameSync(tmpPath, filePath);
+  } catch (error) {
+    try {
+      fs18.unlinkSync(tmpPath);
+    } catch {
+    }
+    throw error;
+  }
+}
+async function computeRelatedNotes(ctx, focusNodeId, nodesInView) {
+  const { embeddingRepository, nodeRepository } = ctx;
+  const focusEmbeddings = await embeddingRepository.findByNodeIds([focusNodeId]);
+  if (focusEmbeddings.length === 0) {
+    return [];
+  }
+  const focusEmbedding = focusEmbeddings[0].embedding;
+  const nodeIdsInView = new Set(nodesInView.map((n) => n.nodeId));
+  const allNodes = await nodeRepository.findAll();
+  const candidateNodeIds = allNodes.filter((n) => !n.isGhost && !nodeIdsInView.has(n.nodeId)).map((n) => n.nodeId);
+  if (candidateNodeIds.length === 0) {
+    return [];
+  }
+  const candidateEmbeddings = await embeddingRepository.findByNodeIds(candidateNodeIds);
+  const scored = [];
+  for (const emb of candidateEmbeddings) {
+    const similarity = cosineSimilarity3(focusEmbedding, emb.embedding);
+    if (similarity >= 0.5) {
+      scored.push({ nodeId: emb.nodeId, similarity });
+    }
+  }
+  scored.sort((a, b) => b.similarity - a.similarity);
+  const top = scored.slice(0, 15);
+  const nodeMap = new Map(allNodes.map((n) => [n.nodeId, n]));
+  return top.map(({ nodeId, similarity }) => {
+    const node = nodeMap.get(nodeId);
+    if (!node) return null;
+    return {
+      nodeId: node.nodeId,
+      title: node.title,
+      path: node.path,
+      score: similarity,
+      reasons: [`${(similarity * 100).toFixed(0)}% similar to focus note`],
+      layer: "B",
+      isInView: false,
+      signals: {
+        semantic: similarity
+      }
+    };
+  }).filter((rn) => rn !== null);
+}
+function cosineSimilarity3(a, b) {
+  if (a.length !== b.length) return 0;
+  let dot = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+  if (normA === 0 || normB === 0) return 0;
+  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+var focusCommand = new Command19("focus").description("Open a focus view centered on a specific note or the most recent file").argument("[target]", "File path, node title, or node ID to focus on").option("-b, --budget <number>", "Maximum number of nodes to show", "200").option("-d, --depth <number>", "Maximum expansion depth", "3").option("-o, --output <path>", "Output HTML file path").option("--no-open", "Do not open browser automatically").option("--json-stdout", "Print FocusBundle JSON to stdout, no file writes").option("--json-only", "Write focus.json only, print path to stdout").action(
+  async (target, options) => {
+    if (options.jsonStdout && options.jsonOnly) {
+      console.error(JSON.stringify({
+        success: false,
+        error: "--json-stdout and --json-only are mutually exclusive",
+        errorCode: "INVALID_ARGS"
+      }));
+      process.exit(1);
+    }
+    const isJsonMode = options.jsonStdout || options.jsonOnly;
+    try {
+      const ctx = await initContext();
+      const nodeBudget = parseInt(options.budget, 10);
+      const maxDepth = parseInt(options.depth, 10);
+      let spinner = null;
+      if (!isJsonMode) {
+        spinner = new Spinner("Resolving target...");
+        spinner.start();
+      }
+      const focusNode = await resolveTargetNode(ctx, target);
+      if (!focusNode) {
+        if (spinner) spinner.stop();
+        if (isJsonMode) {
+          console.log(JSON.stringify({
+            success: false,
+            error: target ? `Could not find node: "${target}"` : "No nodes found in vault",
+            errorCode: "NOT_FOUND"
+          }));
+        } else {
+          if (target) {
+            console.error(`Could not find node: "${target}"`);
+            console.log("\nTry:");
+            console.log("  - A file path relative to vault root");
+            console.log("  - A note title");
+            console.log("  - A node ID");
+          } else {
+            console.error('No nodes found in vault. Run "zs index" first.');
+          }
+        }
+        ctx.connectionManager.close();
+        process.exit(1);
+      }
+      if (spinner) {
+        spinner.update(`Building focus view for "${focusNode.title}"...`);
+      }
+      if (!options.jsonStdout) {
+        saveFocusState(ctx.vaultPath, {
+          lastFocusedNodeId: focusNode.nodeId,
+          lastFocusedAt: (/* @__PURE__ */ new Date()).toISOString()
+        });
+      }
+      const subgraph = await buildBoundedSubgraph(ctx, focusNode, {
+        nodeBudget,
+        maxDepth
+      });
+      const statusData = await computeDoctorStats(ctx);
+      const scopeNodeIds = subgraph.nodes.map((n) => n.nodeId);
+      const suggestionEngine = new SuggestionEngine(
+        ctx.nodeRepository,
+        ctx.edgeRepository,
+        ctx.mentionRepository,
+        ctx.embeddingRepository,
+        ctx.candidateEdgeRepository
+      );
+      const orphanEngine = new OrphanEngine(
+        ctx.nodeRepository,
+        ctx.edgeRepository,
+        ctx.mentionRepository,
+        ctx.embeddingRepository
+      );
+      await suggestionEngine.computeAllCandidates(scopeNodeIds);
+      const candidateEdges2 = await ctx.candidateEdgeRepository.findSuggestedForNodes(scopeNodeIds);
+      const orphanEntries = await orphanEngine.computeOrphanScores(scopeNodeIds);
+      const relatedNotes = await computeRelatedNotes(ctx, focusNode.nodeId, subgraph.nodes);
+      const focusBundle = assembleFocusBundle({
+        focusNode,
+        nodesInView: subgraph.nodes,
+        edgesInView: subgraph.edges,
+        candidateEdges: candidateEdges2,
+        orphanEntries,
+        relatedNotes,
+        doctorStats: statusData,
+        mode: ctx.config.visualization.mode
+      });
+      if (spinner) {
+        spinner.stop(
+          `Focus: "${focusNode.title}" (${subgraph.nodes.length} nodes, ${subgraph.edges.length} edges)`
+        );
+      }
+      const outputDir = options.output ? path20.dirname(options.output) : getZettelScriptDir(ctx.vaultPath);
+      if (!fs18.existsSync(outputDir)) {
+        fs18.mkdirSync(outputDir, { recursive: true });
+      }
+      if (options.jsonStdout) {
+        console.log(JSON.stringify(focusBundle));
+      } else if (options.jsonOnly) {
+        const jsonPath = path20.join(outputDir, "focus.json");
+        writeFileAtomic(jsonPath, JSON.stringify(focusBundle, null, 2));
+        console.log(jsonPath);
+      } else {
+        printEmbeddingStatus(statusData);
+        printWormholeStatus(statusData);
+        const jsonPath = path20.join(outputDir, "focus.json");
+        writeFileAtomic(jsonPath, JSON.stringify(focusBundle, null, 2));
+        const graphData = subgraphToGraphData(subgraph, typeColors);
+        const htmlContent = generateVisualizationHtml(
+          graphData,
+          typeColors,
+          null,
+          // No constellation
+          null,
+          // No path data
+          null,
+          // No WebSocket
+          statusData,
+          focusBundle
+        );
+        const outputPath = options.output || path20.join(outputDir, "focus.html");
+        writeFileAtomic(outputPath, htmlContent);
+        console.log(`
+Focus view generated: ${outputPath}`);
+        console.log(`FocusBundle written: ${jsonPath}`);
+        const suggestionCount = focusBundle.suggestions.candidateLinks.length;
+        const orphanCount = focusBundle.suggestions.orphans.length;
+        const relatedCount = focusBundle.suggestions.relatedNotes.length;
+        if (suggestionCount > 0 || orphanCount > 0 || relatedCount > 0) {
+          console.log(`Suggestions: ${relatedCount} related, ${suggestionCount} links, ${orphanCount} orphans`);
+        }
+        if (options.open) {
+          console.log("Opening in default browser...");
+          await open2(outputPath);
+        }
+      }
+      ctx.connectionManager.close();
+    } catch (error) {
+      if (isJsonMode) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        const errorCode = errorMessage.includes("Not in a ZettelScript vault") ? "NOT_VAULT" : "COMPUTE_ERROR";
+        console.log(JSON.stringify({
+          success: false,
+          error: errorMessage,
+          errorCode
+        }));
+        process.exit(1);
+      }
+      if (error instanceof Error && error.message.includes("Not in a ZettelScript vault")) {
+        console.error('Error: Not in a ZettelScript vault. Run "zs init" first.');
+        process.exit(1);
+      }
+      console.error("Error:", error);
+      process.exit(1);
+    }
+  }
+);
+
+// src/cli/commands/approve.ts
+import { Command as Command20 } from "commander";
+import * as fs19 from "fs";
+import * as path21 from "path";
+async function insertWikilink(filePath, targetPath, targetTitle, vaultPath) {
+  const absolutePath = path21.join(vaultPath, filePath);
+  if (!fs19.existsSync(absolutePath)) {
+    return { status: "skipped", reason: "Source file not found" };
+  }
+  let content;
+  try {
+    content = fs19.readFileSync(absolutePath, "utf-8");
+  } catch {
+    return { status: "failed", reason: "Could not read source file" };
+  }
+  const linkText = targetPath.includes("/") ? `[[${targetPath.replace(/\.md$/, "")}|${targetTitle}]]` : `[[${targetTitle}]]`;
+  if (content.includes(linkText) || content.includes(`[[${targetTitle}]]`)) {
+    return { status: "skipped", reason: "Link already exists in file" };
+  }
+  const lines = content.split("\n");
+  let insertionIndex = lines.length;
+  let linksSectionFound = false;
+  let bodyStartIndex = 0;
+  if (lines[0]?.trim() === "---") {
+    for (let i = 1; i < lines.length; i++) {
+      if (lines[i]?.trim() === "---") {
+        bodyStartIndex = i + 1;
+        break;
+      }
+    }
+  }
+  for (let i = bodyStartIndex; i < lines.length; i++) {
+    const line = lines[i];
+    if (line && /^##?\s*links?\s*$/i.test(line)) {
+      linksSectionFound = true;
+      for (let j = i + 1; j < lines.length; j++) {
+        if (lines[j] && /^##?\s/.test(lines[j])) {
+          insertionIndex = j;
+          break;
+        }
+      }
+      if (!linksSectionFound) {
+        insertionIndex = lines.length;
+      }
+      insertionIndex = i + 1;
+      break;
+    }
+  }
+  if (!linksSectionFound) {
+    for (let i = lines.length - 1; i >= bodyStartIndex; i--) {
+      if (lines[i]?.trim()) {
+        insertionIndex = i + 1;
+        break;
+      }
+    }
+  }
+  const prefix = linksSectionFound ? "- " : "\n- ";
+  lines.splice(insertionIndex, 0, prefix + linkText);
+  const newContent = lines.join("\n");
+  const tmpPath = absolutePath + ".tmp." + Date.now();
+  try {
+    fs19.writeFileSync(tmpPath, newContent, "utf-8");
+    fs19.renameSync(tmpPath, absolutePath);
+    return { status: "success", path: filePath };
+  } catch (err) {
+    try {
+      if (fs19.existsSync(tmpPath)) {
+        fs19.unlinkSync(tmpPath);
+      }
+    } catch {
+    }
+    return {
+      status: "failed",
+      reason: err instanceof Error ? err.message : "Unknown write error"
+    };
+  }
+}
+var approveCommand = new Command20("approve").description("Approve a suggested link, converting it to a truth edge").option("--suggestion-id <id>", "The suggestion ID to approve").option("--from <id>", "Source node ID (alternative to --suggestion-id)").option("--to <id>", "Target node ID (alternative to --suggestion-id)").option("--type <type>", "Edge type (alternative to --suggestion-id)", "explicit_link").option("--json", "Output JSON response").option("--no-writeback", "Skip markdown file modification").action(async (options) => {
+  const response = { success: false };
+  const outputJson = () => {
+    if (options.json) {
+      console.log(JSON.stringify(response));
+    }
+  };
+  try {
+    const ctx = await initContext();
+    let suggestionId;
+    if (options.suggestionId) {
+      suggestionId = options.suggestionId;
+    } else if (options.from && options.to) {
+      const edgeType = options.type;
+      const isUndirected = isUndirectedEdgeType(edgeType);
+      suggestionId = generateSuggestionId(options.from, options.to, edgeType, isUndirected);
+    } else {
+      response.error = "Must provide --suggestion-id or both --from and --to";
+      response.errorCode = "INVALID_ARGS";
+      if (options.json) {
+        outputJson();
+      } else {
+        console.error("Error:", response.error);
+      }
+      ctx.connectionManager.close();
+      process.exit(1);
+    }
+    const candidate = await ctx.candidateEdgeRepository.findById(suggestionId);
+    if (!candidate) {
+      response.error = `Suggestion not found: ${suggestionId}`;
+      response.errorCode = "NOT_FOUND";
+      if (options.json) {
+        outputJson();
+      } else {
+        console.error("Error:", response.error);
+      }
+      ctx.connectionManager.close();
+      process.exit(1);
+    }
+    if (candidate.status === "approved") {
+      response.success = true;
+      response.idempotent = true;
+      response.suggestionId = suggestionId;
+      response.fromId = candidate.fromId;
+      response.toId = candidate.toId;
+      response.edgeType = candidate.suggestedEdgeType;
+      response.edgeId = candidate.approvedEdgeId;
+      if (options.json) {
+        outputJson();
+      } else {
+        console.log("Already approved (idempotent)");
+      }
+      ctx.connectionManager.close();
+      return;
+    }
+    if (candidate.status === "rejected") {
+      response.error = "Cannot approve a rejected suggestion. Unreject first.";
+      response.errorCode = "INVALID_ARGS";
+      if (options.json) {
+        outputJson();
+      } else {
+        console.error("Error:", response.error);
+      }
+      ctx.connectionManager.close();
+      process.exit(1);
+    }
+    const fromNode = await ctx.nodeRepository.findById(candidate.fromId);
+    const toNode = await ctx.nodeRepository.findById(candidate.toId);
+    const truthEdge = await ctx.edgeRepository.create({
+      sourceId: candidate.fromId,
+      targetId: candidate.toId,
+      edgeType: candidate.suggestedEdgeType,
+      provenance: "user_approved",
+      strength: candidate.signals?.semantic
+    });
+    await ctx.candidateEdgeRepository.updateStatus(
+      suggestionId,
+      "approved",
+      truthEdge.edgeId
+    );
+    response.success = true;
+    response.suggestionId = suggestionId;
+    response.fromId = candidate.fromId;
+    response.fromTitle = fromNode?.title;
+    response.toId = candidate.toId;
+    response.toTitle = toNode?.title;
+    response.edgeId = truthEdge.edgeId;
+    response.edgeType = candidate.suggestedEdgeType;
+    if (options.writeback !== false && fromNode && toNode && !fromNode.isGhost) {
+      const writebackResult = await insertWikilink(
+        fromNode.path,
+        toNode.path,
+        toNode.title,
+        ctx.vaultPath
+      );
+      response.writeback = writebackResult.status;
+      response.writebackReason = writebackResult.reason;
+      response.writebackPath = writebackResult.path;
+      await ctx.candidateEdgeRepository.update(suggestionId, {
+        writebackStatus: writebackResult.status,
+        writebackReason: writebackResult.reason
+      });
+      if (writebackResult.status === "failed") {
+        response.warnings = response.warnings || [];
+        response.warnings.push(`Writeback failed: ${writebackResult.reason}`);
+      }
+    } else {
+      response.writeback = "skipped";
+      if (fromNode?.isGhost) {
+        response.writebackReason = "Source is a ghost node";
+      } else if (!fromNode) {
+        response.writebackReason = "Source node not found";
+      } else if (options.writeback === false) {
+        response.writebackReason = "Disabled by flag";
+      }
+    }
+    if (options.json) {
+      outputJson();
+    } else {
+      console.log(`Approved: ${fromNode?.title || candidate.fromId} -> ${toNode?.title || candidate.toId}`);
+      console.log(`  Edge ID: ${truthEdge.edgeId}`);
+      console.log(`  Type: ${candidate.suggestedEdgeType}`);
+      if (response.writeback === "success") {
+        console.log(`  Writeback: Link added to ${response.writebackPath}`);
+      } else if (response.writeback === "failed") {
+        console.log(`  Writeback failed: ${response.writebackReason}`);
+      } else {
+        console.log(`  Writeback skipped: ${response.writebackReason}`);
+      }
+    }
+    ctx.connectionManager.close();
+  } catch (error) {
+    response.error = error instanceof Error ? error.message : String(error);
+    response.errorCode = "DB_ERROR";
+    if (options.json) {
+      outputJson();
+    } else {
+      console.error("Error:", response.error);
+    }
+    process.exit(1);
+  }
+});
+
+// src/cli/commands/reject.ts
+import { Command as Command21 } from "commander";
+var rejectCommand = new Command21("reject").description("Reject a suggested link, hiding it from future suggestions").option("--suggestion-id <id>", "The suggestion ID to reject").option("--from <id>", "Source node ID (alternative to --suggestion-id)").option("--to <id>", "Target node ID (alternative to --suggestion-id)").option("--type <type>", "Edge type (alternative to --suggestion-id)", "explicit_link").option("--json", "Output JSON response").action(async (options) => {
+  const response = { success: false };
+  const outputJson = () => {
+    if (options.json) {
+      console.log(JSON.stringify(response));
+    }
+  };
+  try {
+    const ctx = await initContext();
+    let suggestionId;
+    if (options.suggestionId) {
+      suggestionId = options.suggestionId;
+    } else if (options.from && options.to) {
+      const edgeType = options.type;
+      const isUndirected = isUndirectedEdgeType(edgeType);
+      suggestionId = generateSuggestionId(options.from, options.to, edgeType, isUndirected);
+    } else {
+      response.error = "Must provide --suggestion-id or both --from and --to";
+      response.errorCode = "INVALID_ARGS";
+      if (options.json) {
+        outputJson();
+      } else {
+        console.error("Error:", response.error);
+      }
+      ctx.connectionManager.close();
+      process.exit(1);
+    }
+    const candidate = await ctx.candidateEdgeRepository.findById(suggestionId);
+    if (!candidate) {
+      response.error = `Suggestion not found: ${suggestionId}`;
+      response.errorCode = "NOT_FOUND";
+      if (options.json) {
+        outputJson();
+      } else {
+        console.error("Error:", response.error);
+      }
+      ctx.connectionManager.close();
+      process.exit(1);
+    }
+    if (candidate.status === "rejected") {
+      response.success = true;
+      response.idempotent = true;
+      response.suggestionId = suggestionId;
+      response.fromId = candidate.fromId;
+      response.toId = candidate.toId;
+      response.edgeType = candidate.suggestedEdgeType;
+      if (options.json) {
+        outputJson();
+      } else {
+        console.log("Already rejected (idempotent)");
+      }
+      ctx.connectionManager.close();
+      return;
+    }
+    const fromNode = await ctx.nodeRepository.findById(candidate.fromId);
+    const toNode = await ctx.nodeRepository.findById(candidate.toId);
+    await ctx.candidateEdgeRepository.updateStatus(suggestionId, "rejected");
+    response.success = true;
+    response.suggestionId = suggestionId;
+    response.fromId = candidate.fromId;
+    response.fromTitle = fromNode?.title;
+    response.toId = candidate.toId;
+    response.toTitle = toNode?.title;
+    response.edgeType = candidate.suggestedEdgeType;
+    if (options.json) {
+      outputJson();
+    } else {
+      console.log(`Rejected: ${fromNode?.title || candidate.fromId} -> ${toNode?.title || candidate.toId}`);
+      console.log(`  Type: ${candidate.suggestedEdgeType}`);
+      console.log("  This suggestion will be hidden from future views.");
+    }
+    ctx.connectionManager.close();
+  } catch (error) {
+    response.error = error instanceof Error ? error.message : String(error);
+    response.errorCode = "DB_ERROR";
+    if (options.json) {
+      outputJson();
+    } else {
+      console.error("Error:", response.error);
+    }
+    process.exit(1);
+  }
+});
+
 // src/cli/index.ts
-var program = new Command18();
+var program = new Command22();
 program.name("zettel").description("ZettelScript - Graph-first knowledge management system").version("0.1.0");
 program.addCommand(initCommand);
 program.addCommand(indexCommand);
@@ -16055,5 +18961,9 @@ program.addCommand(constellationCommand);
 program.addCommand(embedCommand);
 program.addCommand(wormholeCommand);
 program.addCommand(pathCommand);
+program.addCommand(doctorCommand);
+program.addCommand(focusCommand);
+program.addCommand(approveCommand);
+program.addCommand(rejectCommand);
 program.parse();
 //# sourceMappingURL=index.js.map

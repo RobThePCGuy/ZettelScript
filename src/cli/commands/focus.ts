@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import * as os from 'node:os';
 import open from 'open';
 import { initContext, getZettelScriptDir, Spinner } from '../utils.js';
 import type { CLIContext } from '../utils.js';
@@ -20,6 +21,15 @@ import {
   type Node,
   type Edge,
 } from '../../core/types/index.js';
+import {
+  assembleFocusBundle,
+  type FocusBundle,
+  type RelatedNote,
+} from '../../discovery/focus-bundle.js';
+import {
+  SuggestionEngine,
+  OrphanEngine,
+} from '../../discovery/suggestion-engine.js';
 
 // ============================================================================
 // State Management
@@ -244,6 +254,133 @@ function subgraphToGraphData(
 }
 
 // ============================================================================
+// Atomic File Writes
+// ============================================================================
+
+/**
+ * Write content to a file atomically using tmp file + rename.
+ * This prevents corruption on crash.
+ */
+function writeFileAtomic(filePath: string, content: string): void {
+  const dir = path.dirname(filePath);
+  const basename = path.basename(filePath);
+
+  // Create temp file in same directory to ensure same filesystem
+  const tmpPath = path.join(dir, `.${basename}.tmp.${process.pid}`);
+
+  try {
+    // Write to temp file
+    fs.writeFileSync(tmpPath, content, 'utf-8');
+
+    // Rename atomically (on same filesystem)
+    fs.renameSync(tmpPath, filePath);
+  } catch (error) {
+    // Clean up temp file on error
+    try {
+      fs.unlinkSync(tmpPath);
+    } catch {
+      // Ignore cleanup errors
+    }
+    throw error;
+  }
+}
+
+// ============================================================================
+// Related Notes Computation
+// ============================================================================
+
+/**
+ * Compute related notes based on semantic similarity.
+ * Uses embeddings to find similar notes not already in the subgraph.
+ */
+async function computeRelatedNotes(
+  ctx: CLIContext,
+  focusNodeId: string,
+  nodesInView: Node[]
+): Promise<RelatedNote[]> {
+  const { embeddingRepository, nodeRepository } = ctx;
+
+  // Get focus node embedding
+  const focusEmbeddings = await embeddingRepository.findByNodeIds([focusNodeId]);
+  if (focusEmbeddings.length === 0) {
+    return [];
+  }
+
+  const focusEmbedding = focusEmbeddings[0].embedding;
+  const nodeIdsInView = new Set(nodesInView.map(n => n.nodeId));
+
+  // Get all embeddings to find related notes
+  // Note: In a real implementation, this would use a vector index
+  const allNodes = await nodeRepository.findAll();
+  const candidateNodeIds = allNodes
+    .filter(n => !n.isGhost && !nodeIdsInView.has(n.nodeId))
+    .map(n => n.nodeId);
+
+  if (candidateNodeIds.length === 0) {
+    return [];
+  }
+
+  const candidateEmbeddings = await embeddingRepository.findByNodeIds(candidateNodeIds);
+
+  // Compute similarity scores
+  const scored: Array<{ nodeId: string; similarity: number }> = [];
+
+  for (const emb of candidateEmbeddings) {
+    const similarity = cosineSimilarity(focusEmbedding, emb.embedding);
+    if (similarity >= 0.5) { // Minimum threshold for related notes
+      scored.push({ nodeId: emb.nodeId, similarity });
+    }
+  }
+
+  // Sort by similarity and take top results
+  scored.sort((a, b) => b.similarity - a.similarity);
+  const top = scored.slice(0, 15);
+
+  // Build RelatedNote objects
+  const nodeMap = new Map(allNodes.map(n => [n.nodeId, n]));
+
+  return top
+    .map(({ nodeId, similarity }) => {
+      const node = nodeMap.get(nodeId);
+      if (!node) return null;
+
+      return {
+        nodeId: node.nodeId,
+        title: node.title,
+        path: node.path,
+        score: similarity,
+        reasons: [`${(similarity * 100).toFixed(0)}% similar to focus note`],
+        layer: 'B' as const,
+        isInView: false,
+        signals: {
+          semantic: similarity,
+        },
+      };
+    })
+    .filter((rn): rn is RelatedNote => rn !== null);
+}
+
+/**
+ * Cosine similarity between two vectors.
+ */
+function cosineSimilarity(a: number[], b: number[]): number {
+  if (a.length !== b.length) return 0;
+
+  let dot = 0;
+  let normA = 0;
+  let normB = 0;
+
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+
+  if (normA === 0 || normB === 0) return 0;
+  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
+// ============================================================================
 // Command Definition
 // ============================================================================
 
@@ -254,6 +391,8 @@ export const focusCommand = new Command('focus')
   .option('-d, --depth <number>', 'Maximum expansion depth', '3')
   .option('-o, --output <path>', 'Output HTML file path')
   .option('--no-open', 'Do not open browser automatically')
+  .option('--json-stdout', 'Print FocusBundle JSON to stdout, no file writes')
+  .option('--json-only', 'Write focus.json only, print path to stdout')
   .action(
     async (
       target: string | undefined,
@@ -262,41 +401,71 @@ export const focusCommand = new Command('focus')
         depth: string;
         output?: string;
         open: boolean;
+        jsonStdout?: boolean;
+        jsonOnly?: boolean;
       }
     ) => {
+      // Validate mutually exclusive flags
+      if (options.jsonStdout && options.jsonOnly) {
+        console.error(JSON.stringify({
+          success: false,
+          error: '--json-stdout and --json-only are mutually exclusive',
+          errorCode: 'INVALID_ARGS',
+        }));
+        process.exit(1);
+      }
+
+      const isJsonMode = options.jsonStdout || options.jsonOnly;
+
       try {
         const ctx = await initContext();
         const nodeBudget = parseInt(options.budget, 10);
         const maxDepth = parseInt(options.depth, 10);
 
         // 1. Resolve target node
-        const spinner = new Spinner('Resolving target...');
-        spinner.start();
+        let spinner: Spinner | null = null;
+        if (!isJsonMode) {
+          spinner = new Spinner('Resolving target...');
+          spinner.start();
+        }
 
         const focusNode = await resolveTargetNode(ctx, target);
 
         if (!focusNode) {
-          spinner.stop();
-          if (target) {
-            console.error(`Could not find node: "${target}"`);
-            console.log('\nTry:');
-            console.log('  - A file path relative to vault root');
-            console.log('  - A note title');
-            console.log('  - A node ID');
+          if (spinner) spinner.stop();
+
+          if (isJsonMode) {
+            console.log(JSON.stringify({
+              success: false,
+              error: target ? `Could not find node: "${target}"` : 'No nodes found in vault',
+              errorCode: 'NOT_FOUND',
+            }));
           } else {
-            console.error('No nodes found in vault. Run "zs index" first.');
+            if (target) {
+              console.error(`Could not find node: "${target}"`);
+              console.log('\nTry:');
+              console.log('  - A file path relative to vault root');
+              console.log('  - A note title');
+              console.log('  - A node ID');
+            } else {
+              console.error('No nodes found in vault. Run "zs index" first.');
+            }
           }
           ctx.connectionManager.close();
           process.exit(1);
         }
 
-        spinner.update(`Building focus view for "${focusNode.title}"...`);
+        if (spinner) {
+          spinner.update(`Building focus view for "${focusNode.title}"...`);
+        }
 
-        // Save focus state
-        saveFocusState(ctx.vaultPath, {
-          lastFocusedNodeId: focusNode.nodeId,
-          lastFocusedAt: new Date().toISOString(),
-        });
+        // Save focus state (unless in json-stdout mode)
+        if (!options.jsonStdout) {
+          saveFocusState(ctx.vaultPath, {
+            lastFocusedNodeId: focusNode.nodeId,
+            lastFocusedAt: new Date().toISOString(),
+          });
+        }
 
         // 2. Build bounded subgraph
         const subgraph = await buildBoundedSubgraph(ctx, focusNode, {
@@ -304,31 +473,59 @@ export const focusCommand = new Command('focus')
           maxDepth,
         });
 
-        spinner.stop(
-          `Focus: "${focusNode.title}" (${subgraph.nodes.length} nodes, ${subgraph.edges.length} edges)`
-        );
-
         // 3. Get health stats
         const statusData = await computeDoctorStats(ctx);
 
-        // Print one-line embedding status
-        printEmbeddingStatus(statusData);
-        printWormholeStatus(statusData);
+        // 4. Compute suggestions
+        const scopeNodeIds = subgraph.nodes.map(n => n.nodeId);
 
-        // 4. Convert to graph data
-        const graphData = subgraphToGraphData(subgraph, typeColors);
-
-        // 5. Generate HTML
-        const htmlContent = generateVisualizationHtml(
-          graphData,
-          typeColors,
-          null, // No constellation
-          null, // No path data
-          null, // No WebSocket
-          statusData
+        // Initialize suggestion engines
+        const suggestionEngine = new SuggestionEngine(
+          ctx.nodeRepository,
+          ctx.edgeRepository,
+          ctx.mentionRepository,
+          ctx.embeddingRepository,
+          ctx.candidateEdgeRepository
         );
 
-        // 6. Write output
+        const orphanEngine = new OrphanEngine(
+          ctx.nodeRepository,
+          ctx.edgeRepository,
+          ctx.mentionRepository,
+          ctx.embeddingRepository
+        );
+
+        // Compute candidates (this upserts to DB)
+        await suggestionEngine.computeAllCandidates(scopeNodeIds);
+
+        // Get suggested candidate edges for the scope
+        const candidateEdges = await ctx.candidateEdgeRepository.findSuggestedForNodes(scopeNodeIds);
+
+        // Compute orphan scores
+        const orphanEntries = await orphanEngine.computeOrphanScores(scopeNodeIds);
+
+        // Compute related notes
+        const relatedNotes = await computeRelatedNotes(ctx, focusNode.nodeId, subgraph.nodes);
+
+        // 5. Assemble FocusBundle
+        const focusBundle = assembleFocusBundle({
+          focusNode,
+          nodesInView: subgraph.nodes,
+          edgesInView: subgraph.edges,
+          candidateEdges,
+          orphanEntries,
+          relatedNotes,
+          doctorStats: statusData,
+          mode: ctx.config.visualization.mode,
+        });
+
+        if (spinner) {
+          spinner.stop(
+            `Focus: "${focusNode.title}" (${subgraph.nodes.length} nodes, ${subgraph.edges.length} edges)`
+          );
+        }
+
+        // 6. Handle output based on mode
         const outputDir = options.output
           ? path.dirname(options.output)
           : getZettelScriptDir(ctx.vaultPath);
@@ -337,19 +534,76 @@ export const focusCommand = new Command('focus')
           fs.mkdirSync(outputDir, { recursive: true });
         }
 
-        const outputPath = options.output || path.join(outputDir, 'focus.html');
-        fs.writeFileSync(outputPath, htmlContent, 'utf-8');
+        if (options.jsonStdout) {
+          // JSON stdout mode: print JSON, no file writes
+          console.log(JSON.stringify(focusBundle));
+        } else if (options.jsonOnly) {
+          // JSON only mode: write focus.json, print path
+          const jsonPath = path.join(outputDir, 'focus.json');
+          writeFileAtomic(jsonPath, JSON.stringify(focusBundle, null, 2));
+          console.log(jsonPath);
+        } else {
+          // Default mode: write both files, print status, optionally open browser
 
-        console.log(`\nFocus view generated: ${outputPath}`);
+          // Print one-line embedding status
+          printEmbeddingStatus(statusData);
+          printWormholeStatus(statusData);
 
-        // 7. Open browser
-        if (options.open) {
-          console.log('Opening in default browser...');
-          await open(outputPath);
+          // Write focus.json atomically
+          const jsonPath = path.join(outputDir, 'focus.json');
+          writeFileAtomic(jsonPath, JSON.stringify(focusBundle, null, 2));
+
+          // Convert to graph data for HTML
+          const graphData = subgraphToGraphData(subgraph, typeColors);
+
+          // Generate HTML
+          const htmlContent = generateVisualizationHtml(
+            graphData,
+            typeColors,
+            null, // No constellation
+            null, // No path data
+            null, // No WebSocket
+            statusData,
+            focusBundle
+          );
+
+          // Write HTML
+          const outputPath = options.output || path.join(outputDir, 'focus.html');
+          writeFileAtomic(outputPath, htmlContent);
+
+          console.log(`\nFocus view generated: ${outputPath}`);
+          console.log(`FocusBundle written: ${jsonPath}`);
+
+          // Print suggestion summary
+          const suggestionCount = focusBundle.suggestions.candidateLinks.length;
+          const orphanCount = focusBundle.suggestions.orphans.length;
+          const relatedCount = focusBundle.suggestions.relatedNotes.length;
+          if (suggestionCount > 0 || orphanCount > 0 || relatedCount > 0) {
+            console.log(`Suggestions: ${relatedCount} related, ${suggestionCount} links, ${orphanCount} orphans`);
+          }
+
+          // Open browser
+          if (options.open) {
+            console.log('Opening in default browser...');
+            await open(outputPath);
+          }
         }
 
         ctx.connectionManager.close();
       } catch (error) {
+        if (isJsonMode) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          const errorCode = errorMessage.includes('Not in a ZettelScript vault')
+            ? 'NOT_VAULT'
+            : 'COMPUTE_ERROR';
+          console.log(JSON.stringify({
+            success: false,
+            error: errorMessage,
+            errorCode,
+          }));
+          process.exit(1);
+        }
+
         if (error instanceof Error && error.message.includes('Not in a ZettelScript vault')) {
           console.error('Error: Not in a ZettelScript vault. Run "zs init" first.');
           process.exit(1);
