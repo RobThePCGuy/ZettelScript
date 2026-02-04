@@ -492,24 +492,36 @@ Semantic features disabled. Run: zs embed compute
 
 ## 13. Roadmap (high-level)
 
-### Phase 1: Stop the hairball
+### Phase 1: Stop the hairball ✓
 
-- [ ] Add `visualization.mode` config flag (focus/classic)
-- [ ] Flip default edge visibility (mentions off by default)
-- [ ] Add first-run upgrade banner
-- [ ] Make embeddings fail loudly with actionable errors
-- [ ] Add `zs focus` command (with and without argument)
-- [ ] Add status panel to Atlas (embedding health, index time)
+- [x] Add `visualization.mode` config flag (focus/classic)
+- [x] Flip default edge visibility (mentions off by default)
+- [x] Add first-run upgrade banner
+- [x] Make embeddings fail loudly with actionable errors
+- [x] Add `zs focus` command (with and without argument)
+- [x] Add status panel to Atlas (embedding health, index time)
 
-### Phase 2: Make it actionable
+### Phase 2: Make it actionable ✓
 
-- [ ] Implement orphan score algorithm
-- [ ] Add orphan backlog panel to Atlas
-- [ ] Suggestions side panel (accept/ignore/defer)
-- [ ] One-click accept writes to markdown + patches graph
-- [ ] Live WebSocket updates on accept
+- [x] Implement orphan score algorithm
+- [x] Add orphan backlog panel to Atlas
+- [x] Suggestions side panel (accept/ignore/defer)
+- [x] One-click accept writes to markdown + patches graph
+- [x] Obsidian plugin with suggestions view
 
-### Phase 3: Add abstraction
+See: `docs/plans/2026-02-04-phase2-suggestions-design.md`
+
+### Phase 3: Signal quality and reliability
+
+Improve suggestion quality and system resilience using patterns from rag-vault.
+
+- [ ] Grouping algorithm (statistical bands instead of hard thresholds)
+- [ ] Circuit breaker (graceful degradation for embeddings/FTS)
+- [ ] Hybrid search (vector + keyword boost for Related Notes)
+
+See: `docs/plans/phase-3-rag-vault-patterns.md`
+
+### Phase 4: Add abstraction
 
 - [ ] Implement clustering algorithm (Louvain or similar)
 - [ ] Cluster condensation view (macro graph)
@@ -517,11 +529,10 @@ Semantic features disabled. Run: zs embed compute
 - [ ] Auto-naming with user override
 - [ ] Thread-level summaries (optional LLM feature)
 
-### Phase 4: Editor integration
+### Phase 5: Live updates
 
 - [ ] Daemon mode (`zs daemon`) for persistent process
-- [ ] Obsidian plugin skeleton
-- [ ] Side panel API (5 related, 3 suggestions, 1 orphan)
+- [ ] WebSocket patches on accept/reject
 - [ ] Real-time on-save updates
 
 ---
