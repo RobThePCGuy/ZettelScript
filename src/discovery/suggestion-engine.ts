@@ -9,18 +9,15 @@
  * Per Phase 2 Design Document Section 3.
  */
 
-import { NodeRepository, EdgeRepository, CandidateEdgeRepository } from '../storage/database/repositories/index.js';
+import {
+  NodeRepository,
+  EdgeRepository,
+  CandidateEdgeRepository,
+} from '../storage/database/repositories/index.js';
 import { MentionRepository } from '../storage/database/repositories/mention-repository.js';
 import { EmbeddingRepository } from '../storage/database/repositories/embedding-repository.js';
-import type {
-  CandidateEdge,
-  EdgeType,
-} from '../core/types/index.js';
-import {
-  generateSuggestionId,
-  isUndirectedEdgeType,
-  LAYER_A_EDGES,
-} from '../core/types/index.js';
+import type { CandidateEdge, EdgeType } from '../core/types/index.js';
+import { generateSuggestionId, isUndirectedEdgeType, LAYER_A_EDGES } from '../core/types/index.js';
 
 /**
  * Configuration for suggestion computation.
@@ -28,13 +25,13 @@ import {
  */
 export interface SuggestionConfig {
   mentions: {
-    minOccurrences: number;    // Default: 2 - Avoid single-mention noise
-    maxResults: number;        // Default: 20
+    minOccurrences: number; // Default: 2 - Avoid single-mention noise
+    maxResults: number; // Default: 20
   };
   semantic: {
-    minSimilarity: number;     // Default: 0.4 - Below this, too weak
-    maxSimilarity: number;     // Default: 0.74 - At 0.75+, it's a wormhole
-    maxResults: number;        // Default: 20
+    minSimilarity: number; // Default: 0.4 - Below this, too weak
+    maxSimilarity: number; // Default: 0.74 - At 0.75+, it's a wormhole
+    maxResults: number; // Default: 20
   };
 }
 
@@ -97,9 +94,7 @@ export class SuggestionEngine {
    * - Group by (fromId, toId) pair
    * - Create/upsert CandidateEdge records
    */
-  async computeMentionCandidates(
-    scopeNodeIds: string[]
-  ): Promise<CandidateComputationResult> {
+  async computeMentionCandidates(scopeNodeIds: string[]): Promise<CandidateComputationResult> {
     if (scopeNodeIds.length === 0) {
       return { created: [], updated: [], total: 0 };
     }
@@ -174,9 +169,7 @@ export class SuggestionEngine {
    * - semanticMinSimilarity: 0.4 (below this, too weak)
    * - semanticMaxSimilarity: 0.74 (at 0.75+, it's a wormhole)
    */
-  async computeSemanticCandidates(
-    scopeNodeIds: string[]
-  ): Promise<CandidateComputationResult> {
+  async computeSemanticCandidates(scopeNodeIds: string[]): Promise<CandidateComputationResult> {
     if (scopeNodeIds.length === 0) {
       return { created: [], updated: [], total: 0 };
     }
@@ -279,9 +272,7 @@ export class SuggestionEngine {
   /**
    * Compute all candidate types for a scope.
    */
-  async computeAllCandidates(
-    scopeNodeIds: string[]
-  ): Promise<{
+  async computeAllCandidates(scopeNodeIds: string[]): Promise<{
     mentions: CandidateComputationResult;
     semantic: CandidateComputationResult;
     total: number;
@@ -337,9 +328,7 @@ export class SuggestionEngine {
    * Aggregate mentions by (source, target) pair.
    * Counts occurrences and collects reasons.
    */
-  private async aggregateMentionsForScope(
-    nodeIds: string[]
-  ): Promise<MentionAggregation[]> {
+  private async aggregateMentionsForScope(nodeIds: string[]): Promise<MentionAggregation[]> {
     const aggregations = new Map<string, MentionAggregation>();
 
     for (const nodeId of nodeIds) {
@@ -429,8 +418,8 @@ function mergeReasons(existing: string[], newReasons: string[]): string[] {
 export const ORPHAN_WEIGHTS = {
   semanticPull: 0.45,
   lowTruthDegree: 0.25,
-  mentionPressure: 0.20,
-  importance: 0.10,
+  mentionPressure: 0.2,
+  importance: 0.1,
 };
 
 /**
@@ -458,10 +447,10 @@ export interface OrphanEntry {
  * Configuration for orphan computation.
  */
 export interface OrphanConfig {
-  minScore: number;              // Default: 0.3
-  maxResults: number;            // Default: 10
-  topSemanticNeighbors: number;  // Default: 5 - How many neighbors to consider for semantic pull
-  recencyDays: number;           // Default: 30 - Timeframe for recency normalization
+  minScore: number; // Default: 0.3
+  maxResults: number; // Default: 10
+  topSemanticNeighbors: number; // Default: 5 - How many neighbors to consider for semantic pull
+  recencyDays: number; // Default: 30 - Timeframe for recency normalization
 }
 
 export const DEFAULT_ORPHAN_CONFIG: OrphanConfig = {
@@ -589,8 +578,7 @@ export class OrphanEngine {
     for (let i = 0; i < entries.length; i++) {
       const percentile = ((entries.length - i) / entries.length) * 100;
       entries[i].percentile = Math.round(percentile);
-      entries[i].severity =
-        percentile >= 75 ? 'high' : percentile >= 50 ? 'med' : 'low';
+      entries[i].severity = percentile >= 75 ? 'high' : percentile >= 50 ? 'med' : 'low';
     }
 
     // Filter by min score and limit
@@ -619,9 +607,7 @@ export class OrphanEngine {
   /**
    * Count unresolved mentions (new or pending) pointing to each node.
    */
-  private async computeUnresolvedMentionCounts(
-    nodeIds: string[]
-  ): Promise<Map<string, number>> {
+  private async computeUnresolvedMentionCounts(nodeIds: string[]): Promise<Map<string, number>> {
     const counts = new Map<string, number>();
 
     for (const nodeId of nodeIds) {

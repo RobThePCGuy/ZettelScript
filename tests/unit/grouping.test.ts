@@ -66,12 +66,7 @@ describe('Statistical Grouping Algorithm', () => {
 
     it('should respect kStrong multiplier', () => {
       // With higher k, threshold is higher, fewer boundaries found
-      const results = [
-        { score: 0.9 },
-        { score: 0.7 },
-        { score: 0.5 },
-        { score: 0.3 },
-      ];
+      const results = [{ score: 0.9 }, { score: 0.7 }, { score: 0.5 }, { score: 0.3 }];
 
       // kStrong = 0: mean is threshold
       const configLow: GroupingConfig = { enabled: true, kStrong: 0, kWeak: 0 };
@@ -131,7 +126,7 @@ describe('Statistical Grouping Algorithm', () => {
       const grouped = applyGrouping(results, DEFAULT_GROUPING_CONFIG, 1);
       // Should stop at boundary, returning first 3 items
       expect(grouped.length).toBeLessThanOrEqual(3);
-      expect(grouped.map(g => g.id)).toEqual(['a', 'b', 'c']);
+      expect(grouped.map((g) => g.id)).toEqual(['a', 'b', 'c']);
     });
 
     it('should return two groups with maxGroups=2', () => {
@@ -193,7 +188,7 @@ describe('Statistical Grouping Algorithm', () => {
       // With k=1.0, should find the natural breaks
       const strongGroup = applyGrouping(relatedNotes, DEFAULT_GROUPING_CONFIG, 1);
       expect(strongGroup.length).toBeLessThanOrEqual(3);
-      expect(strongGroup.every(n => n.title.includes('Kevin'))).toBe(true);
+      expect(strongGroup.every((n) => n.title.includes('Kevin'))).toBe(true);
     });
 
     it('should maintain deterministic ordering', () => {
@@ -233,7 +228,7 @@ describe('Statistical Grouping Algorithm', () => {
     it('should handle very small score differences', () => {
       const results = [
         { score: 0.70001, id: 'a' },
-        { score: 0.70000, id: 'b' },
+        { score: 0.7, id: 'b' },
         { score: 0.69999, id: 'c' },
       ];
       const grouped = applyGrouping(results, DEFAULT_GROUPING_CONFIG);

@@ -24,7 +24,7 @@ One command. Your entire knowledge graph, alive in your browser.
 zettel go
 ```
 
-**ZettelScript Atlas** renders every note, character, location, and connection as an interactive force-directed graph. Every node is a portal to its connections—click to see related nodes, click again to navigate there. Color-coded edges show relationship types at a glance. Filter what you see. Search by name. Navigate with breadcrumbs.
+**ZettelScript Atlas** renders every note and connection — and **optionally** extracted entities (characters, locations, events) — as an interactive force-directed graph. Every node is a portal to its connections—click to see related nodes, click again to navigate there. Color-coded edges show relationship types at a glance. Filter what you see. Search by name. Navigate with breadcrumbs.
 
 This isn't a pretty picture. It's a **thinking tool**. Watch your ideas cluster. Spot the orphaned notes. Find the hidden hub you didn't know existed. Then click through to explore it.
 
@@ -37,9 +37,9 @@ Five visualization modes that turn your graph from a static picture into a disco
 | Mode | What it does | Try it |
 |------|--------------|--------|
 | **Heat Vision** | Nodes glow based on recency — hot orange for recently edited, cold for untouched. See where you've been working at a glance. | Toggle in left panel |
-| **Ghost Nodes** | Unresolved `[[links]]` appear as translucent nodes floating near their references. Click to create the missing note instantly. | Toggle in left panel |
+| **Ghost Nodes** | Unresolved `[[links]]` appear as translucent nodes floating near their references. In **Live mode**, click to create the missing note instantly. | Toggle in left panel |
 | **Constellations** | Save any view (filters, focus, camera position) as a named constellation. Return to your exact vantage point later. | `zettel constellation save "my-view"` |
-| **Semantic Wormholes** | Dotted lines connect similar-but-unlinked nodes. The AI found a connection you missed. Accept or reject from the sidebar. | `zettel wormhole detect` first |
+| **Semantic Wormholes** | Dotted lines connect similar-but-unlinked nodes. The AI found a connection you missed *(embeddings required)*. Accept or reject from the sidebar. | `zettel wormhole detect` first |
 | **Narrative Pathfinder** | Select two nodes and get the reading order between them. Export as a table of contents for your manuscript. | `zettel path "Start" "End"` |
 
 These modes compose: Heat Vision + Ghost Nodes shows you where you're actively working *and* what's missing from that work.
@@ -62,7 +62,7 @@ Your graph lives at `.zettelscript/graph.html` — a single self-contained file 
 
 Once Atlas opens:
 
-1. **Toggle Ghost Nodes** (left panel) — Every unresolved `[[link]]` becomes visible. That character you mentioned but never created? It's floating there, waiting. Click it to create the note.
+1. **Toggle Ghost Nodes** (left panel) — Every unresolved `[[link]]` becomes visible. That character you mentioned but never created? It's floating there, waiting. Run `zettel viz --live`, then click it to create the note.
 
 2. **Toggle Heat Vision** (left panel) — Your graph lights up with activity. Hot nodes are recent work; cold nodes haven't been touched. Immediately spot the corners of your vault gathering dust.
 
@@ -88,14 +88,14 @@ No installation required. See what your notes could look like.
 |-------------|-----------------|------------------------|
 | **Lost connections** | Hope you remember related notes | Graph traversal finds them automatically |
 | **Duplicate work** | Rewrite ideas you've already captured | Unlinked mention detection surfaces them |
-| **Search hell** | Keyword guessing games | Semantic + graph + lexical retrieval |
-| **Fragile links** | Rename a file, break everything | Immutable IDs survive restructuring |
+| **Search hell** | Keyword guessing games | Semantic *(with embeddings)* + graph + lexical retrieval |
+| **Fragile links** | Rename a file, break everything | Renames are safe: identity is a stable ID stored in frontmatter, not the file path |
 
 ---
 
 ## What Makes This Different
 
-- **Stable identity**: Nodes are referenced by immutable IDs, not titles. Rename freely.
+- **Stable identity**: Nodes are referenced by nanoid-based IDs stored in frontmatter, not titles or paths. Rename freely.
 - **Bidirectional links**: Author forward links once; backlinks are computed automatically.
 - **Discovery**: Unlinked mentions are detected, ranked, and suggested for approval.
 - **Safe write-back**: Models propose; humans approve; system validates.

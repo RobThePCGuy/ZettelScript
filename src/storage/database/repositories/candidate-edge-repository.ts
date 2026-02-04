@@ -1,10 +1,6 @@
 import { eq, and, inArray, sql } from 'drizzle-orm';
 import { DrizzleDB } from '../connection.js';
-import {
-  candidateEdges,
-  type CandidateEdgeRow,
-  type NewCandidateEdgeRow,
-} from '../schema.js';
+import { candidateEdges, type CandidateEdgeRow, type NewCandidateEdgeRow } from '../schema.js';
 import type {
   CandidateEdge,
   CandidateEdgeStatus,
@@ -137,9 +133,7 @@ export class CandidateEdgeRepository {
     const result = await this.db
       .select()
       .from(candidateEdges)
-      .where(
-        sql`${candidateEdges.fromId} = ${nodeId} OR ${candidateEdges.toId} = ${nodeId}`
-      );
+      .where(sql`${candidateEdges.fromId} = ${nodeId} OR ${candidateEdges.toId} = ${nodeId}`);
 
     return result.map((row) => this.rowToCandidateEdge(row));
   }
@@ -259,9 +253,7 @@ export class CandidateEdgeRepository {
   async deleteForNode(nodeId: string): Promise<number> {
     const result = await this.db
       .delete(candidateEdges)
-      .where(
-        sql`${candidateEdges.fromId} = ${nodeId} OR ${candidateEdges.toId} = ${nodeId}`
-      );
+      .where(sql`${candidateEdges.fromId} = ${nodeId} OR ${candidateEdges.toId} = ${nodeId}`);
 
     return result.changes;
   }

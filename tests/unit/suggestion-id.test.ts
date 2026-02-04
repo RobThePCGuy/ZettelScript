@@ -1,8 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  generateSuggestionId,
-  isUndirectedEdgeType,
-} from '../../src/core/types/index.js';
+import { generateSuggestionId, isUndirectedEdgeType } from '../../src/core/types/index.js';
 
 describe('suggestionId generation', () => {
   describe('generateSuggestionId', () => {

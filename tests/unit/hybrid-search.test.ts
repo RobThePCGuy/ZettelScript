@@ -17,12 +17,66 @@ describe('Hybrid Search', () => {
       // These tests verify the design decisions:
       const expectedTokens = (text: string): Set<string> => {
         const stopwords = new Set([
-          'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
-          'of', 'with', 'by', 'from', 'as', 'is', 'was', 'are', 'were', 'been',
-          'be', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
-          'should', 'may', 'might', 'must', 'shall', 'can', 'need', 'dare', 'ought',
-          'this', 'that', 'these', 'those', 'it', 'its', 'my', 'your', 'his', 'her',
-          'their', 'our', 'we', 'you', 'he', 'she', 'they', 'them', 'us', 'me',
+          'the',
+          'a',
+          'an',
+          'and',
+          'or',
+          'but',
+          'in',
+          'on',
+          'at',
+          'to',
+          'for',
+          'of',
+          'with',
+          'by',
+          'from',
+          'as',
+          'is',
+          'was',
+          'are',
+          'were',
+          'been',
+          'be',
+          'have',
+          'has',
+          'had',
+          'do',
+          'does',
+          'did',
+          'will',
+          'would',
+          'could',
+          'should',
+          'may',
+          'might',
+          'must',
+          'shall',
+          'can',
+          'need',
+          'dare',
+          'ought',
+          'this',
+          'that',
+          'these',
+          'those',
+          'it',
+          'its',
+          'my',
+          'your',
+          'his',
+          'her',
+          'their',
+          'our',
+          'we',
+          'you',
+          'he',
+          'she',
+          'they',
+          'them',
+          'us',
+          'me',
         ]);
 
         return new Set(
@@ -30,7 +84,7 @@ describe('Hybrid Search', () => {
             .toLowerCase()
             .replace(/[^\w\s-]/g, ' ')
             .split(/\s+/)
-            .filter(term => term.length >= 3 && !stopwords.has(term))
+            .filter((term) => term.length >= 3 && !stopwords.has(term))
         );
       };
 
@@ -100,7 +154,7 @@ describe('Hybrid Search', () => {
       const wKw = 0.15;
 
       // Expected: 0.85 * 0.8 + 0.15 * 0.6 = 0.68 + 0.09 = 0.77
-      const hybridScore = (wVec * vecScore) + (wKw * kwScore);
+      const hybridScore = wVec * vecScore + wKw * kwScore;
       expect(hybridScore).toBeCloseTo(0.77, 2);
     });
 
@@ -111,10 +165,10 @@ describe('Hybrid Search', () => {
       const wKw = 0.15;
 
       // Candidate A: no keyword match
-      const scoreA = (wVec * vecScore) + (wKw * 0);
+      const scoreA = wVec * vecScore + wKw * 0;
 
       // Candidate B: has keyword match
-      const scoreB = (wVec * vecScore) + (wKw * 0.5);
+      const scoreB = wVec * vecScore + wKw * 0.5;
 
       expect(scoreB).toBeGreaterThan(scoreA);
       expect(scoreB - scoreA).toBeCloseTo(0.075, 3); // 0.15 * 0.5
@@ -126,10 +180,10 @@ describe('Hybrid Search', () => {
       const wKw = 0.15;
 
       // Low vector, high keyword
-      const lowVecHighKw = (wVec * 0.3) + (wKw * 1.0); // 0.255 + 0.15 = 0.405
+      const lowVecHighKw = wVec * 0.3 + wKw * 1.0; // 0.255 + 0.15 = 0.405
 
       // Medium vector, no keyword
-      const medVecNoKw = (wVec * 0.5) + (wKw * 0); // 0.425
+      const medVecNoKw = wVec * 0.5 + wKw * 0; // 0.425
 
       // With 0.35 min threshold, the low vec case wouldn't even be considered
       // But even if it were, medium vector still wins
@@ -156,21 +210,21 @@ describe('Hybrid Search', () => {
           nodeId: 'a',
           vecScore: 0.75,
           kwScore: 0,
-          finalScore: (wVec * 0.75) + (wKw * 0),
+          finalScore: wVec * 0.75 + wKw * 0,
         },
         // Note B: slightly lower vector, but keyword match
         {
           nodeId: 'b',
           vecScore: 0.72,
           kwScore: 0.67, // 2/3 terms match
-          finalScore: (wVec * 0.72) + (wKw * 0.67),
+          finalScore: wVec * 0.72 + wKw * 0.67,
         },
         // Note C: medium vector, no keyword
         {
           nodeId: 'c',
           vecScore: 0.65,
           kwScore: 0,
-          finalScore: (wVec * 0.65) + (wKw * 0),
+          finalScore: wVec * 0.65 + wKw * 0,
         },
       ];
 

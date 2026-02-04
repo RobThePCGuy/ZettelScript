@@ -7,7 +7,11 @@ import { EdgeRepository } from '../../src/storage/database/repositories/edge-rep
 import { MentionRepository } from '../../src/storage/database/repositories/mention-repository.js';
 import { EmbeddingRepository } from '../../src/storage/database/repositories/embedding-repository.js';
 import { CandidateEdgeRepository } from '../../src/storage/database/repositories/candidate-edge-repository.js';
-import { SuggestionEngine, OrphanEngine, ORPHAN_WEIGHTS } from '../../src/discovery/suggestion-engine.js';
+import {
+  SuggestionEngine,
+  OrphanEngine,
+  ORPHAN_WEIGHTS,
+} from '../../src/discovery/suggestion-engine.js';
 
 describe('SuggestionEngine', () => {
   const testDbPath = path.join(process.cwd(), 'tests/tmp/suggestion-engine-test/test.db');

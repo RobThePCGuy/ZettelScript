@@ -1,9 +1,3 @@
 # Ignore database (regenerated from files)
 zettelscript.db
 zettelscript.db-*
-
-# Ignore generated outputs
-focus.html
-focus.json
-state.json
-graph.html

@@ -248,11 +248,7 @@ export const approveCommand = new Command('approve')
         strength: candidate.signals?.semantic,
       });
 
-      await ctx.candidateEdgeRepository.updateStatus(
-        suggestionId,
-        'approved',
-        truthEdge.edgeId
-      );
+      await ctx.candidateEdgeRepository.updateStatus(suggestionId, 'approved', truthEdge.edgeId);
 
       response.success = true;
       response.suggestionId = suggestionId;
@@ -301,7 +297,9 @@ export const approveCommand = new Command('approve')
       if (options.json) {
         outputJson();
       } else {
-        console.log(`Approved: ${fromNode?.title || candidate.fromId} -> ${toNode?.title || candidate.toId}`);
+        console.log(
+          `Approved: ${fromNode?.title || candidate.fromId} -> ${toNode?.title || candidate.toId}`
+        );
         console.log(`  Edge ID: ${truthEdge.edgeId}`);
         console.log(`  Type: ${candidate.suggestedEdgeType}`);
         if (response.writeback === 'success') {

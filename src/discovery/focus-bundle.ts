@@ -489,10 +489,7 @@ function buildHealthSummary(
 /**
  * Build suggested actions for an orphan entry.
  */
-function buildOrphanActions(
-  entry: OrphanEntry,
-  nodeMap: Map<string, Node>
-): SuggestedAction[] {
+function buildOrphanActions(entry: OrphanEntry, nodeMap: Map<string, Node>): SuggestedAction[] {
   const actions: SuggestedAction[] = [];
 
   // Suggest linking to related nodes

@@ -12,20 +12,9 @@ import {
   type GraphNode,
   type GraphLink,
 } from './visualize.js';
-import {
-  getEdgeLayer,
-  type EdgeType,
-  type Node,
-  type Edge,
-} from '../../core/types/index.js';
-import {
-  assembleFocusBundle,
-  type RelatedNote,
-} from '../../discovery/focus-bundle.js';
-import {
-  SuggestionEngine,
-  OrphanEngine,
-} from '../../discovery/suggestion-engine.js';
+import { getEdgeLayer, type EdgeType, type Node, type Edge } from '../../core/types/index.js';
+import { assembleFocusBundle, type RelatedNote } from '../../discovery/focus-bundle.js';
+import { SuggestionEngine, OrphanEngine } from '../../discovery/suggestion-engine.js';
 
 // ============================================================================
 // Hybrid Search Configuration (Phase 3)
@@ -33,8 +22,8 @@ import {
 
 export interface HybridSearchConfig {
   enabled: boolean;
-  wVec: number;   // Weight for vector similarity (default: 0.85)
-  wKw: number;    // Weight for keyword match (default: 0.15)
+  wVec: number; // Weight for vector similarity (default: 0.85)
+  wKw: number; // Weight for keyword match (default: 0.15)
 }
 
 export const DEFAULT_HYBRID_CONFIG: HybridSearchConfig = {
@@ -45,8 +34,8 @@ export const DEFAULT_HYBRID_CONFIG: HybridSearchConfig = {
 
 export interface GroupingConfig {
   enabled: boolean;
-  kStrong: number;  // Std multiplier for "strong" group boundary (default: 1.0)
-  kWeak: number;    // Std multiplier for "weak" group boundary (default: 0.0)
+  kStrong: number; // Std multiplier for "strong" group boundary (default: 1.0)
+  kWeak: number; // Std multiplier for "weak" group boundary (default: 0.0)
 }
 
 export const DEFAULT_GROUPING_CONFIG: GroupingConfig = {
@@ -89,10 +78,7 @@ function saveFocusState(vaultPath: string, state: FocusState): void {
 // Node Resolution
 // ============================================================================
 
-async function resolveTargetNode(
-  ctx: CLIContext,
-  target?: string
-): Promise<Node | null> {
+async function resolveTargetNode(ctx: CLIContext, target?: string): Promise<Node | null> {
   const { nodeRepository, vaultPath } = ctx;
 
   // If target provided, resolve it
@@ -136,9 +122,7 @@ async function resolveTargetNode(
     const lastFocused = await nodeRepository.findById(state.lastFocusedNodeId);
     if (lastFocused) {
       // Use last focused if it's reasonably recent (edited in last day)
-      const lastFocusedTime = lastFocused.updatedAt
-        ? new Date(lastFocused.updatedAt).getTime()
-        : 0;
+      const lastFocusedTime = lastFocused.updatedAt ? new Date(lastFocused.updatedAt).getTime() : 0;
       const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
       if (lastFocusedTime > oneDayAgo) {
         return lastFocused;
@@ -257,9 +241,10 @@ function subgraphToGraphData(
     id: n.nodeId,
     name: n.title,
     type: n.type,
-    val: n.nodeId === focusNodeId
-      ? 15 // Focus node is larger
-      : Math.max(1, Math.min(10, (nodeWeights.get(n.nodeId) || 0) / 2)),
+    val:
+      n.nodeId === focusNodeId
+        ? 15 // Focus node is larger
+        : Math.max(1, Math.min(10, (nodeWeights.get(n.nodeId) || 0) / 2)),
     color: nodeColors[n.type] || '#94a3b8',
     path: n.path,
     metadata: (n.metadata as Record<string, unknown>) || {},
@@ -341,20 +326,20 @@ async function computeRelatedNotes(
   }
 
   const focusEmbedding = focusEmbeddings[0].embedding;
-  const nodeIdsInView = new Set(nodesInView.map(n => n.nodeId));
+  const nodeIdsInView = new Set(nodesInView.map((n) => n.nodeId));
 
   // Get all embeddings to find related notes (fetch 2x for reranking)
   const allNodes = await nodeRepository.findAll();
   const candidateNodeIds = allNodes
-    .filter(n => !n.isGhost && !nodeIdsInView.has(n.nodeId))
-    .map(n => n.nodeId);
+    .filter((n) => !n.isGhost && !nodeIdsInView.has(n.nodeId))
+    .map((n) => n.nodeId);
 
   if (candidateNodeIds.length === 0) {
     return [];
   }
 
   const candidateEmbeddings = await embeddingRepository.findByNodeIds(candidateNodeIds);
-  const nodeMap = new Map(allNodes.map(n => [n.nodeId, n]));
+  const nodeMap = new Map(allNodes.map((n) => [n.nodeId, n]));
 
   // Tokenize focus node title for keyword matching
   const focusTokens = tokenize(focusNode.title);
@@ -370,7 +355,8 @@ async function computeRelatedNotes(
 
   for (const emb of candidateEmbeddings) {
     const vecScore = cosineSimilarity(focusEmbedding, emb.embedding);
-    if (vecScore < 0.35) { // Minimum vector threshold (relaxed for hybrid)
+    if (vecScore < 0.35) {
+      // Minimum vector threshold (relaxed for hybrid)
       continue;
     }
 
@@ -390,7 +376,7 @@ async function computeRelatedNotes(
 
     // Compute final hybrid score
     const finalScore = hybridConfig.enabled
-      ? (hybridConfig.wVec * vecScore) + (hybridConfig.wKw * kwScore)
+      ? hybridConfig.wVec * vecScore + hybridConfig.wKw * kwScore
       : vecScore;
 
     scored.push({ nodeId: emb.nodeId, vecScore, kwScore, finalScore, matchedTerms });
@@ -401,7 +387,7 @@ async function computeRelatedNotes(
 
   // Apply statistical grouping to identify natural clusters
   // Map to score-based array for grouping algorithm
-  const forGrouping = scored.map(s => ({ ...s, score: s.finalScore }));
+  const forGrouping = scored.map((s) => ({ ...s, score: s.finalScore }));
   const grouped = applyGrouping(forGrouping, groupingConfig, 2); // Take top 2 groups (related mode)
 
   // Take top 15 from grouped results (hard cap)
@@ -465,20 +451,74 @@ function cosineSimilarity(a: number[], b: number[]): number {
  */
 function tokenize(text: string): Set<string> {
   const stopwords = new Set([
-    'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
-    'of', 'with', 'by', 'from', 'as', 'is', 'was', 'are', 'were', 'been',
-    'be', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
-    'should', 'may', 'might', 'must', 'shall', 'can', 'need', 'dare', 'ought',
-    'this', 'that', 'these', 'those', 'it', 'its', 'my', 'your', 'his', 'her',
-    'their', 'our', 'we', 'you', 'he', 'she', 'they', 'them', 'us', 'me',
+    'the',
+    'a',
+    'an',
+    'and',
+    'or',
+    'but',
+    'in',
+    'on',
+    'at',
+    'to',
+    'for',
+    'of',
+    'with',
+    'by',
+    'from',
+    'as',
+    'is',
+    'was',
+    'are',
+    'were',
+    'been',
+    'be',
+    'have',
+    'has',
+    'had',
+    'do',
+    'does',
+    'did',
+    'will',
+    'would',
+    'could',
+    'should',
+    'may',
+    'might',
+    'must',
+    'shall',
+    'can',
+    'need',
+    'dare',
+    'ought',
+    'this',
+    'that',
+    'these',
+    'those',
+    'it',
+    'its',
+    'my',
+    'your',
+    'his',
+    'her',
+    'their',
+    'our',
+    'we',
+    'you',
+    'he',
+    'she',
+    'they',
+    'them',
+    'us',
+    'me',
   ]);
 
   return new Set(
     text
       .toLowerCase()
-      .replace(/[^\w\s-]/g, ' ')  // Keep alphanumeric, spaces, hyphens
+      .replace(/[^\w\s-]/g, ' ') // Keep alphanumeric, spaces, hyphens
       .split(/\s+/)
-      .filter(term => term.length >= 3 && !stopwords.has(term))
+      .filter((term) => term.length >= 3 && !stopwords.has(term))
   );
 }
 
@@ -486,7 +526,10 @@ function tokenize(text: string): Set<string> {
  * Compute keyword overlap score between two texts.
  * Returns a value between 0 and 1 based on Jaccard-like similarity.
  */
-function keywordScore(focusTokens: Set<string>, candidateTokens: Set<string>): {
+function keywordScore(
+  focusTokens: Set<string>,
+  candidateTokens: Set<string>
+): {
   score: number;
   matchedTerms: string[];
 } {
@@ -537,7 +580,7 @@ export function findGroupBoundaries<T extends { score: number }>(
   }
 
   // Calculate statistical threshold
-  const gapValues = gaps.map(g => g.gap);
+  const gapValues = gaps.map((g) => g.gap);
   const mean = gapValues.reduce((a, b) => a + b, 0) / gapValues.length;
   const variance = gapValues.reduce((a, b) => a + (b - mean) ** 2, 0) / gapValues.length;
   const std = Math.sqrt(variance);
@@ -547,9 +590,7 @@ export function findGroupBoundaries<T extends { score: number }>(
   const epsilon = 1e-10;
   const strongThreshold = mean + config.kStrong * std + epsilon;
 
-  const boundaries = gaps
-    .filter(g => g.gap > strongThreshold)
-    .map(g => g.index);
+  const boundaries = gaps.filter((g) => g.gap > strongThreshold).map((g) => g.index);
 
   return boundaries;
 }
@@ -578,9 +619,7 @@ export function applyGrouping<T extends { score: number }>(
   }
 
   // Determine cutoff based on maxGroups
-  const cutoffIndex = maxGroups <= boundaries.length
-    ? boundaries[maxGroups - 1]
-    : results.length; // Not enough boundaries, return all
+  const cutoffIndex = maxGroups <= boundaries.length ? boundaries[maxGroups - 1] : results.length; // Not enough boundaries, return all
 
   return results.slice(0, cutoffIndex);
 }
@@ -612,11 +651,13 @@ export const focusCommand = new Command('focus')
     ) => {
       // Validate mutually exclusive flags
       if (options.jsonStdout && options.jsonOnly) {
-        console.error(JSON.stringify({
-          success: false,
-          error: '--json-stdout and --json-only are mutually exclusive',
-          errorCode: 'INVALID_ARGS',
-        }));
+        console.error(
+          JSON.stringify({
+            success: false,
+            error: '--json-stdout and --json-only are mutually exclusive',
+            errorCode: 'INVALID_ARGS',
+          })
+        );
         process.exit(1);
       }
 
@@ -640,11 +681,13 @@ export const focusCommand = new Command('focus')
           if (spinner) spinner.stop();
 
           if (isJsonMode) {
-            console.log(JSON.stringify({
-              success: false,
-              error: target ? `Could not find node: "${target}"` : 'No nodes found in vault',
-              errorCode: 'NOT_FOUND',
-            }));
+            console.log(
+              JSON.stringify({
+                success: false,
+                error: target ? `Could not find node: "${target}"` : 'No nodes found in vault',
+                errorCode: 'NOT_FOUND',
+              })
+            );
           } else {
             if (target) {
               console.error(`Could not find node: "${target}"`);
@@ -682,7 +725,7 @@ export const focusCommand = new Command('focus')
         const statusData = await computeDoctorStats(ctx);
 
         // 4. Compute suggestions
-        const scopeNodeIds = subgraph.nodes.map(n => n.nodeId);
+        const scopeNodeIds = subgraph.nodes.map((n) => n.nodeId);
 
         // Initialize suggestion engines
         const suggestionEngine = new SuggestionEngine(
@@ -704,7 +747,8 @@ export const focusCommand = new Command('focus')
         await suggestionEngine.computeAllCandidates(scopeNodeIds);
 
         // Get suggested candidate edges for the scope
-        const candidateEdges = await ctx.candidateEdgeRepository.findSuggestedForNodes(scopeNodeIds);
+        const candidateEdges =
+          await ctx.candidateEdgeRepository.findSuggestedForNodes(scopeNodeIds);
 
         // Compute orphan scores
         const orphanEntries = await orphanEngine.computeOrphanScores(scopeNodeIds);
@@ -784,7 +828,9 @@ export const focusCommand = new Command('focus')
           const orphanCount = focusBundle.suggestions.orphans.length;
           const relatedCount = focusBundle.suggestions.relatedNotes.length;
           if (suggestionCount > 0 || orphanCount > 0 || relatedCount > 0) {
-            console.log(`Suggestions: ${relatedCount} related, ${suggestionCount} links, ${orphanCount} orphans`);
+            console.log(
+              `Suggestions: ${relatedCount} related, ${suggestionCount} links, ${orphanCount} orphans`
+            );
           }
 
           // Open browser
@@ -801,11 +847,13 @@ export const focusCommand = new Command('focus')
           const errorCode = errorMessage.includes('Not in a ZettelScript vault')
             ? 'NOT_VAULT'
             : 'COMPUTE_ERROR';
-          console.log(JSON.stringify({
-            success: false,
-            error: errorMessage,
-            errorCode,
-          }));
+          console.log(
+            JSON.stringify({
+              success: false,
+              error: errorMessage,
+              errorCode,
+            })
+          );
           process.exit(1);
         }
 

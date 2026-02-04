@@ -365,7 +365,9 @@ function printStats(stats: DoctorStats): void {
           const cooldownMinutes = Math.floor(cooldownSeconds / 60);
           const remainingSeconds = cooldownSeconds % 60;
           const timeStr =
-            cooldownMinutes > 0 ? `${cooldownMinutes}m ${remainingSeconds}s` : `${cooldownSeconds}s`;
+            cooldownMinutes > 0
+              ? `${cooldownMinutes}m ${remainingSeconds}s`
+              : `${cooldownSeconds}s`;
           console.log(`    Cooldown:  ${timeStr} remaining`);
         }
         // Actionable fix for embeddings

@@ -3695,9 +3695,7 @@ var CandidateEdgeRepository = class {
    * Find candidate edges involving a specific node (as source or target)
    */
   async findByNodeId(nodeId) {
-    const result = await this.db.select().from(candidateEdges).where(
-      sql9`${candidateEdges.fromId} = ${nodeId} OR ${candidateEdges.toId} = ${nodeId}`
-    );
+    const result = await this.db.select().from(candidateEdges).where(sql9`${candidateEdges.fromId} = ${nodeId} OR ${candidateEdges.toId} = ${nodeId}`);
     return result.map((row) => this.rowToCandidateEdge(row));
   }
   /**
@@ -3778,9 +3776,7 @@ var CandidateEdgeRepository = class {
    * Delete all candidate edges for a node
    */
   async deleteForNode(nodeId) {
-    const result = await this.db.delete(candidateEdges).where(
-      sql9`${candidateEdges.fromId} = ${nodeId} OR ${candidateEdges.toId} = ${nodeId}`
-    );
+    const result = await this.db.delete(candidateEdges).where(sql9`${candidateEdges.fromId} = ${nodeId} OR ${candidateEdges.toId} = ${nodeId}`);
     return result.changes;
   }
   /**

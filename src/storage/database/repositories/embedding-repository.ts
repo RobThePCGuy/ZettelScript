@@ -213,7 +213,10 @@ export class EmbeddingRepository {
    * Update an embedding
    * Protected by embeddings circuit breaker as this is part of the embedding pipeline
    */
-  async update(embeddingId: string, data: Partial<CreateEmbeddingInput>): Promise<NodeEmbedding | null> {
+  async update(
+    embeddingId: string,
+    data: Partial<CreateEmbeddingInput>
+  ): Promise<NodeEmbedding | null> {
     const cb = getCircuitBreaker();
     if (!cb.shouldAttempt('embeddings')) {
       return null;

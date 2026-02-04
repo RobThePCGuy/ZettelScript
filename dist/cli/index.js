@@ -2966,9 +2966,7 @@ var CandidateEdgeRepository = class {
    * Find candidate edges involving a specific node (as source or target)
    */
   async findByNodeId(nodeId) {
-    const result = await this.db.select().from(candidateEdges).where(
-      sql9`${candidateEdges.fromId} = ${nodeId} OR ${candidateEdges.toId} = ${nodeId}`
-    );
+    const result = await this.db.select().from(candidateEdges).where(sql9`${candidateEdges.fromId} = ${nodeId} OR ${candidateEdges.toId} = ${nodeId}`);
     return result.map((row) => this.rowToCandidateEdge(row));
   }
   /**
@@ -3049,9 +3047,7 @@ var CandidateEdgeRepository = class {
    * Delete all candidate edges for a node
    */
   async deleteForNode(nodeId) {
-    const result = await this.db.delete(candidateEdges).where(
-      sql9`${candidateEdges.fromId} = ${nodeId} OR ${candidateEdges.toId} = ${nodeId}`
-    );
+    const result = await this.db.delete(candidateEdges).where(sql9`${candidateEdges.fromId} = ${nodeId} OR ${candidateEdges.toId} = ${nodeId}`);
     return result.changes;
   }
   /**
@@ -18969,11 +18965,13 @@ function applyGrouping(results, config, maxGroups = 1) {
 var focusCommand = new Command19("focus").description("Open a focus view centered on a specific note or the most recent file").argument("[target]", "File path, node title, or node ID to focus on").option("-b, --budget <number>", "Maximum number of nodes to show", "200").option("-d, --depth <number>", "Maximum expansion depth", "3").option("-o, --output <path>", "Output HTML file path").option("--no-open", "Do not open browser automatically").option("--json-stdout", "Print FocusBundle JSON to stdout, no file writes").option("--json-only", "Write focus.json only, print path to stdout").action(
   async (target, options) => {
     if (options.jsonStdout && options.jsonOnly) {
-      console.error(JSON.stringify({
-        success: false,
-        error: "--json-stdout and --json-only are mutually exclusive",
-        errorCode: "INVALID_ARGS"
-      }));
+      console.error(
+        JSON.stringify({
+          success: false,
+          error: "--json-stdout and --json-only are mutually exclusive",
+          errorCode: "INVALID_ARGS"
+        })
+      );
       process.exit(1);
     }
     const isJsonMode = options.jsonStdout || options.jsonOnly;
@@ -18990,11 +18988,13 @@ var focusCommand = new Command19("focus").description("Open a focus view centere
       if (!focusNode) {
         if (spinner) spinner.stop();
         if (isJsonMode) {
-          console.log(JSON.stringify({
-            success: false,
-            error: target ? `Could not find node: "${target}"` : "No nodes found in vault",
-            errorCode: "NOT_FOUND"
-          }));
+          console.log(
+            JSON.stringify({
+              success: false,
+              error: target ? `Could not find node: "${target}"` : "No nodes found in vault",
+              errorCode: "NOT_FOUND"
+            })
+          );
         } else {
           if (target) {
             console.error(`Could not find node: "${target}"`);
@@ -19093,7 +19093,9 @@ Focus view generated: ${outputPath}`);
         const orphanCount = focusBundle.suggestions.orphans.length;
         const relatedCount = focusBundle.suggestions.relatedNotes.length;
         if (suggestionCount > 0 || orphanCount > 0 || relatedCount > 0) {
-          console.log(`Suggestions: ${relatedCount} related, ${suggestionCount} links, ${orphanCount} orphans`);
+          console.log(
+            `Suggestions: ${relatedCount} related, ${suggestionCount} links, ${orphanCount} orphans`
+          );
         }
         if (options.open) {
           console.log("Opening in default browser...");
@@ -19105,11 +19107,13 @@ Focus view generated: ${outputPath}`);
       if (isJsonMode) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         const errorCode = errorMessage.includes("Not in a ZettelScript vault") ? "NOT_VAULT" : "COMPUTE_ERROR";
-        console.log(JSON.stringify({
-          success: false,
-          error: errorMessage,
-          errorCode
-        }));
+        console.log(
+          JSON.stringify({
+            success: false,
+            error: errorMessage,
+            errorCode
+          })
+        );
         process.exit(1);
       }
       if (error instanceof Error && error.message.includes("Not in a ZettelScript vault")) {
@@ -19274,11 +19278,7 @@ var approveCommand = new Command20("approve").description("Approve a suggested l
       provenance: "user_approved",
       strength: candidate.signals?.semantic
     });
-    await ctx.candidateEdgeRepository.updateStatus(
-      suggestionId,
-      "approved",
-      truthEdge.edgeId
-    );
+    await ctx.candidateEdgeRepository.updateStatus(suggestionId, "approved", truthEdge.edgeId);
     response.success = true;
     response.suggestionId = suggestionId;
     response.fromId = candidate.fromId;
@@ -19318,7 +19318,9 @@ var approveCommand = new Command20("approve").description("Approve a suggested l
     if (options.json) {
       outputJson();
     } else {
-      console.log(`Approved: ${fromNode?.title || candidate.fromId} -> ${toNode?.title || candidate.toId}`);
+      console.log(
+        `Approved: ${fromNode?.title || candidate.fromId} -> ${toNode?.title || candidate.toId}`
+      );
       console.log(`  Edge ID: ${truthEdge.edgeId}`);
       console.log(`  Type: ${candidate.suggestedEdgeType}`);
       if (response.writeback === "success") {
@@ -19411,7 +19413,9 @@ var rejectCommand = new Command21("reject").description("Reject a suggested link
     if (options.json) {
       outputJson();
     } else {
-      console.log(`Rejected: ${fromNode?.title || candidate.fromId} -> ${toNode?.title || candidate.toId}`);
+      console.log(
+        `Rejected: ${fromNode?.title || candidate.fromId} -> ${toNode?.title || candidate.toId}`
+      );
       console.log(`  Type: ${candidate.suggestedEdgeType}`);
       console.log("  This suggestion will be hidden from future views.");
     }

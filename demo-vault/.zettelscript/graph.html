@@ -858,6 +858,70 @@
       box-shadow: 0 0 8px #f87171;
     }
 
+    /* Upgrade Banner */
+    #upgrade-banner {
+      position: fixed;
+      top: 80px;
+      left: 50%;
+      transform: translateX(-50%);
+      max-width: 500px;
+      padding: 16px 20px;
+      background: rgba(56, 189, 248, 0.1);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      border-radius: 12px;
+      z-index: 1002;
+      display: none;
+    }
+    #upgrade-banner.show {
+      display: block;
+      animation: slideDown 0.3s ease;
+    }
+    @keyframes slideDown {
+      from { opacity: 0; transform: translateX(-50%) translateY(-20px); }
+      to { opacity: 1; transform: translateX(-50%) translateY(0); }
+    }
+    #upgrade-banner h3 {
+      margin: 0 0 8px 0;
+      font-size: 1rem;
+      color: var(--accent);
+    }
+    #upgrade-banner p {
+      margin: 0 0 12px 0;
+      font-size: 0.9rem;
+      color: var(--text-main);
+      line-height: 1.4;
+    }
+    #upgrade-banner .banner-actions {
+      display: flex;
+      gap: 8px;
+    }
+    #upgrade-banner .banner-btn {
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    #upgrade-banner .banner-btn-primary {
+      background: var(--accent);
+      color: var(--bg);
+      border: none;
+      font-weight: 600;
+    }
+    #upgrade-banner .banner-btn-primary:hover {
+      background: #7dd3fc;
+    }
+    #upgrade-banner .banner-btn-secondary {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+    }
+    #upgrade-banner .banner-btn-secondary:hover {
+      border-color: var(--text-main);
+      color: var(--text-main);
+    }
+
     /* Toast Notifications */
     .toast {
       position: fixed;
@@ -894,6 +958,237 @@
     @keyframes pulse {
       0%, 100% { opacity: 1; }
       50% { opacity: 0.5; }
+    }
+
+    /* Suggestions Panel */
+    #suggestions-panel {
+      position: fixed;
+      top: 20px;
+      right: 350px;
+      width: 320px;
+      max-height: calc(100vh - 40px);
+      overflow-y: auto;
+      z-index: 100;
+    }
+    #suggestions-panel::-webkit-scrollbar { width: 6px; }
+    #suggestions-panel::-webkit-scrollbar-track { background: transparent; }
+    #suggestions-panel::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.3); border-radius: 3px; }
+
+    .suggestions-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: pointer;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .suggestions-header h3 {
+      margin: 0;
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+    .suggestions-toggle {
+      color: var(--text-muted);
+      font-size: 0.8rem;
+    }
+
+    .suggestion-section {
+      margin-top: 12px;
+    }
+    .suggestion-section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+      cursor: pointer;
+    }
+    .suggestion-section-header:hover {
+      color: var(--accent);
+    }
+    .suggestion-section-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.9rem;
+      font-weight: 500;
+    }
+    .suggestion-count {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 20px;
+      height: 20px;
+      padding: 0 6px;
+      border-radius: 10px;
+      background: rgba(56, 189, 248, 0.2);
+      color: var(--accent);
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .suggestion-section-toggle {
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      transition: transform 0.2s;
+    }
+    .suggestion-section.collapsed .suggestion-section-toggle {
+      transform: rotate(-90deg);
+    }
+    .suggestion-section.collapsed .suggestion-list {
+      display: none;
+    }
+
+    .suggestion-list {
+      margin-top: 8px;
+    }
+    .suggestion-item {
+      padding: 8px 10px;
+      margin-bottom: 6px;
+      border-radius: 6px;
+      background: rgba(15, 23, 42, 0.4);
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .suggestion-item:hover {
+      background: rgba(56, 189, 248, 0.1);
+      border-color: var(--border);
+    }
+    .suggestion-item.active {
+      background: rgba(56, 189, 248, 0.15);
+      border-color: var(--accent);
+    }
+
+    .suggestion-item-title {
+      font-size: 0.85rem;
+      color: var(--text-main);
+      margin-bottom: 4px;
+    }
+    .suggestion-item-meta {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+    .suggestion-score {
+      display: inline-block;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: rgba(52, 211, 153, 0.2);
+      color: #34d399;
+      font-size: 0.7rem;
+      margin-right: 6px;
+    }
+
+    /* Candidate link specific */
+    .candidate-link-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .candidate-link-info {
+      flex: 1;
+      min-width: 0;
+    }
+    .candidate-link-arrow {
+      color: var(--text-muted);
+      margin: 0 4px;
+    }
+    .candidate-from, .candidate-to {
+      display: inline;
+      max-width: 100px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .candidate-to.ghost {
+      font-style: italic;
+      color: #64748b;
+    }
+
+    .approve-btn {
+      padding: 4px 8px;
+      border: 1px solid rgba(52, 211, 153, 0.5);
+      border-radius: 4px;
+      background: rgba(52, 211, 153, 0.1);
+      color: #34d399;
+      font-size: 0.7rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+    .approve-btn:hover {
+      background: rgba(52, 211, 153, 0.2);
+      border-color: #34d399;
+    }
+    .approve-btn.copied {
+      background: rgba(52, 211, 153, 0.3);
+      border-color: #34d399;
+    }
+
+    .batch-copy-btn {
+      padding: 4px 10px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: rgba(15, 23, 42, 0.6);
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .batch-copy-btn:hover {
+      background: rgba(56, 189, 248, 0.1);
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+    .batch-copy-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    /* Orphan specific */
+    .orphan-severity {
+      display: inline-block;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-size: 0.7rem;
+      margin-right: 6px;
+    }
+    .orphan-severity.high {
+      background: rgba(248, 113, 113, 0.2);
+      color: #f87171;
+    }
+    .orphan-severity.med {
+      background: rgba(251, 191, 36, 0.2);
+      color: #fbbf24;
+    }
+    .orphan-severity.low {
+      background: rgba(148, 163, 184, 0.2);
+      color: #94a3b8;
+    }
+
+    /* Empty state */
+    .suggestion-empty {
+      padding: 12px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.8rem;
+    }
+    .suggestion-empty code {
+      display: block;
+      margin-top: 8px;
+      padding: 6px 10px;
+      background: rgba(0,0,0,0.3);
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 0.75rem;
+      color: var(--accent);
+    }
+
+    /* Tooltip for reasons */
+    .suggestion-reasons {
+      margin-top: 4px;
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      font-style: italic;
     }
   </style>
   <script src="https://unpkg.com/force-graph"></script>
@@ -1036,6 +1331,16 @@
     </div>
   </div>
 
+  <!-- Upgrade Banner (first-run) -->
+  <div id="upgrade-banner">
+    <h3>New: Focus-first view</h3>
+    <p>Suggestion edges (mentions, pending wormholes) are now hidden by default for a cleaner graph. Toggle <strong>Classic mode</strong> in the Status panel to see all edges.</p>
+    <div class="banner-actions">
+      <button class="banner-btn banner-btn-secondary" onclick="dismissUpgradeBanner()">Got it</button>
+      <button class="banner-btn banner-btn-primary" onclick="switchToClassicFromBanner()">Switch to Classic</button>
+    </div>
+  </div>
+
   <!-- Health Status Panel -->
   <div id="status-panel" class="panel">
     <div class="panel-header" onclick="toggleStatusPanel()">
@@ -1074,14 +1379,61 @@
   <!-- WebSocket Status Indicator -->
   <div id="ws-status" class="ws-status disconnected" title="Disconnected"></div>
 
+  <!-- Suggestions Panel -->
+  <div id="suggestions-panel" class="panel" style="display: none;">
+    <div class="suggestions-header" onclick="toggleSuggestionsPanel()">
+      <h3>Suggestions</h3>
+      <span class="suggestions-toggle" id="suggestions-toggle-icon">▼</span>
+    </div>
+
+    <!-- Related Notes Section -->
+    <div class="suggestion-section" id="related-section">
+      <div class="suggestion-section-header" onclick="toggleSuggestionSection('related')">
+        <span class="suggestion-section-title">
+          Related Notes <span class="suggestion-count" id="related-count">0</span>
+        </span>
+        <span class="suggestion-section-toggle">▼</span>
+      </div>
+      <div class="suggestion-list" id="related-list"></div>
+    </div>
+
+    <!-- Candidate Links Section -->
+    <div class="suggestion-section" id="links-section">
+      <div class="suggestion-section-header" onclick="toggleSuggestionSection('links')">
+        <span class="suggestion-section-title">
+          Candidate Links <span class="suggestion-count" id="links-count">0</span>
+        </span>
+        <span class="suggestion-section-toggle">▼</span>
+      </div>
+      <div style="display: flex; justify-content: flex-end; margin-top: 4px;">
+        <button class="batch-copy-btn" id="batch-copy-btn" onclick="batchCopyApproveCommands(event)">
+          Copy All
+        </button>
+      </div>
+      <div class="suggestion-list" id="links-list"></div>
+    </div>
+
+    <!-- Orphans Section -->
+    <div class="suggestion-section" id="orphans-section">
+      <div class="suggestion-section-header" onclick="toggleSuggestionSection('orphans')">
+        <span class="suggestion-section-title">
+          Orphans <span class="suggestion-count" id="orphans-count">0</span>
+        </span>
+        <span class="suggestion-section-toggle">▼</span>
+      </div>
+      <div class="suggestion-list" id="orphans-list"></div>
+    </div>
+  </div>
+
   <script>
-    const data = {"nodes":[{"id":"Gx1o_9wmZcLQtyvU7EGf4","name":"Elena Vance","type":"character","val":10,"color":"#34d399","path":"characters/elena-vance.md","metadata":{"id":"char-elena","title":"Elena Vance","type":"character","aliases":["The Architect","Dr. Vance"],"tags":["protagonist","scientist"]},"updatedAtMs":1770052489145},{"id":"wBF-iBjKucGxC6jObB_DZ","name":"Marcus Chen","type":"character","val":10,"color":"#34d399","path":"characters/marcus-chen.md","metadata":{"id":"char-marcus","title":"Marcus Chen","type":"character","aliases":["Director Chen","The Director"],"tags":["antagonist","administrator"]},"updatedAtMs":1770052491639},{"id":"7ps9OitauA8btbL4tGuN-","name":"Dr. Sarah Webb","type":"character","val":9.5,"color":"#34d399","path":"characters/sarah-webb.md","metadata":{"id":"char-sarah","title":"Dr. Sarah Webb","type":"character","aliases":["Webb"],"tags":["scientist","whistleblower"]},"updatedAtMs":1770052497073},{"id":"T2Of4XpSg1ZeZupoOL5dt","name":"Sofia Reyes","type":"character","val":10,"color":"#34d399","path":"characters/sofia-reyes.md","metadata":{"id":"char-sofia","title":"Sofia Reyes","type":"character","aliases":["Agent Reyes"],"tags":["investigator","ally"]},"updatedAtMs":1770052495522},{"id":"_hIhFaZWMC1LI99ljH5vu","name":"The Forgotten Archives","type":"location","val":7,"color":"#60a5fa","path":"concepts/forgotten-archives.md","metadata":{"id":"concept-archives","title":"The Forgotten Archives","type":"location","aliases":["The Archives","Hidden Library"],"tags":["secret","evidence"]},"updatedAtMs":1770052542605},{"id":"UAK9rMlLVp7aPd6HKOO8Q","name":"Quantum Resonance Theory","type":"concept","val":9.5,"color":"#f472b6","path":"concepts/quantum-resonance-theory.md","metadata":{"id":"concept-qrt","title":"Quantum Resonance Theory","type":"concept","aliases":["QRT","Resonance Theory"],"tags":["science","central"]},"updatedAtMs":1770052532527},{"id":"9I-G3eCmFjM20IvutP9k6","name":"Resonance Chamber","type":"object","val":7,"color":"#fbbf24","path":"concepts/resonance-chamber.md","metadata":{"id":"concept-chamber","title":"Resonance Chamber","type":"object","aliases":["The Chamber","RC-1"],"tags":["technology","dangerous"]},"updatedAtMs":1770052539285},{"id":"EgOG6MT8RB5sGAg-hM-FB","name":"The Syndicate","type":"concept","val":10,"color":"#f472b6","path":"concepts/the-syndicate.md","metadata":{"id":"concept-syndicate","title":"The Syndicate","type":"concept","aliases":["The Organization","Them"],"tags":["antagonist","shadow-org"]},"updatedAtMs":1770052536000},{"id":"tCFDWQuH82kWyuaIF5cRe","name":"Cascade Event","type":"event","val":10,"color":"#f87171","path":"events/cascade-event.md","metadata":{"id":"event-cascade","title":"Cascade Event","type":"event","aliases":["The Cascade","The Incident"],"tags":["catastrophe","central"]},"updatedAtMs":1770052519987},{"id":"n0eGE5gHGK7filfaoPO_o","name":"Founding of Helios","type":"event","val":4.5,"color":"#f87171","path":"events/founding-of-helios.md","metadata":{"id":"event-founding","title":"Founding of Helios","type":"event","tags":["origin","history"]},"updatedAtMs":1770052523005},{"id":"MNosOyCiGVzVwScBMCk7s","name":"Webb Disappearance","type":"event","val":5,"color":"#f87171","path":"events/webb-disappearance.md","metadata":{"id":"event-webb","title":"Webb Disappearance","type":"event","aliases":["Sarah's Disappearance"],"tags":["mystery","ongoing"]},"updatedAtMs":1770052526052},{"id":"LHImYLoVmCThypFA0xhWF","name":"Blackwood University","type":"location","val":5.5,"color":"#60a5fa","path":"locations/blackwood-university.md","metadata":{"id":"loc-blackwood","title":"Blackwood University","type":"location","aliases":["Blackwood","The University"],"tags":["academic","origin"]},"updatedAtMs":1770052513828},{"id":"LVHmA1kV_scGapF6NEozY","name":"Helios Institute","type":"location","val":10,"color":"#60a5fa","path":"locations/helios-institute.md","metadata":{"id":"loc-helios","title":"Helios Institute","type":"location","aliases":["The Institute","Helios"],"tags":["research-facility","central"]},"updatedAtMs":1770052502453},{"id":"gjQIVRbvvRR-TVN5a_3Q6","name":"New Meridian","type":"location","val":8.5,"color":"#60a5fa","path":"locations/new-meridian.md","metadata":{"id":"loc-meridian","title":"New Meridian","type":"location","aliases":["The City","Meridian"],"tags":["city","setting"]},"updatedAtMs":1770052505854},{"id":"rz0MmTmLZAS_X1dHwxDxQ","name":"Old Town","type":"location","val":6.5,"color":"#60a5fa","path":"locations/old-town.md","metadata":{"id":"loc-oldtown","title":"Old Town","type":"location","tags":["district","historic"]},"updatedAtMs":1770052508600},{"id":"2XCjlodxL-bOunwiOBVMG","name":"The Underground","type":"location","val":5.5,"color":"#60a5fa","path":"locations/underground.md","metadata":{"id":"loc-underground","title":"The Underground","type":"location","aliases":["Below","The Tunnels"],"tags":["hidden","dangerous"]},"updatedAtMs":1770052511335}],"links":[{"source":"Gx1o_9wmZcLQtyvU7EGf4","target":"LVHmA1kV_scGapF6NEozY","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"Gx1o_9wmZcLQtyvU7EGf4","target":"UAK9rMlLVp7aPd6HKOO8Q","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"Gx1o_9wmZcLQtyvU7EGf4","target":"tCFDWQuH82kWyuaIF5cRe","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"Gx1o_9wmZcLQtyvU7EGf4","target":"9I-G3eCmFjM20IvutP9k6","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"Gx1o_9wmZcLQtyvU7EGf4","target":"wBF-iBjKucGxC6jObB_DZ","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"Gx1o_9wmZcLQtyvU7EGf4","target":"T2Of4XpSg1ZeZupoOL5dt","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"Gx1o_9wmZcLQtyvU7EGf4","target":"gjQIVRbvvRR-TVN5a_3Q6","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"wBF-iBjKucGxC6jObB_DZ","target":"LVHmA1kV_scGapF6NEozY","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"wBF-iBjKucGxC6jObB_DZ","target":"Gx1o_9wmZcLQtyvU7EGf4","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"wBF-iBjKucGxC6jObB_DZ","target":"LHImYLoVmCThypFA0xhWF","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"wBF-iBjKucGxC6jObB_DZ","target":"9I-G3eCmFjM20IvutP9k6","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"wBF-iBjKucGxC6jObB_DZ","target":"7ps9OitauA8btbL4tGuN-","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"wBF-iBjKucGxC6jObB_DZ","target":"EgOG6MT8RB5sGAg-hM-FB","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"wBF-iBjKucGxC6jObB_DZ","target":"tCFDWQuH82kWyuaIF5cRe","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"wBF-iBjKucGxC6jObB_DZ","target":"T2Of4XpSg1ZeZupoOL5dt","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"7ps9OitauA8btbL4tGuN-","target":"UAK9rMlLVp7aPd6HKOO8Q","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"7ps9OitauA8btbL4tGuN-","target":"Gx1o_9wmZcLQtyvU7EGf4","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"7ps9OitauA8btbL4tGuN-","target":"tCFDWQuH82kWyuaIF5cRe","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"7ps9OitauA8btbL4tGuN-","target":"wBF-iBjKucGxC6jObB_DZ","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"7ps9OitauA8btbL4tGuN-","target":"LHImYLoVmCThypFA0xhWF","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"7ps9OitauA8btbL4tGuN-","target":"gjQIVRbvvRR-TVN5a_3Q6","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"7ps9OitauA8btbL4tGuN-","target":"T2Of4XpSg1ZeZupoOL5dt","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"7ps9OitauA8btbL4tGuN-","target":"2XCjlodxL-bOunwiOBVMG","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"T2Of4XpSg1ZeZupoOL5dt","target":"tCFDWQuH82kWyuaIF5cRe","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"T2Of4XpSg1ZeZupoOL5dt","target":"Gx1o_9wmZcLQtyvU7EGf4","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"T2Of4XpSg1ZeZupoOL5dt","target":"LHImYLoVmCThypFA0xhWF","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"T2Of4XpSg1ZeZupoOL5dt","target":"wBF-iBjKucGxC6jObB_DZ","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"T2Of4XpSg1ZeZupoOL5dt","target":"gjQIVRbvvRR-TVN5a_3Q6","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"T2Of4XpSg1ZeZupoOL5dt","target":"EgOG6MT8RB5sGAg-hM-FB","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"T2Of4XpSg1ZeZupoOL5dt","target":"LVHmA1kV_scGapF6NEozY","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"T2Of4XpSg1ZeZupoOL5dt","target":"_hIhFaZWMC1LI99ljH5vu","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"T2Of4XpSg1ZeZupoOL5dt","target":"rz0MmTmLZAS_X1dHwxDxQ","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"_hIhFaZWMC1LI99ljH5vu","target":"rz0MmTmLZAS_X1dHwxDxQ","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"_hIhFaZWMC1LI99ljH5vu","target":"gjQIVRbvvRR-TVN5a_3Q6","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"_hIhFaZWMC1LI99ljH5vu","target":"UAK9rMlLVp7aPd6HKOO8Q","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"_hIhFaZWMC1LI99ljH5vu","target":"EgOG6MT8RB5sGAg-hM-FB","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"_hIhFaZWMC1LI99ljH5vu","target":"LVHmA1kV_scGapF6NEozY","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"_hIhFaZWMC1LI99ljH5vu","target":"wBF-iBjKucGxC6jObB_DZ","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"_hIhFaZWMC1LI99ljH5vu","target":"T2Of4XpSg1ZeZupoOL5dt","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"_hIhFaZWMC1LI99ljH5vu","target":"Gx1o_9wmZcLQtyvU7EGf4","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"_hIhFaZWMC1LI99ljH5vu","target":"tCFDWQuH82kWyuaIF5cRe","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"_hIhFaZWMC1LI99ljH5vu","target":"7ps9OitauA8btbL4tGuN-","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"UAK9rMlLVp7aPd6HKOO8Q","target":"Gx1o_9wmZcLQtyvU7EGf4","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"UAK9rMlLVp7aPd6HKOO8Q","target":"9I-G3eCmFjM20IvutP9k6","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"UAK9rMlLVp7aPd6HKOO8Q","target":"LVHmA1kV_scGapF6NEozY","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"UAK9rMlLVp7aPd6HKOO8Q","target":"7ps9OitauA8btbL4tGuN-","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"UAK9rMlLVp7aPd6HKOO8Q","target":"tCFDWQuH82kWyuaIF5cRe","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"UAK9rMlLVp7aPd6HKOO8Q","target":"EgOG6MT8RB5sGAg-hM-FB","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"UAK9rMlLVp7aPd6HKOO8Q","target":"rz0MmTmLZAS_X1dHwxDxQ","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"UAK9rMlLVp7aPd6HKOO8Q","target":"wBF-iBjKucGxC6jObB_DZ","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"9I-G3eCmFjM20IvutP9k6","target":"LVHmA1kV_scGapF6NEozY","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"9I-G3eCmFjM20IvutP9k6","target":"Gx1o_9wmZcLQtyvU7EGf4","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"9I-G3eCmFjM20IvutP9k6","target":"UAK9rMlLVp7aPd6HKOO8Q","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"9I-G3eCmFjM20IvutP9k6","target":"tCFDWQuH82kWyuaIF5cRe","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"9I-G3eCmFjM20IvutP9k6","target":"wBF-iBjKucGxC6jObB_DZ","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"9I-G3eCmFjM20IvutP9k6","target":"7ps9OitauA8btbL4tGuN-","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"9I-G3eCmFjM20IvutP9k6","target":"T2Of4XpSg1ZeZupoOL5dt","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"9I-G3eCmFjM20IvutP9k6","target":"Gx1o_9wmZcLQtyvU7EGf4","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"9I-G3eCmFjM20IvutP9k6","target":"EgOG6MT8RB5sGAg-hM-FB","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"EgOG6MT8RB5sGAg-hM-FB","target":"LVHmA1kV_scGapF6NEozY","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"EgOG6MT8RB5sGAg-hM-FB","target":"UAK9rMlLVp7aPd6HKOO8Q","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"EgOG6MT8RB5sGAg-hM-FB","target":"2XCjlodxL-bOunwiOBVMG","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"EgOG6MT8RB5sGAg-hM-FB","target":"gjQIVRbvvRR-TVN5a_3Q6","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"EgOG6MT8RB5sGAg-hM-FB","target":"tCFDWQuH82kWyuaIF5cRe","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"EgOG6MT8RB5sGAg-hM-FB","target":"wBF-iBjKucGxC6jObB_DZ","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"EgOG6MT8RB5sGAg-hM-FB","target":"LHImYLoVmCThypFA0xhWF","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"EgOG6MT8RB5sGAg-hM-FB","target":"_hIhFaZWMC1LI99ljH5vu","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"EgOG6MT8RB5sGAg-hM-FB","target":"T2Of4XpSg1ZeZupoOL5dt","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"EgOG6MT8RB5sGAg-hM-FB","target":"7ps9OitauA8btbL4tGuN-","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"tCFDWQuH82kWyuaIF5cRe","target":"LVHmA1kV_scGapF6NEozY","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"tCFDWQuH82kWyuaIF5cRe","target":"Gx1o_9wmZcLQtyvU7EGf4","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"tCFDWQuH82kWyuaIF5cRe","target":"UAK9rMlLVp7aPd6HKOO8Q","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"tCFDWQuH82kWyuaIF5cRe","target":"gjQIVRbvvRR-TVN5a_3Q6","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"tCFDWQuH82kWyuaIF5cRe","target":"9I-G3eCmFjM20IvutP9k6","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"tCFDWQuH82kWyuaIF5cRe","target":"wBF-iBjKucGxC6jObB_DZ","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"tCFDWQuH82kWyuaIF5cRe","target":"T2Of4XpSg1ZeZupoOL5dt","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"tCFDWQuH82kWyuaIF5cRe","target":"EgOG6MT8RB5sGAg-hM-FB","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"tCFDWQuH82kWyuaIF5cRe","target":"7ps9OitauA8btbL4tGuN-","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"n0eGE5gHGK7filfaoPO_o","target":"LVHmA1kV_scGapF6NEozY","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"n0eGE5gHGK7filfaoPO_o","target":"gjQIVRbvvRR-TVN5a_3Q6","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"n0eGE5gHGK7filfaoPO_o","target":"EgOG6MT8RB5sGAg-hM-FB","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"n0eGE5gHGK7filfaoPO_o","target":"wBF-iBjKucGxC6jObB_DZ","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"n0eGE5gHGK7filfaoPO_o","target":"UAK9rMlLVp7aPd6HKOO8Q","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"n0eGE5gHGK7filfaoPO_o","target":"rz0MmTmLZAS_X1dHwxDxQ","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"n0eGE5gHGK7filfaoPO_o","target":"Gx1o_9wmZcLQtyvU7EGf4","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"n0eGE5gHGK7filfaoPO_o","target":"_hIhFaZWMC1LI99ljH5vu","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"n0eGE5gHGK7filfaoPO_o","target":"EgOG6MT8RB5sGAg-hM-FB","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"MNosOyCiGVzVwScBMCk7s","target":"7ps9OitauA8btbL4tGuN-","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"MNosOyCiGVzVwScBMCk7s","target":"gjQIVRbvvRR-TVN5a_3Q6","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"MNosOyCiGVzVwScBMCk7s","target":"tCFDWQuH82kWyuaIF5cRe","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"MNosOyCiGVzVwScBMCk7s","target":"rz0MmTmLZAS_X1dHwxDxQ","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"MNosOyCiGVzVwScBMCk7s","target":"T2Of4XpSg1ZeZupoOL5dt","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"MNosOyCiGVzVwScBMCk7s","target":"2XCjlodxL-bOunwiOBVMG","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"MNosOyCiGVzVwScBMCk7s","target":"EgOG6MT8RB5sGAg-hM-FB","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"MNosOyCiGVzVwScBMCk7s","target":"Gx1o_9wmZcLQtyvU7EGf4","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"MNosOyCiGVzVwScBMCk7s","target":"wBF-iBjKucGxC6jObB_DZ","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"MNosOyCiGVzVwScBMCk7s","target":"tCFDWQuH82kWyuaIF5cRe","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"LHImYLoVmCThypFA0xhWF","target":"Gx1o_9wmZcLQtyvU7EGf4","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"LHImYLoVmCThypFA0xhWF","target":"wBF-iBjKucGxC6jObB_DZ","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"LHImYLoVmCThypFA0xhWF","target":"T2Of4XpSg1ZeZupoOL5dt","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"LHImYLoVmCThypFA0xhWF","target":"7ps9OitauA8btbL4tGuN-","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"LHImYLoVmCThypFA0xhWF","target":"UAK9rMlLVp7aPd6HKOO8Q","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"LHImYLoVmCThypFA0xhWF","target":"EgOG6MT8RB5sGAg-hM-FB","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"LHImYLoVmCThypFA0xhWF","target":"T2Of4XpSg1ZeZupoOL5dt","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"LVHmA1kV_scGapF6NEozY","target":"gjQIVRbvvRR-TVN5a_3Q6","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"LVHmA1kV_scGapF6NEozY","target":"EgOG6MT8RB5sGAg-hM-FB","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"LVHmA1kV_scGapF6NEozY","target":"9I-G3eCmFjM20IvutP9k6","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"LVHmA1kV_scGapF6NEozY","target":"Gx1o_9wmZcLQtyvU7EGf4","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"LVHmA1kV_scGapF6NEozY","target":"UAK9rMlLVp7aPd6HKOO8Q","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"LVHmA1kV_scGapF6NEozY","target":"wBF-iBjKucGxC6jObB_DZ","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"LVHmA1kV_scGapF6NEozY","target":"Gx1o_9wmZcLQtyvU7EGf4","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"LVHmA1kV_scGapF6NEozY","target":"7ps9OitauA8btbL4tGuN-","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"LVHmA1kV_scGapF6NEozY","target":"tCFDWQuH82kWyuaIF5cRe","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"gjQIVRbvvRR-TVN5a_3Q6","target":"LVHmA1kV_scGapF6NEozY","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"gjQIVRbvvRR-TVN5a_3Q6","target":"EgOG6MT8RB5sGAg-hM-FB","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"gjQIVRbvvRR-TVN5a_3Q6","target":"rz0MmTmLZAS_X1dHwxDxQ","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"gjQIVRbvvRR-TVN5a_3Q6","target":"2XCjlodxL-bOunwiOBVMG","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"gjQIVRbvvRR-TVN5a_3Q6","target":"tCFDWQuH82kWyuaIF5cRe","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"gjQIVRbvvRR-TVN5a_3Q6","target":"T2Of4XpSg1ZeZupoOL5dt","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"rz0MmTmLZAS_X1dHwxDxQ","target":"gjQIVRbvvRR-TVN5a_3Q6","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"rz0MmTmLZAS_X1dHwxDxQ","target":"_hIhFaZWMC1LI99ljH5vu","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"rz0MmTmLZAS_X1dHwxDxQ","target":"7ps9OitauA8btbL4tGuN-","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"rz0MmTmLZAS_X1dHwxDxQ","target":"T2Of4XpSg1ZeZupoOL5dt","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"rz0MmTmLZAS_X1dHwxDxQ","target":"EgOG6MT8RB5sGAg-hM-FB","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"rz0MmTmLZAS_X1dHwxDxQ","target":"UAK9rMlLVp7aPd6HKOO8Q","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"rz0MmTmLZAS_X1dHwxDxQ","target":"LVHmA1kV_scGapF6NEozY","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"2XCjlodxL-bOunwiOBVMG","target":"gjQIVRbvvRR-TVN5a_3Q6","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"2XCjlodxL-bOunwiOBVMG","target":"tCFDWQuH82kWyuaIF5cRe","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"2XCjlodxL-bOunwiOBVMG","target":"EgOG6MT8RB5sGAg-hM-FB","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"2XCjlodxL-bOunwiOBVMG","target":"7ps9OitauA8btbL4tGuN-","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"2XCjlodxL-bOunwiOBVMG","target":"Gx1o_9wmZcLQtyvU7EGf4","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"2XCjlodxL-bOunwiOBVMG","target":"UAK9rMlLVp7aPd6HKOO8Q","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"2XCjlodxL-bOunwiOBVMG","target":"T2Of4XpSg1ZeZupoOL5dt","type":"explicit_link","strength":1,"provenance":"explicit"}]};
+    const data = {"nodes":[{"id":"44cJikySnG9k3kP81keTt","name":"Elena Vance","type":"character","val":10,"color":"#34d399","path":"characters/elena-vance.md","metadata":{"id":"char-elena","title":"Elena Vance","type":"character","aliases":["The Architect","Dr. Vance"],"tags":["protagonist","scientist"]}},{"id":"uTc2htynrQMsjRCTcARn0","name":"Marcus Chen","type":"character","val":10,"color":"#34d399","path":"characters/marcus-chen.md","metadata":{"id":"char-marcus","title":"Marcus Chen","type":"character","aliases":["Director Chen","The Director"],"tags":["antagonist","administrator"]}},{"id":"0I3SAE4oanCo0Sw-Wzjpy","name":"Dr. Sarah Webb","type":"character","val":9.5,"color":"#34d399","path":"characters/sarah-webb.md","metadata":{"id":"char-sarah","title":"Dr. Sarah Webb","type":"character","aliases":["Webb"],"tags":["scientist","whistleblower"]}},{"id":"V8PW5ZjSb-ocFxUDnbRvM","name":"Sofia Reyes","type":"character","val":10,"color":"#34d399","path":"characters/sofia-reyes.md","metadata":{"id":"char-sofia","title":"Sofia Reyes","type":"character","aliases":["Agent Reyes"],"tags":["investigator","ally"]}},{"id":"O25rB08zMWwaUVM15Y9Ff","name":"The Forgotten Archives","type":"location","val":7,"color":"#60a5fa","path":"concepts/forgotten-archives.md","metadata":{"id":"concept-archives","title":"The Forgotten Archives","type":"location","aliases":["The Archives","Hidden Library"],"tags":["secret","evidence"]}},{"id":"Ob6qIQNeyM6dtQPYfpv8i","name":"Quantum Resonance Theory","type":"concept","val":9.5,"color":"#f472b6","path":"concepts/quantum-resonance-theory.md","metadata":{"id":"concept-qrt","title":"Quantum Resonance Theory","type":"concept","aliases":["QRT","Resonance Theory"],"tags":["science","central"]}},{"id":"9oInOIxoj1i9GJlbxVGKa","name":"Resonance Chamber","type":"object","val":7,"color":"#fbbf24","path":"concepts/resonance-chamber.md","metadata":{"id":"concept-chamber","title":"Resonance Chamber","type":"object","aliases":["The Chamber","RC-1"],"tags":["technology","dangerous"]}},{"id":"muTK2KhSzaC_bDnUA23cn","name":"The Syndicate","type":"concept","val":10,"color":"#f472b6","path":"concepts/the-syndicate.md","metadata":{"id":"concept-syndicate","title":"The Syndicate","type":"concept","aliases":["The Organization","Them"],"tags":["antagonist","shadow-org"]}},{"id":"wWQQEFbmZomQd92cgEfU3","name":"Cascade Event","type":"event","val":10,"color":"#f87171","path":"events/cascade-event.md","metadata":{"id":"event-cascade","title":"Cascade Event","type":"event","aliases":["The Cascade","The Incident"],"tags":["catastrophe","central"]}},{"id":"LwR3ADp5sVV2OPaoO66Do","name":"Founding of Helios","type":"event","val":4.5,"color":"#f87171","path":"events/founding-of-helios.md","metadata":{"id":"event-founding","title":"Founding of Helios","type":"event","tags":["origin","history"]}},{"id":"jDSSQXbJxUkkY-qskckt-","name":"Webb Disappearance","type":"event","val":5,"color":"#f87171","path":"events/webb-disappearance.md","metadata":{"id":"event-webb","title":"Webb Disappearance","type":"event","aliases":["Sarah's Disappearance"],"tags":["mystery","ongoing"]}},{"id":"N6-Xro-y9kxqZSdDCYDNU","name":"Blackwood University","type":"location","val":5.5,"color":"#60a5fa","path":"locations/blackwood-university.md","metadata":{"id":"loc-blackwood","title":"Blackwood University","type":"location","aliases":["Blackwood","The University"],"tags":["academic","origin"]}},{"id":"TDVEcBVu5RTEdGIbU6Pgf","name":"Helios Institute","type":"location","val":10,"color":"#60a5fa","path":"locations/helios-institute.md","metadata":{"id":"loc-helios","title":"Helios Institute","type":"location","aliases":["The Institute","Helios"],"tags":["research-facility","central"]}},{"id":"PFrjRwNOkOqWLHwU-pRI1","name":"New Meridian","type":"location","val":8.5,"color":"#60a5fa","path":"locations/new-meridian.md","metadata":{"id":"loc-meridian","title":"New Meridian","type":"location","aliases":["The City","Meridian"],"tags":["city","setting"]}},{"id":"EcTtUIZxlobVgh6ZA6wB5","name":"Old Town","type":"location","val":6.5,"color":"#60a5fa","path":"locations/old-town.md","metadata":{"id":"loc-oldtown","title":"Old Town","type":"location","tags":["district","historic"]}},{"id":"Sr_03SQT0dWZCW7FQ2MJX","name":"The Underground","type":"location","val":5.5,"color":"#60a5fa","path":"locations/underground.md","metadata":{"id":"loc-underground","title":"The Underground","type":"location","aliases":["Below","The Tunnels"],"tags":["hidden","dangerous"]}},{"id":"FAU3Dp7kkshFclTrlCaFQ","name":"Blackwood University","type":"location","val":1,"color":"#60a5fa","path":"entities/Blackwood University.md","metadata":{"id":"n2ezOlMNlzrw","title":"Blackwood University","type":"location"}},{"id":"sF0Aj_kU0Gt8weiYSG013","name":"Cascade Event","type":"object","val":1,"color":"#fbbf24","path":"entities/Cascade Event.md","metadata":{"id":"6OI8fUrw3G0x","title":"Cascade Event","type":"object"}},{"id":"hvySncc6iHpS5gLa8CtDO","name":"Dr. Sarah Webb","type":"character","val":1,"color":"#34d399","path":"entities/Dr. Sarah Webb.md","metadata":{"id":"SpnrDrl4lQ8i","title":"Dr. Sarah Webb","type":"character"}},{"id":"eYKm5vqHBv9oKgNxPWB8y","name":"Elena Vance","type":"character","val":1,"color":"#34d399","path":"entities/Elena Vance.md","metadata":{"id":"5ANr6QNnFcpn","title":"Elena Vance","type":"character","aliases":["The Architect","Dr. Vance"]}},{"id":"M3Vay26ZeFFz-tkFQO-eW","name":"Helios Institute","type":"location","val":1,"color":"#60a5fa","path":"entities/Helios Institute.md","metadata":{"id":"q0QMs-wSpm0A","title":"Helios Institute","type":"location"}},{"id":"xR94VtpJuSlnz9BvBbdZD","name":"Marcus Chen","type":"character","val":1,"color":"#34d399","path":"entities/Marcus Chen.md","metadata":{"id":"_ZqCA2tx7HZp","title":"Marcus Chen","type":"character"}},{"id":"tFMdA6fxSjsBrx9Wua47k","name":"New Meridian","type":"location","val":1,"color":"#60a5fa","path":"entities/New Meridian.md","metadata":{"id":"RJvGtbh5wfFx","title":"New Meridian","type":"location"}},{"id":"_9rvWTdhv0zCVr8CJsOrq","name":"Old Town","type":"location","val":1,"color":"#60a5fa","path":"entities/Old Town.md","metadata":{"id":"W6F-wVmddwUU","title":"Old Town","type":"location"}},{"id":"rvd-ksrqgWrJ_d3DodPxp","name":"Quantum Resonance Theory","type":"object","val":1,"color":"#fbbf24","path":"entities/Quantum Resonance Theory.md","metadata":{"id":"elCXqimfmjtc","title":"Quantum Resonance Theory","type":"object"}},{"id":"VqFkxV-9TSNCegovHN2pI","name":"Resonance Chamber","type":"object","val":1,"color":"#fbbf24","path":"entities/Resonance Chamber.md","metadata":{"id":"9CsHY2qp5FBP","title":"Resonance Chamber","type":"object"}},{"id":"VKyPI_5EugFuDr2eVfsfM","name":"Sofia Reyes","type":"character","val":1,"color":"#34d399","path":"entities/Sofia Reyes.md","metadata":{"id":"CTG0GGouMyBU","title":"Sofia Reyes","type":"character"}},{"id":"Zh03QUZiQgxKKDYkadXqY","name":"The Forgotten Archives","type":"character","val":1,"color":"#34d399","path":"entities/The Forgotten Archives.md","metadata":{"id":"P7mKd3Jt1Sci","title":"The Forgotten Archives","type":"character"}},{"id":"2GQq_cz-vZjs9blR9soTW","name":"The Syndicate","type":"character","val":1,"color":"#34d399","path":"entities/The Syndicate.md","metadata":{"id":"X_06r32iP5k7","title":"The Syndicate","type":"character"}},{"id":"k9lvVWPZhXE_BtMNKwu0u","name":"The Underground","type":"location","val":1,"color":"#60a5fa","path":"entities/The Underground.md","metadata":{"id":"IlyNTKH9R0EF","title":"The Underground","type":"location"}}],"links":[{"source":"44cJikySnG9k3kP81keTt","target":"TDVEcBVu5RTEdGIbU6Pgf","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"44cJikySnG9k3kP81keTt","target":"Ob6qIQNeyM6dtQPYfpv8i","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"44cJikySnG9k3kP81keTt","target":"wWQQEFbmZomQd92cgEfU3","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"44cJikySnG9k3kP81keTt","target":"9oInOIxoj1i9GJlbxVGKa","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"44cJikySnG9k3kP81keTt","target":"uTc2htynrQMsjRCTcARn0","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"44cJikySnG9k3kP81keTt","target":"V8PW5ZjSb-ocFxUDnbRvM","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"44cJikySnG9k3kP81keTt","target":"PFrjRwNOkOqWLHwU-pRI1","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"uTc2htynrQMsjRCTcARn0","target":"TDVEcBVu5RTEdGIbU6Pgf","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"uTc2htynrQMsjRCTcARn0","target":"44cJikySnG9k3kP81keTt","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"uTc2htynrQMsjRCTcARn0","target":"N6-Xro-y9kxqZSdDCYDNU","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"uTc2htynrQMsjRCTcARn0","target":"9oInOIxoj1i9GJlbxVGKa","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"uTc2htynrQMsjRCTcARn0","target":"0I3SAE4oanCo0Sw-Wzjpy","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"uTc2htynrQMsjRCTcARn0","target":"muTK2KhSzaC_bDnUA23cn","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"uTc2htynrQMsjRCTcARn0","target":"wWQQEFbmZomQd92cgEfU3","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"uTc2htynrQMsjRCTcARn0","target":"V8PW5ZjSb-ocFxUDnbRvM","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"0I3SAE4oanCo0Sw-Wzjpy","target":"Ob6qIQNeyM6dtQPYfpv8i","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"0I3SAE4oanCo0Sw-Wzjpy","target":"44cJikySnG9k3kP81keTt","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"0I3SAE4oanCo0Sw-Wzjpy","target":"wWQQEFbmZomQd92cgEfU3","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"0I3SAE4oanCo0Sw-Wzjpy","target":"uTc2htynrQMsjRCTcARn0","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"0I3SAE4oanCo0Sw-Wzjpy","target":"N6-Xro-y9kxqZSdDCYDNU","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"0I3SAE4oanCo0Sw-Wzjpy","target":"PFrjRwNOkOqWLHwU-pRI1","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"0I3SAE4oanCo0Sw-Wzjpy","target":"V8PW5ZjSb-ocFxUDnbRvM","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"0I3SAE4oanCo0Sw-Wzjpy","target":"Sr_03SQT0dWZCW7FQ2MJX","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"V8PW5ZjSb-ocFxUDnbRvM","target":"wWQQEFbmZomQd92cgEfU3","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"V8PW5ZjSb-ocFxUDnbRvM","target":"44cJikySnG9k3kP81keTt","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"V8PW5ZjSb-ocFxUDnbRvM","target":"N6-Xro-y9kxqZSdDCYDNU","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"V8PW5ZjSb-ocFxUDnbRvM","target":"uTc2htynrQMsjRCTcARn0","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"V8PW5ZjSb-ocFxUDnbRvM","target":"PFrjRwNOkOqWLHwU-pRI1","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"V8PW5ZjSb-ocFxUDnbRvM","target":"muTK2KhSzaC_bDnUA23cn","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"V8PW5ZjSb-ocFxUDnbRvM","target":"TDVEcBVu5RTEdGIbU6Pgf","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"V8PW5ZjSb-ocFxUDnbRvM","target":"O25rB08zMWwaUVM15Y9Ff","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"V8PW5ZjSb-ocFxUDnbRvM","target":"EcTtUIZxlobVgh6ZA6wB5","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"O25rB08zMWwaUVM15Y9Ff","target":"EcTtUIZxlobVgh6ZA6wB5","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"O25rB08zMWwaUVM15Y9Ff","target":"PFrjRwNOkOqWLHwU-pRI1","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"O25rB08zMWwaUVM15Y9Ff","target":"Ob6qIQNeyM6dtQPYfpv8i","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"O25rB08zMWwaUVM15Y9Ff","target":"muTK2KhSzaC_bDnUA23cn","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"O25rB08zMWwaUVM15Y9Ff","target":"TDVEcBVu5RTEdGIbU6Pgf","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"O25rB08zMWwaUVM15Y9Ff","target":"uTc2htynrQMsjRCTcARn0","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"O25rB08zMWwaUVM15Y9Ff","target":"V8PW5ZjSb-ocFxUDnbRvM","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"O25rB08zMWwaUVM15Y9Ff","target":"44cJikySnG9k3kP81keTt","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"O25rB08zMWwaUVM15Y9Ff","target":"wWQQEFbmZomQd92cgEfU3","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"O25rB08zMWwaUVM15Y9Ff","target":"0I3SAE4oanCo0Sw-Wzjpy","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"Ob6qIQNeyM6dtQPYfpv8i","target":"44cJikySnG9k3kP81keTt","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"Ob6qIQNeyM6dtQPYfpv8i","target":"9oInOIxoj1i9GJlbxVGKa","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"Ob6qIQNeyM6dtQPYfpv8i","target":"TDVEcBVu5RTEdGIbU6Pgf","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"Ob6qIQNeyM6dtQPYfpv8i","target":"0I3SAE4oanCo0Sw-Wzjpy","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"Ob6qIQNeyM6dtQPYfpv8i","target":"wWQQEFbmZomQd92cgEfU3","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"Ob6qIQNeyM6dtQPYfpv8i","target":"muTK2KhSzaC_bDnUA23cn","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"Ob6qIQNeyM6dtQPYfpv8i","target":"EcTtUIZxlobVgh6ZA6wB5","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"Ob6qIQNeyM6dtQPYfpv8i","target":"uTc2htynrQMsjRCTcARn0","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"9oInOIxoj1i9GJlbxVGKa","target":"TDVEcBVu5RTEdGIbU6Pgf","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"9oInOIxoj1i9GJlbxVGKa","target":"44cJikySnG9k3kP81keTt","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"9oInOIxoj1i9GJlbxVGKa","target":"Ob6qIQNeyM6dtQPYfpv8i","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"9oInOIxoj1i9GJlbxVGKa","target":"wWQQEFbmZomQd92cgEfU3","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"9oInOIxoj1i9GJlbxVGKa","target":"uTc2htynrQMsjRCTcARn0","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"9oInOIxoj1i9GJlbxVGKa","target":"0I3SAE4oanCo0Sw-Wzjpy","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"9oInOIxoj1i9GJlbxVGKa","target":"V8PW5ZjSb-ocFxUDnbRvM","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"9oInOIxoj1i9GJlbxVGKa","target":"44cJikySnG9k3kP81keTt","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"9oInOIxoj1i9GJlbxVGKa","target":"muTK2KhSzaC_bDnUA23cn","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"muTK2KhSzaC_bDnUA23cn","target":"TDVEcBVu5RTEdGIbU6Pgf","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"muTK2KhSzaC_bDnUA23cn","target":"Ob6qIQNeyM6dtQPYfpv8i","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"muTK2KhSzaC_bDnUA23cn","target":"Sr_03SQT0dWZCW7FQ2MJX","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"muTK2KhSzaC_bDnUA23cn","target":"PFrjRwNOkOqWLHwU-pRI1","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"muTK2KhSzaC_bDnUA23cn","target":"wWQQEFbmZomQd92cgEfU3","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"muTK2KhSzaC_bDnUA23cn","target":"uTc2htynrQMsjRCTcARn0","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"muTK2KhSzaC_bDnUA23cn","target":"N6-Xro-y9kxqZSdDCYDNU","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"muTK2KhSzaC_bDnUA23cn","target":"O25rB08zMWwaUVM15Y9Ff","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"muTK2KhSzaC_bDnUA23cn","target":"V8PW5ZjSb-ocFxUDnbRvM","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"muTK2KhSzaC_bDnUA23cn","target":"0I3SAE4oanCo0Sw-Wzjpy","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"wWQQEFbmZomQd92cgEfU3","target":"TDVEcBVu5RTEdGIbU6Pgf","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"wWQQEFbmZomQd92cgEfU3","target":"44cJikySnG9k3kP81keTt","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"wWQQEFbmZomQd92cgEfU3","target":"Ob6qIQNeyM6dtQPYfpv8i","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"wWQQEFbmZomQd92cgEfU3","target":"PFrjRwNOkOqWLHwU-pRI1","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"wWQQEFbmZomQd92cgEfU3","target":"9oInOIxoj1i9GJlbxVGKa","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"wWQQEFbmZomQd92cgEfU3","target":"uTc2htynrQMsjRCTcARn0","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"wWQQEFbmZomQd92cgEfU3","target":"V8PW5ZjSb-ocFxUDnbRvM","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"wWQQEFbmZomQd92cgEfU3","target":"muTK2KhSzaC_bDnUA23cn","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"wWQQEFbmZomQd92cgEfU3","target":"0I3SAE4oanCo0Sw-Wzjpy","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"LwR3ADp5sVV2OPaoO66Do","target":"TDVEcBVu5RTEdGIbU6Pgf","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"LwR3ADp5sVV2OPaoO66Do","target":"PFrjRwNOkOqWLHwU-pRI1","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"LwR3ADp5sVV2OPaoO66Do","target":"muTK2KhSzaC_bDnUA23cn","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"LwR3ADp5sVV2OPaoO66Do","target":"uTc2htynrQMsjRCTcARn0","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"LwR3ADp5sVV2OPaoO66Do","target":"Ob6qIQNeyM6dtQPYfpv8i","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"LwR3ADp5sVV2OPaoO66Do","target":"EcTtUIZxlobVgh6ZA6wB5","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"LwR3ADp5sVV2OPaoO66Do","target":"44cJikySnG9k3kP81keTt","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"LwR3ADp5sVV2OPaoO66Do","target":"O25rB08zMWwaUVM15Y9Ff","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"LwR3ADp5sVV2OPaoO66Do","target":"muTK2KhSzaC_bDnUA23cn","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"jDSSQXbJxUkkY-qskckt-","target":"0I3SAE4oanCo0Sw-Wzjpy","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"jDSSQXbJxUkkY-qskckt-","target":"PFrjRwNOkOqWLHwU-pRI1","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"jDSSQXbJxUkkY-qskckt-","target":"wWQQEFbmZomQd92cgEfU3","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"jDSSQXbJxUkkY-qskckt-","target":"EcTtUIZxlobVgh6ZA6wB5","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"jDSSQXbJxUkkY-qskckt-","target":"V8PW5ZjSb-ocFxUDnbRvM","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"jDSSQXbJxUkkY-qskckt-","target":"Sr_03SQT0dWZCW7FQ2MJX","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"jDSSQXbJxUkkY-qskckt-","target":"muTK2KhSzaC_bDnUA23cn","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"jDSSQXbJxUkkY-qskckt-","target":"44cJikySnG9k3kP81keTt","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"jDSSQXbJxUkkY-qskckt-","target":"uTc2htynrQMsjRCTcARn0","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"jDSSQXbJxUkkY-qskckt-","target":"wWQQEFbmZomQd92cgEfU3","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"N6-Xro-y9kxqZSdDCYDNU","target":"44cJikySnG9k3kP81keTt","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"N6-Xro-y9kxqZSdDCYDNU","target":"uTc2htynrQMsjRCTcARn0","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"N6-Xro-y9kxqZSdDCYDNU","target":"V8PW5ZjSb-ocFxUDnbRvM","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"N6-Xro-y9kxqZSdDCYDNU","target":"0I3SAE4oanCo0Sw-Wzjpy","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"N6-Xro-y9kxqZSdDCYDNU","target":"Ob6qIQNeyM6dtQPYfpv8i","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"N6-Xro-y9kxqZSdDCYDNU","target":"muTK2KhSzaC_bDnUA23cn","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"N6-Xro-y9kxqZSdDCYDNU","target":"V8PW5ZjSb-ocFxUDnbRvM","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"TDVEcBVu5RTEdGIbU6Pgf","target":"PFrjRwNOkOqWLHwU-pRI1","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"TDVEcBVu5RTEdGIbU6Pgf","target":"muTK2KhSzaC_bDnUA23cn","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"TDVEcBVu5RTEdGIbU6Pgf","target":"9oInOIxoj1i9GJlbxVGKa","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"TDVEcBVu5RTEdGIbU6Pgf","target":"44cJikySnG9k3kP81keTt","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"TDVEcBVu5RTEdGIbU6Pgf","target":"Ob6qIQNeyM6dtQPYfpv8i","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"TDVEcBVu5RTEdGIbU6Pgf","target":"uTc2htynrQMsjRCTcARn0","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"TDVEcBVu5RTEdGIbU6Pgf","target":"44cJikySnG9k3kP81keTt","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"TDVEcBVu5RTEdGIbU6Pgf","target":"0I3SAE4oanCo0Sw-Wzjpy","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"TDVEcBVu5RTEdGIbU6Pgf","target":"wWQQEFbmZomQd92cgEfU3","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"PFrjRwNOkOqWLHwU-pRI1","target":"TDVEcBVu5RTEdGIbU6Pgf","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"PFrjRwNOkOqWLHwU-pRI1","target":"muTK2KhSzaC_bDnUA23cn","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"PFrjRwNOkOqWLHwU-pRI1","target":"EcTtUIZxlobVgh6ZA6wB5","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"PFrjRwNOkOqWLHwU-pRI1","target":"Sr_03SQT0dWZCW7FQ2MJX","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"PFrjRwNOkOqWLHwU-pRI1","target":"wWQQEFbmZomQd92cgEfU3","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"PFrjRwNOkOqWLHwU-pRI1","target":"V8PW5ZjSb-ocFxUDnbRvM","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"EcTtUIZxlobVgh6ZA6wB5","target":"PFrjRwNOkOqWLHwU-pRI1","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"EcTtUIZxlobVgh6ZA6wB5","target":"O25rB08zMWwaUVM15Y9Ff","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"EcTtUIZxlobVgh6ZA6wB5","target":"0I3SAE4oanCo0Sw-Wzjpy","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"EcTtUIZxlobVgh6ZA6wB5","target":"V8PW5ZjSb-ocFxUDnbRvM","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"EcTtUIZxlobVgh6ZA6wB5","target":"muTK2KhSzaC_bDnUA23cn","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"EcTtUIZxlobVgh6ZA6wB5","target":"Ob6qIQNeyM6dtQPYfpv8i","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"EcTtUIZxlobVgh6ZA6wB5","target":"TDVEcBVu5RTEdGIbU6Pgf","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"Sr_03SQT0dWZCW7FQ2MJX","target":"PFrjRwNOkOqWLHwU-pRI1","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"Sr_03SQT0dWZCW7FQ2MJX","target":"wWQQEFbmZomQd92cgEfU3","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"Sr_03SQT0dWZCW7FQ2MJX","target":"muTK2KhSzaC_bDnUA23cn","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"Sr_03SQT0dWZCW7FQ2MJX","target":"0I3SAE4oanCo0Sw-Wzjpy","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"Sr_03SQT0dWZCW7FQ2MJX","target":"44cJikySnG9k3kP81keTt","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"Sr_03SQT0dWZCW7FQ2MJX","target":"Ob6qIQNeyM6dtQPYfpv8i","type":"explicit_link","strength":1,"provenance":"explicit"},{"source":"Sr_03SQT0dWZCW7FQ2MJX","target":"V8PW5ZjSb-ocFxUDnbRvM","type":"explicit_link","strength":1,"provenance":"explicit"}]};
     const typeColors = {"note":"#94a3b8","scene":"#a78bfa","character":"#34d399","location":"#60a5fa","object":"#fbbf24","event":"#f87171","concept":"#f472b6","moc":"#fb923c","timeline":"#818cf8","draft":"#52525b","ghost":"#64748b"};
     const edgeStyles = {"explicit_link":{"color":"#22d3ee","dash":[],"label":"Links to"},"backlink":{"color":"#a78bfa","dash":[5,5],"label":"Backlinks"},"sequence":{"color":"#34d399","dash":[],"label":"Sequence"},"hierarchy":{"color":"#fbbf24","dash":[],"label":"Hierarchy"},"participation":{"color":"#f472b6","dash":[],"label":"Participation"},"pov_visible_to":{"color":"#60a5fa","dash":[3,3],"label":"POV Visible"},"causes":{"color":"#f87171","dash":[],"label":"Causes"},"setup_payoff":{"color":"#fb923c","dash":[],"label":"Setup/Payoff"},"semantic":{"color":"#94a3b8","dash":[2,2],"label":"Semantic"},"semantic_suggestion":{"color":"#64748b","dash":[3,3],"label":"Wormhole"},"mention":{"color":"#2dd4bf","dash":[2,2],"label":"Mention"},"alias":{"color":"#818cf8","dash":[4,2],"label":"Alias"},"ghost_ref":{"color":"#64748b","dash":[2,2],"label":"Ghost Reference"}};
     const loadedConstellation = null;
     const pathData = null;
     const wsConfig = null;
-    const statusData = {"version":"0.4.1","vaultPath":"/mnt/c/Users/Rob/Desktop/ZettelScript/demo-vault","overallLevel":"fail","index":{"nodeCount":16,"edgeCount":133,"edgesByLayer":{"A":133,"B":0,"C":0},"dbPath":"/mnt/c/Users/Rob/Desktop/ZettelScript/demo-vault/.zettelscript/zettelscript.db","dbSizeBytes":303104},"embeddings":{"level":"fail","total":16,"embedded":0,"coverage":0,"pending":16,"errorCount":0},"wormholes":{"enabled":false,"count":0,"threshold":0.75,"disabledReason":"Insufficient embeddings"},"extraction":{"parseFailCount":0},"visualization":{"mode":"focus","filteredEdgeCount":133,"totalEdgeCount":133}};
+    const statusData = null;
+    const focusBundle = null;
 
     // Status panel state
     let statusPanelExpanded = false;
@@ -1151,6 +1503,47 @@
 
     // Initialize status panel on load
     setTimeout(updateStatusPanel, 100);
+
+    // Upgrade banner logic
+    const UPGRADE_BANNER_KEY = 'zs-upgrade-banner-dismissed';
+    const CURRENT_VERSION = statusData ? statusData.version : '0.4.1';
+
+    function shouldShowUpgradeBanner() {
+      if (!statusData) return false;
+      if (statusData.visualization.mode !== 'focus') return false;
+
+      const dismissed = localStorage.getItem(UPGRADE_BANNER_KEY);
+      if (!dismissed) return true;
+
+      // Check if dismissed for older version
+      try {
+        const { version } = JSON.parse(dismissed);
+        // Simple version comparison - show if current is newer
+        return version !== CURRENT_VERSION;
+      } catch {
+        return true;
+      }
+    }
+
+    function dismissUpgradeBanner() {
+      localStorage.setItem(UPGRADE_BANNER_KEY, JSON.stringify({
+        version: CURRENT_VERSION,
+        dismissedAt: new Date().toISOString()
+      }));
+      document.getElementById('upgrade-banner').classList.remove('show');
+    }
+
+    function switchToClassicFromBanner() {
+      dismissUpgradeBanner();
+      showToast('To switch to Classic mode: edit .zettelscript/config.yaml → visualization.mode: "classic"', 'info', 6000);
+    }
+
+    // Show upgrade banner if conditions met
+    setTimeout(() => {
+      if (shouldShowUpgradeBanner()) {
+        document.getElementById('upgrade-banner').classList.add('show');
+      }
+    }, 500);
 
     // Pre-compute adjacency index for O(1) lookups
     const adjacency = {};
@@ -2942,6 +3335,305 @@
         document.getElementById('search').focus();
       }
     });
+
+    // ========================================================================
+    // Suggestions Panel
+    // ========================================================================
+
+    let suggestionsPanelExpanded = true;
+    let activeSuggestionId = null;
+    let previewEdge = null;
+
+    function initSuggestionsPanel() {
+      if (!focusBundle) {
+        document.getElementById('suggestions-panel').style.display = 'none';
+        return;
+      }
+
+      const panel = document.getElementById('suggestions-panel');
+      panel.style.display = 'block';
+
+      // Render each section
+      renderRelatedNotes();
+      renderCandidateLinks();
+      renderOrphans();
+    }
+
+    function toggleSuggestionsPanel() {
+      const icon = document.getElementById('suggestions-toggle-icon');
+      suggestionsPanelExpanded = !suggestionsPanelExpanded;
+      icon.textContent = suggestionsPanelExpanded ? '▼' : '▲';
+
+      // Toggle all sections
+      document.querySelectorAll('.suggestion-section').forEach(section => {
+        section.style.display = suggestionsPanelExpanded ? 'block' : 'none';
+      });
+    }
+
+    function toggleSuggestionSection(sectionName) {
+      const section = document.getElementById(sectionName + '-section');
+      section.classList.toggle('collapsed');
+    }
+
+    function renderRelatedNotes() {
+      const list = document.getElementById('related-list');
+      const countEl = document.getElementById('related-count');
+      const notes = focusBundle?.suggestions?.relatedNotes || [];
+
+      countEl.textContent = notes.length;
+
+      if (notes.length === 0) {
+        // Empty state with health context
+        const health = focusBundle?.health;
+        let message = 'No related notes found for this view.';
+        let command = '';
+
+        if (health?.embeddings?.level === 'fail' || health?.embeddings?.level === 'warn') {
+          message = 'Embeddings incomplete.';
+          command = 'zs embed compute';
+        }
+
+        list.innerHTML = `
+          <div class="suggestion-empty">
+            ${message}
+            ${command ? `<code>${command}</code>` : ''}
+          </div>
+        `;
+        return;
+      }
+
+      list.innerHTML = notes.map(note => `
+        <div class="suggestion-item" data-node-id="${note.nodeId}" onclick="handleRelatedNoteClick('${note.nodeId}')">
+          <div class="suggestion-item-title">${escapeHtml(note.title)}</div>
+          <div class="suggestion-item-meta">
+            <span class="suggestion-score">${(note.score * 100).toFixed(0)}%</span>
+            ${note.isInView ? '<span style="color: var(--accent);">in view</span>' : ''}
+          </div>
+          ${note.reasons.length > 0 ? `<div class="suggestion-reasons">${escapeHtml(note.reasons[0])}</div>` : ''}
+        </div>
+      `).join('');
+    }
+
+    function renderCandidateLinks() {
+      const list = document.getElementById('links-list');
+      const countEl = document.getElementById('links-count');
+      const batchBtn = document.getElementById('batch-copy-btn');
+      const links = focusBundle?.suggestions?.candidateLinks || [];
+
+      countEl.textContent = links.length;
+      batchBtn.disabled = links.length === 0;
+
+      if (links.length === 0) {
+        list.innerHTML = `
+          <div class="suggestion-empty">
+            No link suggestions for this view.
+          </div>
+        `;
+        return;
+      }
+
+      list.innerHTML = links.map(link => `
+        <div class="suggestion-item" data-suggestion-id="${link.suggestionId}" onclick="handleCandidateLinkClick('${link.suggestionId}', '${link.fromId}', '${link.toId}')">
+          <div class="candidate-link-row">
+            <div class="candidate-link-info">
+              <div class="suggestion-item-title">
+                <span class="candidate-from">${escapeHtml(link.fromTitle)}</span>
+                <span class="candidate-link-arrow">→</span>
+                <span class="candidate-to ${link.toIsGhost ? 'ghost' : ''}">${escapeHtml(link.toTitle)}</span>
+              </div>
+              <div class="suggestion-item-meta">
+                <span class="suggestion-score">${(link.confidence * 100).toFixed(0)}%</span>
+                <span>${link.source}</span>
+              </div>
+            </div>
+            <button class="approve-btn" data-suggestion-id="${link.suggestionId}" onclick="handleApprove(event, '${link.suggestionId}')">
+              Approve
+            </button>
+          </div>
+          ${link.reasons.length > 0 ? `<div class="suggestion-reasons">${escapeHtml(link.reasons[0])}</div>` : ''}
+        </div>
+      `).join('');
+    }
+
+    function renderOrphans() {
+      const list = document.getElementById('orphans-list');
+      const countEl = document.getElementById('orphans-count');
+      const orphans = focusBundle?.suggestions?.orphans || [];
+
+      countEl.textContent = orphans.length;
+
+      if (orphans.length === 0) {
+        list.innerHTML = `
+          <div class="suggestion-empty">
+            No orphans detected. Your notes are well-connected!
+          </div>
+        `;
+        return;
+      }
+
+      list.innerHTML = orphans.map(orphan => `
+        <div class="suggestion-item" data-node-id="${orphan.nodeId}" onclick="handleOrphanClick('${orphan.nodeId}')">
+          <div class="suggestion-item-title">${escapeHtml(orphan.title)}</div>
+          <div class="suggestion-item-meta">
+            <span class="orphan-severity ${orphan.severity}">${orphan.severity}</span>
+            <span>${orphan.percentile.toFixed(0)}th percentile</span>
+          </div>
+          ${orphan.reasons.length > 0 ? `<div class="suggestion-reasons">${escapeHtml(orphan.reasons[0])}</div>` : ''}
+        </div>
+      `).join('');
+    }
+
+    function handleRelatedNoteClick(nodeId) {
+      clearActiveSuggestion();
+
+      // Highlight the node
+      if (nodeMap[nodeId]) {
+        activeSuggestionId = nodeId;
+        markSuggestionActive(nodeId, 'related');
+        highlightSuggestionNodes([nodeId]);
+      } else {
+        // Node not in current view - could navigate
+        showToast('Note not in current view', 'info');
+      }
+    }
+
+    function handleCandidateLinkClick(suggestionId, fromId, toId) {
+      clearActiveSuggestion();
+
+      activeSuggestionId = suggestionId;
+      markSuggestionActive(suggestionId, 'links');
+
+      // Highlight both nodes
+      const nodeIds = [];
+      if (nodeMap[fromId]) nodeIds.push(fromId);
+      if (nodeMap[toId]) nodeIds.push(toId);
+
+      highlightSuggestionNodes(nodeIds);
+
+      // Show preview edge (dashed line between nodes)
+      if (nodeMap[fromId] && nodeMap[toId]) {
+        showPreviewEdge(fromId, toId);
+      }
+    }
+
+    function handleOrphanClick(nodeId) {
+      clearActiveSuggestion();
+
+      if (nodeMap[nodeId]) {
+        activeSuggestionId = nodeId;
+        markSuggestionActive(nodeId, 'orphans');
+        highlightSuggestionNodes([nodeId]);
+      }
+    }
+
+    function markSuggestionActive(id, section) {
+      // Clear all active states
+      document.querySelectorAll('.suggestion-item.active').forEach(el => {
+        el.classList.remove('active');
+      });
+
+      // Mark the clicked item as active
+      const sectionEl = document.getElementById(section + '-list');
+      const item = sectionEl.querySelector(`[data-${section === 'links' ? 'suggestion' : 'node'}-id="${id}"]`);
+      if (item) {
+        item.classList.add('active');
+      }
+    }
+
+    function highlightSuggestionNodes(nodeIds) {
+      // Clear existing highlights
+      highlightNodes.clear();
+      highlightLinks.clear();
+
+      // Add new highlights
+      nodeIds.forEach(id => highlightNodes.add(id));
+
+      // Refresh the graph
+      Graph.refresh();
+    }
+
+    function showPreviewEdge(fromId, toId) {
+      // Store preview edge for rendering
+      previewEdge = { source: fromId, target: toId };
+      Graph.refresh();
+    }
+
+    function clearActiveSuggestion() {
+      activeSuggestionId = null;
+      previewEdge = null;
+
+      // Clear visual states
+      document.querySelectorAll('.suggestion-item.active').forEach(el => {
+        el.classList.remove('active');
+      });
+
+      highlightNodes.clear();
+      highlightLinks.clear();
+      Graph.refresh();
+    }
+
+    function handleApprove(event, suggestionId) {
+      event.stopPropagation();
+
+      // Build command from template
+      const template = focusBundle?.actions?.approve?.template || 'zs approve --suggestion-id {suggestionId} --json';
+      const command = template.replace('{suggestionId}', suggestionId);
+
+      // Copy to clipboard
+      navigator.clipboard.writeText(command).then(() => {
+        showToast('Command copied', 'success');
+
+        // Visual feedback
+        const btn = event.target;
+        const originalText = btn.textContent;
+        btn.textContent = 'Copied ✓';
+        btn.classList.add('copied');
+
+        setTimeout(() => {
+          btn.textContent = originalText;
+          btn.classList.remove('copied');
+        }, 2000);
+      }).catch(err => {
+        showToast('Failed to copy command', 'error');
+        console.error('Copy failed:', err);
+      });
+    }
+
+    function batchCopyApproveCommands(event) {
+      event.stopPropagation();
+
+      const links = focusBundle?.suggestions?.candidateLinks || [];
+      if (links.length === 0) return;
+
+      const template = focusBundle?.actions?.approve?.template || 'zs approve --suggestion-id {suggestionId} --json';
+      const commands = links.map(link =>
+        template.replace('{suggestionId}', link.suggestionId)
+      ).join('\n');
+
+      navigator.clipboard.writeText(commands).then(() => {
+        showToast(`Copied ${links.length} approve commands`, 'success');
+
+        // Visual feedback
+        const btn = event.target;
+        const originalText = btn.textContent;
+        btn.textContent = 'Copied ✓';
+        setTimeout(() => {
+          btn.textContent = originalText;
+        }, 2000);
+      }).catch(err => {
+        showToast('Failed to copy commands', 'error');
+        console.error('Copy failed:', err);
+      });
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // Initialize suggestions panel after graph is ready
+    setTimeout(initSuggestionsPanel, 200);
 
     // Helper
     function convertHexToRGBA(hex, opacity) {

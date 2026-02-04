@@ -19,7 +19,7 @@ retrieval:
   expansionMaxDepth: 3
   expansionBudget: 50
 manuscript:
-  enabled: false
+  enabled: true
   validatePov: true
   validateTimeline: true
   validateSetupPayoff: true

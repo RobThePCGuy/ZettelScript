@@ -118,7 +118,9 @@ export const rejectCommand = new Command('reject')
       if (options.json) {
         outputJson();
       } else {
-        console.log(`Rejected: ${fromNode?.title || candidate.fromId} -> ${toNode?.title || candidate.toId}`);
+        console.log(
+          `Rejected: ${fromNode?.title || candidate.fromId} -> ${toNode?.title || candidate.toId}`
+        );
         console.log(`  Type: ${candidate.suggestedEdgeType}`);
         console.log('  This suggestion will be hidden from future views.');
       }

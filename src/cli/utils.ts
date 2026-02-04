@@ -102,7 +102,7 @@ export function loadConfig(vaultPath: string): ZettelScriptConfig {
     const errorMsg = error instanceof Error ? error.message : String(error);
     console.warn(
       `Warning: Could not parse config file at ${configPath}: ${errorMsg}. ` +
-      `Using defaults. Run "zs init --force" to regenerate.`
+        `Using defaults. Run "zs init --force" to regenerate.`
     );
     return { ...DEFAULT_CONFIG, vault: { ...DEFAULT_CONFIG.vault, path: vaultPath } };
   }
