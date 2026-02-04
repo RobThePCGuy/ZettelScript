@@ -1,0 +1,8 @@
+{
+  "cliPath": "npx zettelscript",
+  "useWsl": true,
+  "autoSync": true,
+  "syncInterval": 10,
+  "kbPath": ".narrative-project/kb",
+  "showNotifications": true
+}
