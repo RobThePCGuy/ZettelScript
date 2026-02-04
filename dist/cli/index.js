@@ -12272,16 +12272,16 @@ async function computeDoctorStats(ctx) {
       coverage: embeddingCoverage,
       pending: pendingEmbeddings.length,
       errorCount: getCircuitBreaker().getStatus("embeddings").totalFailures,
-      model: embeddingModel
+      ...embeddingModel !== void 0 && { model: embeddingModel }
     },
     wormholes: {
       enabled: !wormholeDisabledReason,
       count: wormholeCount,
       threshold: wormholeThreshold,
-      disabledReason: wormholeDisabledReason
+      ...wormholeDisabledReason !== void 0 && { disabledReason: wormholeDisabledReason }
     },
     extraction: {
-      badChunksPath: parseFailCount > 0 ? badChunksPath : void 0,
+      ...parseFailCount > 0 && { badChunksPath },
       parseFailCount
     },
     visualization: {
@@ -18005,7 +18005,7 @@ function assembleFocusBundle(input) {
     title: node.title,
     path: node.path,
     type: node.type,
-    updatedAtMs: node.updatedAt ? new Date(node.updatedAt).getTime() : void 0,
+    ...node.updatedAt !== void 0 && { updatedAtMs: new Date(node.updatedAt).getTime() },
     isGhost: node.isGhost || false,
     degreeA: degreesA.get(node.nodeId) || 0,
     degreeB: degreesB.get(node.nodeId) || 0,
@@ -18018,8 +18018,8 @@ function assembleFocusBundle(input) {
     type: edge.edgeType,
     status: "truth",
     layer: getEdgeLayer(edge.edgeType),
-    confidence: edge.strength,
-    provenance: edge.provenance
+    ...edge.strength !== void 0 && { confidence: edge.strength },
+    ...edge.provenance !== void 0 && { provenance: edge.provenance }
   }));
   const nodeMap = new Map(nodesInView.map((n) => [n.nodeId, n]));
   const candidateLinks = candidateEdges2.filter((ce) => ce.status === "suggested").map((ce) => {
@@ -18049,12 +18049,14 @@ function assembleFocusBundle(input) {
       reasons: (ce.reasons || []).slice(0, SUGGESTION_CAPS.reasonsPerSuggestion),
       source,
       status: ce.status,
-      signals: ce.signals || {},
-      provenance: ce.provenance && ce.provenance.length > 0 ? {
-        model: ce.provenance[0].model,
-        excerpt: ce.provenance[0].excerpt?.slice(0, SUGGESTION_CAPS.excerptMaxLength),
-        createdAt: ce.provenance[0].createdAt
-      } : void 0
+      signals: ce.signals ?? {},
+      ...ce.provenance && ce.provenance.length > 0 && ce.provenance[0] !== void 0 ? {
+        provenance: {
+          ...ce.provenance[0].model !== void 0 && { model: ce.provenance[0].model },
+          ...ce.provenance[0].excerpt !== void 0 && { excerpt: ce.provenance[0].excerpt.slice(0, SUGGESTION_CAPS.excerptMaxLength) },
+          ...ce.provenance[0].createdAt !== void 0 && { createdAt: ce.provenance[0].createdAt }
+        }
+      } : {}
     };
   }).sort((a, b) => {
     if (b.confidence !== a.confidence) return b.confidence - a.confidence;
@@ -18154,23 +18156,23 @@ function buildHealthSummary(stats, nodesInView, edgesInView) {
       missingInView,
       pending: stats.embeddings.pending,
       errors: stats.embeddings.errorCount,
-      lastError: stats.embeddings.lastError
+      ...stats.embeddings.lastError !== void 0 && { lastError: stats.embeddings.lastError }
     },
     wormholes: {
       enabled: stats.wormholes.enabled,
       level: wormholeLevel,
       countInView: wormholesInView,
       threshold: stats.wormholes.threshold,
-      disabledReason: stats.wormholes.disabledReason
+      ...stats.wormholes.disabledReason !== void 0 && { disabledReason: stats.wormholes.disabledReason }
     },
     index: {
-      lastRunAt: stats.index.lastIndexTime?.toISOString(),
+      ...stats.index.lastIndexTime !== void 0 && { lastRunAt: stats.index.lastIndexTime.toISOString() },
       nodeCount: stats.index.nodeCount,
       edgeCountsByLayer
     },
     extraction: {
       parseFailures: stats.extraction.parseFailCount,
-      badChunksPath: stats.extraction.badChunksPath
+      ...stats.extraction.badChunksPath !== void 0 && { badChunksPath: stats.extraction.badChunksPath }
     }
   };
 }
@@ -18208,8 +18210,7 @@ var DEFAULT_SUGGESTION_CONFIG = {
   }
 };
 var SuggestionEngine = class {
-  constructor(nodeRepository, edgeRepository, mentionRepository, embeddingRepository, candidateEdgeRepository, config) {
-    this.nodeRepository = nodeRepository;
+  constructor(_nodeRepository, edgeRepository, mentionRepository, embeddingRepository, candidateEdgeRepository, config) {
     this.edgeRepository = edgeRepository;
     this.mentionRepository = mentionRepository;
     this.embeddingRepository = embeddingRepository;
@@ -18534,9 +18535,10 @@ var OrphanEngine = class {
     }
     entries.sort((a, b) => b.orphanScore - a.orphanScore);
     for (let i = 0; i < entries.length; i++) {
+      const entry = entries[i];
       const percentile = (entries.length - i) / entries.length * 100;
-      entries[i].percentile = Math.round(percentile);
-      entries[i].severity = percentile >= 75 ? "high" : percentile >= 50 ? "med" : "low";
+      entry.percentile = Math.round(percentile);
+      entry.severity = percentile >= 75 ? "high" : percentile >= 50 ? "med" : "low";
     }
     return entries.filter((e) => e.orphanScore >= this.config.minScore).slice(0, this.config.maxResults);
   }
@@ -18743,7 +18745,7 @@ function subgraphToGraphData(result, nodeColors) {
     color: nodeColors[n.type] || "#94a3b8",
     path: n.path,
     metadata: n.metadata || {},
-    updatedAtMs: n.updatedAt ? new Date(n.updatedAt).getTime() : void 0
+    ...n.updatedAt ? { updatedAtMs: new Date(n.updatedAt).getTime() } : {}
   }));
   const graphLinks = edges2.map((e) => ({
     source: e.sourceId,
@@ -18832,7 +18834,7 @@ async function computeRelatedNotes(ctx, focusNodeId, nodesInView, hybridConfig =
       isInView: false,
       signals: {
         semantic: vecScore,
-        lexical: kwScore > 0 ? kwScore : void 0
+        ...kwScore > 0 ? { lexical: kwScore } : {}
       }
     };
   }).filter((rn) => rn !== null);
@@ -19162,7 +19164,8 @@ async function insertWikilink(filePath, targetPath, targetTitle, vaultPath) {
     if (line && /^##?\s*links?\s*$/i.test(line)) {
       linksSectionFound = true;
       for (let j = i + 1; j < lines.length; j++) {
-        if (lines[j] && /^##?\s/.test(lines[j])) {
+        const lineJ = lines[j];
+        if (lineJ && /^##?\s/.test(lineJ)) {
           insertionIndex = j;
           break;
         }
@@ -19249,7 +19252,9 @@ var approveCommand = new Command20("approve").description("Approve a suggested l
       response.fromId = candidate.fromId;
       response.toId = candidate.toId;
       response.edgeType = candidate.suggestedEdgeType;
-      response.edgeId = candidate.approvedEdgeId;
+      if (candidate.approvedEdgeId !== void 0) {
+        response.edgeId = candidate.approvedEdgeId;
+      }
       if (options.json) {
         outputJson();
       } else {
@@ -19276,15 +19281,15 @@ var approveCommand = new Command20("approve").description("Approve a suggested l
       targetId: candidate.toId,
       edgeType: candidate.suggestedEdgeType,
       provenance: "user_approved",
-      strength: candidate.signals?.semantic
+      ...candidate.signals?.semantic !== void 0 && { strength: candidate.signals.semantic }
     });
     await ctx.candidateEdgeRepository.updateStatus(suggestionId, "approved", truthEdge.edgeId);
     response.success = true;
     response.suggestionId = suggestionId;
     response.fromId = candidate.fromId;
-    response.fromTitle = fromNode?.title;
+    if (fromNode) response.fromTitle = fromNode.title;
     response.toId = candidate.toId;
-    response.toTitle = toNode?.title;
+    if (toNode) response.toTitle = toNode.title;
     response.edgeId = truthEdge.edgeId;
     response.edgeType = candidate.suggestedEdgeType;
     if (options.writeback !== false && fromNode && toNode && !fromNode.isGhost) {
@@ -19295,11 +19300,11 @@ var approveCommand = new Command20("approve").description("Approve a suggested l
         ctx.vaultPath
       );
       response.writeback = writebackResult.status;
-      response.writebackReason = writebackResult.reason;
-      response.writebackPath = writebackResult.path;
+      if (writebackResult.reason !== void 0) response.writebackReason = writebackResult.reason;
+      if (writebackResult.path !== void 0) response.writebackPath = writebackResult.path;
       await ctx.candidateEdgeRepository.update(suggestionId, {
         writebackStatus: writebackResult.status,
-        writebackReason: writebackResult.reason
+        ...writebackResult.reason !== void 0 && { writebackReason: writebackResult.reason }
       });
       if (writebackResult.status === "failed") {
         response.warnings = response.warnings || [];
@@ -19406,9 +19411,9 @@ var rejectCommand = new Command21("reject").description("Reject a suggested link
     response.success = true;
     response.suggestionId = suggestionId;
     response.fromId = candidate.fromId;
-    response.fromTitle = fromNode?.title;
+    if (fromNode) response.fromTitle = fromNode.title;
     response.toId = candidate.toId;
-    response.toTitle = toNode?.title;
+    if (toNode) response.toTitle = toNode.title;
     response.edgeType = candidate.suggestedEdgeType;
     if (options.json) {
       outputJson();
