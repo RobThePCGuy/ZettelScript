@@ -2981,14 +2981,312 @@ var ConstellationRepository = class {
 // src/storage/database/repositories/embedding-repository.ts
 import { eq as eq7, inArray as inArray4, sql as sql7 } from "drizzle-orm";
 import { nanoid as nanoid6 } from "nanoid";
+
+// src/core/logger.ts
+var Logger = class _Logger {
+  level;
+  prefix;
+  constructor(options = {}) {
+    this.level = options.level ?? 1 /* INFO */;
+    this.prefix = options.prefix ?? "";
+  }
+  /**
+   * Set the log level
+   */
+  setLevel(level) {
+    this.level = level;
+  }
+  /**
+   * Get the current log level
+   */
+  getLevel() {
+    return this.level;
+  }
+  /**
+   * Format a log message with optional prefix
+   */
+  format(message) {
+    return this.prefix ? `[${this.prefix}] ${message}` : message;
+  }
+  /**
+   * Log a debug message
+   */
+  debug(message, ...args) {
+    if (this.level <= 0 /* DEBUG */) {
+      console.debug(this.format(message), ...args);
+    }
+  }
+  /**
+   * Log an info message
+   */
+  info(message, ...args) {
+    if (this.level <= 1 /* INFO */) {
+      console.log(this.format(message), ...args);
+    }
+  }
+  /**
+   * Log a warning message
+   */
+  warn(message, ...args) {
+    if (this.level <= 2 /* WARN */) {
+      console.warn(this.format(message), ...args);
+    }
+  }
+  /**
+   * Log an error message
+   */
+  error(message, ...args) {
+    if (this.level <= 3 /* ERROR */) {
+      console.error(this.format(message), ...args);
+    }
+  }
+  /**
+   * Create a child logger with a prefix
+   */
+  child(prefix) {
+    const childPrefix = this.prefix ? `${this.prefix}:${prefix}` : prefix;
+    return new _Logger({ level: this.level, prefix: childPrefix });
+  }
+};
+var defaultLogger = new Logger();
+function getLogger() {
+  return defaultLogger;
+}
+
+// src/core/circuit-breaker.ts
+var logger = getLogger().child("circuit-breaker");
+var DEFAULT_CONFIG2 = {
+  maxFailures: 3,
+  cooldownMs: 6e5
+  // 10 minutes
+};
+var SubsystemBreaker = class {
+  constructor(name, config) {
+    this.name = name;
+    this.config = config;
+  }
+  state = {
+    failureCount: 0,
+    lastFailure: null,
+    lastError: null,
+    recoveryInProgress: false
+  };
+  /**
+   * Check if a call should be attempted
+   * Returns true for CLOSED or HALF_OPEN states
+   */
+  shouldAttempt() {
+    if (this.state.failureCount < this.config.maxFailures) {
+      return true;
+    }
+    if (this.state.lastFailure !== null) {
+      const elapsed = Date.now() - this.state.lastFailure;
+      if (elapsed >= this.config.cooldownMs) {
+        if (this.state.recoveryInProgress) {
+          return false;
+        }
+        this.state.recoveryInProgress = true;
+        logger.info(`${this.name}: circuit breaker entering HALF_OPEN - attempting recovery`);
+        return true;
+      }
+    }
+    return false;
+  }
+  /**
+   * Record a successful call (resets the breaker)
+   */
+  recordSuccess() {
+    const wasOpen = this.state.failureCount >= this.config.maxFailures;
+    this.state.failureCount = 0;
+    this.state.lastFailure = null;
+    this.state.lastError = null;
+    this.state.recoveryInProgress = false;
+    if (wasOpen) {
+      logger.info(`${this.name}: circuit breaker CLOSED - recovery successful`);
+    }
+  }
+  /**
+   * Record a failed call
+   */
+  recordFailure(error) {
+    this.state.failureCount++;
+    this.state.lastFailure = Date.now();
+    this.state.lastError = error.message;
+    this.state.recoveryInProgress = false;
+    logger.warn(
+      `${this.name}: failure ${this.state.failureCount}/${this.config.maxFailures}: ${error.message}`
+    );
+    if (this.state.failureCount >= this.config.maxFailures) {
+      logger.error(
+        `${this.name}: circuit breaker OPEN - will retry after ${this.config.cooldownMs / 1e3}s cooldown`
+      );
+    }
+  }
+  /**
+   * Get the current state of this subsystem
+   */
+  getState() {
+    if (this.state.failureCount < this.config.maxFailures) {
+      return "CLOSED" /* CLOSED */;
+    }
+    if (this.state.lastFailure !== null) {
+      const elapsed = Date.now() - this.state.lastFailure;
+      if (elapsed >= this.config.cooldownMs) {
+        return "HALF_OPEN" /* HALF_OPEN */;
+      }
+    }
+    return "OPEN" /* OPEN */;
+  }
+  /**
+   * Get detailed status for reporting
+   */
+  getStatus() {
+    const state = this.getState();
+    let cooldownRemainingMs = null;
+    if (state === "OPEN" /* OPEN */ && this.state.lastFailure !== null) {
+      const elapsed = Date.now() - this.state.lastFailure;
+      cooldownRemainingMs = Math.max(0, this.config.cooldownMs - elapsed);
+    }
+    return {
+      state,
+      failureCount: this.state.failureCount,
+      lastFailure: this.state.lastFailure ? new Date(this.state.lastFailure) : null,
+      lastError: this.state.lastError,
+      cooldownRemainingMs
+    };
+  }
+  /**
+   * Reset the breaker (for testing or manual intervention)
+   */
+  reset() {
+    this.state = {
+      failureCount: 0,
+      lastFailure: null,
+      lastError: null,
+      recoveryInProgress: false
+    };
+    logger.info(`${this.name}: circuit breaker manually reset`);
+  }
+};
+var CircuitBreaker = class {
+  breakers = /* @__PURE__ */ new Map();
+  config;
+  constructor(config = {}) {
+    this.config = { ...DEFAULT_CONFIG2, ...config };
+  }
+  getBreaker(subsystem) {
+    let breaker = this.breakers.get(subsystem);
+    if (!breaker) {
+      breaker = new SubsystemBreaker(subsystem, this.config);
+      this.breakers.set(subsystem, breaker);
+    }
+    return breaker;
+  }
+  /**
+   * Check if a call to the subsystem should be attempted
+   */
+  shouldAttempt(subsystem) {
+    return this.getBreaker(subsystem).shouldAttempt();
+  }
+  /**
+   * Record a successful call to the subsystem
+   */
+  recordSuccess(subsystem) {
+    this.getBreaker(subsystem).recordSuccess();
+  }
+  /**
+   * Record a failed call to the subsystem
+   */
+  recordFailure(subsystem, error) {
+    this.getBreaker(subsystem).recordFailure(error);
+  }
+  /**
+   * Get the state of a subsystem
+   */
+  getState(subsystem) {
+    return this.getBreaker(subsystem).getState();
+  }
+  /**
+   * Get detailed status of a subsystem
+   */
+  getStatus(subsystem) {
+    return this.getBreaker(subsystem).getStatus();
+  }
+  /**
+   * Get status of all active subsystems
+   */
+  getAllStatus() {
+    const result = {};
+    for (const [name, breaker] of this.breakers) {
+      result[name] = breaker.getStatus();
+    }
+    return result;
+  }
+  /**
+   * Check if any subsystem is in a degraded state (OPEN or HALF_OPEN)
+   */
+  hasDegradedSubsystems() {
+    for (const breaker of this.breakers.values()) {
+      const state = breaker.getState();
+      if (state !== "CLOSED" /* CLOSED */) {
+        return true;
+      }
+    }
+    return false;
+  }
+  /**
+   * Get warnings for degraded subsystems (for health summary)
+   */
+  getWarnings() {
+    const warnings = [];
+    for (const [name, breaker] of this.breakers) {
+      const status = breaker.getStatus();
+      if (status.state === "OPEN" /* OPEN */ && status.cooldownRemainingMs !== null) {
+        const cooldownMinutes = Math.ceil(status.cooldownRemainingMs / 6e4);
+        warnings.push(`${name} disabled (cooldown ${cooldownMinutes}m)`);
+      } else if (status.state === "HALF_OPEN" /* HALF_OPEN */) {
+        warnings.push(`${name} recovering`);
+      }
+    }
+    return warnings;
+  }
+  /**
+   * Reset a specific subsystem (for testing or manual intervention)
+   */
+  reset(subsystem) {
+    this.getBreaker(subsystem).reset();
+  }
+  /**
+   * Reset all subsystems
+   */
+  resetAll() {
+    for (const breaker of this.breakers.values()) {
+      breaker.reset();
+    }
+  }
+};
+var defaultCircuitBreaker = null;
+function getCircuitBreaker() {
+  if (!defaultCircuitBreaker) {
+    defaultCircuitBreaker = new CircuitBreaker();
+  }
+  return defaultCircuitBreaker;
+}
+
+// src/storage/database/repositories/embedding-repository.ts
 var EmbeddingRepository = class {
   constructor(db) {
     this.db = db;
   }
   /**
    * Create a new embedding
+   * Protected by embeddings circuit breaker as this is part of the embedding pipeline
    */
   async create(data) {
+    const cb = getCircuitBreaker();
+    if (!cb.shouldAttempt("embeddings")) {
+      return null;
+    }
     const embeddingId = nanoid6();
     const now = (/* @__PURE__ */ new Date()).toISOString();
     const row = {
@@ -3000,13 +3298,24 @@ var EmbeddingRepository = class {
       contentHash: data.contentHash,
       computedAt: now
     };
-    await this.db.insert(nodeEmbeddings).values(row);
-    return this.rowToEmbedding({ ...row, embeddingId, computedAt: now });
+    try {
+      await this.db.insert(nodeEmbeddings).values(row);
+      cb.recordSuccess("embeddings");
+      return this.rowToEmbedding({ ...row, embeddingId, computedAt: now });
+    } catch (error) {
+      cb.recordFailure("embeddings", error instanceof Error ? error : new Error(String(error)));
+      return null;
+    }
   }
   /**
    * Create or update an embedding for a node
+   * Protected by embeddings circuit breaker as this is part of the embedding pipeline
    */
   async upsert(data) {
+    const cb = getCircuitBreaker();
+    if (!cb.shouldAttempt("embeddings")) {
+      return null;
+    }
     const existing = await this.findByNodeId(data.nodeId);
     if (existing) {
       return this.update(existing.embeddingId, data);
@@ -3029,10 +3338,21 @@ var EmbeddingRepository = class {
   }
   /**
    * Find all embeddings
+   * Protected by vectorDb circuit breaker as this powers similarity search
    */
   async findAll() {
-    const result = await this.db.select().from(nodeEmbeddings);
-    return result.map((row) => this.rowToEmbedding(row));
+    const cb = getCircuitBreaker();
+    if (!cb.shouldAttempt("vectorDb")) {
+      return [];
+    }
+    try {
+      const result = await this.db.select().from(nodeEmbeddings);
+      cb.recordSuccess("vectorDb");
+      return result.map((row) => this.rowToEmbedding(row));
+    } catch (error) {
+      cb.recordFailure("vectorDb", error instanceof Error ? error : new Error(String(error)));
+      return [];
+    }
   }
   /**
    * Find embeddings by model
@@ -3043,11 +3363,22 @@ var EmbeddingRepository = class {
   }
   /**
    * Find embeddings by node IDs
+   * Protected by vectorDb circuit breaker as this powers similarity search
    */
   async findByNodeIds(nodeIds) {
     if (nodeIds.length === 0) return [];
-    const result = await this.db.select().from(nodeEmbeddings).where(inArray4(nodeEmbeddings.nodeId, nodeIds));
-    return result.map((row) => this.rowToEmbedding(row));
+    const cb = getCircuitBreaker();
+    if (!cb.shouldAttempt("vectorDb")) {
+      return [];
+    }
+    try {
+      const result = await this.db.select().from(nodeEmbeddings).where(inArray4(nodeEmbeddings.nodeId, nodeIds));
+      cb.recordSuccess("vectorDb");
+      return result.map((row) => this.rowToEmbedding(row));
+    } catch (error) {
+      cb.recordFailure("vectorDb", error instanceof Error ? error : new Error(String(error)));
+      return [];
+    }
   }
   /**
    * Find nodes that need embedding computation
@@ -3076,8 +3407,13 @@ var EmbeddingRepository = class {
   }
   /**
    * Update an embedding
+   * Protected by embeddings circuit breaker as this is part of the embedding pipeline
    */
   async update(embeddingId, data) {
+    const cb = getCircuitBreaker();
+    if (!cb.shouldAttempt("embeddings")) {
+      return null;
+    }
     const now = (/* @__PURE__ */ new Date()).toISOString();
     const updateData = {
       computedAt: now
@@ -3086,12 +3422,18 @@ var EmbeddingRepository = class {
     if (data.model !== void 0) updateData.model = data.model;
     if (data.dimensions !== void 0) updateData.dimensions = data.dimensions;
     if (data.contentHash !== void 0) updateData.contentHash = data.contentHash;
-    await this.db.update(nodeEmbeddings).set(updateData).where(eq7(nodeEmbeddings.embeddingId, embeddingId));
-    const updated = await this.findById(embeddingId);
-    if (!updated) {
-      throw new Error(`Embedding ${embeddingId} not found after update`);
+    try {
+      await this.db.update(nodeEmbeddings).set(updateData).where(eq7(nodeEmbeddings.embeddingId, embeddingId));
+      cb.recordSuccess("embeddings");
+      const updated = await this.findById(embeddingId);
+      if (!updated) {
+        return null;
+      }
+      return updated;
+    } catch (error) {
+      cb.recordFailure("embeddings", error instanceof Error ? error : new Error(String(error)));
+      return null;
     }
-    return updated;
   }
   /**
    * Delete an embedding by ID

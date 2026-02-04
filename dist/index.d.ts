@@ -1044,12 +1044,14 @@ declare class EmbeddingRepository {
     constructor(db: DrizzleDB);
     /**
      * Create a new embedding
+     * Protected by embeddings circuit breaker as this is part of the embedding pipeline
      */
-    create(data: CreateEmbeddingInput): Promise<NodeEmbedding>;
+    create(data: CreateEmbeddingInput): Promise<NodeEmbedding | null>;
     /**
      * Create or update an embedding for a node
+     * Protected by embeddings circuit breaker as this is part of the embedding pipeline
      */
-    upsert(data: CreateEmbeddingInput): Promise<NodeEmbedding>;
+    upsert(data: CreateEmbeddingInput): Promise<NodeEmbedding | null>;
     /**
      * Find an embedding by ID
      */
@@ -1060,6 +1062,7 @@ declare class EmbeddingRepository {
     findByNodeId(nodeId: string): Promise<NodeEmbedding | null>;
     /**
      * Find all embeddings
+     * Protected by vectorDb circuit breaker as this powers similarity search
      */
     findAll(): Promise<NodeEmbedding[]>;
     /**
@@ -1068,6 +1071,7 @@ declare class EmbeddingRepository {
     findByModel(model: string): Promise<NodeEmbedding[]>;
     /**
      * Find embeddings by node IDs
+     * Protected by vectorDb circuit breaker as this powers similarity search
      */
     findByNodeIds(nodeIds: string[]): Promise<NodeEmbedding[]>;
     /**
@@ -1079,8 +1083,9 @@ declare class EmbeddingRepository {
     findDirtyNodeIds(): Promise<string[]>;
     /**
      * Update an embedding
+     * Protected by embeddings circuit breaker as this is part of the embedding pipeline
      */
-    update(embeddingId: string, data: Partial<CreateEmbeddingInput>): Promise<NodeEmbedding>;
+    update(embeddingId: string, data: Partial<CreateEmbeddingInput>): Promise<NodeEmbedding | null>;
     /**
      * Delete an embedding by ID
      */
