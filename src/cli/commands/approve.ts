@@ -93,17 +93,6 @@ async function insertWikilink(
     const line = lines[i];
     if (line && /^##?\s*links?\s*$/i.test(line)) {
       linksSectionFound = true;
-      // Find end of this section (next heading or end of file)
-      for (let j = i + 1; j < lines.length; j++) {
-        const lineJ = lines[j];
-        if (lineJ && /^##?\s/.test(lineJ)) {
-          insertionIndex = j;
-          break;
-        }
-      }
-      if (!linksSectionFound) {
-        insertionIndex = lines.length;
-      }
       insertionIndex = i + 1; // Insert right after the Links header
       break;
     }
