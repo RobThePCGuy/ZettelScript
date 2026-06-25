@@ -4,7 +4,7 @@
   "description": "Graph-first knowledge management system combining Zettelkasten-style notes, GraphRAG retrieval, and manuscript continuity tracking",
   "type": "module",
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.12.0"
   },
   "bin": {
     "zettel": "dist/cli/index.js"
