@@ -18,7 +18,8 @@
     }
   },
   "scripts": {
-    "build": "tsup",
+    "build": "tsup && npm run build:dts",
+    "build:dts": "tsc --noEmit false --emitDeclarationOnly --declaration --declarationMap --outDir dist",
     "dev": "tsup --watch",
     "test": "vitest",
     "test:run": "vitest run",
