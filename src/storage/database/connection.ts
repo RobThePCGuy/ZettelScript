@@ -132,7 +132,7 @@ export class ConnectionManager {
       // Only ignore "no such table" errors - other errors should propagate
       const message = error instanceof Error ? error.message : String(error);
       if (!message.includes('no such table')) {
-        throw new Error(`Database schema check failed: ${message}`);
+        throw new Error(`Database schema check failed: ${message}`, { cause: error });
       }
       // Table doesn't exist yet - will be created below
     }
