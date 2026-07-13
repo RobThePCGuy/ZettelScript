@@ -70,7 +70,7 @@
     "commander": "^15.0.0",
     "drizzle-orm": "^0.45.1",
     "jsonrepair": "^3.13.2",
-    "nanoid": "^5.0.9",
+    "nanoid": "^6.0.0",
     "open": "^11.0.0",
     "remark-frontmatter": "^5.0.0",
     "remark-parse": "^11.0.0",
