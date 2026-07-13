@@ -90,7 +90,7 @@
     "eslint": "^10.2.1",
     "prettier": "^3.8.1",
     "tsup": "^8.3.5",
-    "typescript": "^6.0.3",
+    "typescript": "^7.0.2",
     "vitest": "^4.0.18"
   }
 }
