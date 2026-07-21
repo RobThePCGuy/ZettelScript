@@ -11245,6 +11245,39 @@ function removeOverlaps(replacements) {
   }
   return result;
 }
+var LINKABLE_NOTE_TYPES = /* @__PURE__ */ new Set(["character", "location", "object"]);
+function buildEntityMapFromVaultNotes(vaultPath) {
+  const entities = /* @__PURE__ */ new Map();
+  const walk = (dir) => {
+    let dirEntries;
+    try {
+      dirEntries = fs11.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of dirEntries) {
+      if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
+      const fullPath = path12.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(fullPath);
+      } else if (entry.name.endsWith(".md")) {
+        try {
+          const source = fs11.readFileSync(fullPath, "utf-8");
+          const doc = parseFrontmatter(source, fullPath);
+          const type = extractNodeType(doc.frontmatter).toLowerCase();
+          if (!LINKABLE_NOTE_TYPES.has(type)) continue;
+          const title = extractTitle(doc.frontmatter, source, fullPath);
+          if (title) {
+            entities.set(title, extractAliases(doc.frontmatter));
+          }
+        } catch {
+        }
+      }
+    }
+  };
+  walk(vaultPath);
+  return entities;
+}
 function buildEntityMap(kb) {
   const entities = /* @__PURE__ */ new Map();
   for (const char of kb.characters) {
@@ -11307,11 +11340,14 @@ async function injectLinks(options) {
         return result;
       }
     } else {
-      result.errors.push({
-        file: options.vaultPath,
-        error: "No entity list provided and no KB file found"
-      });
-      return result;
+      entities = buildEntityMapFromVaultNotes(options.vaultPath);
+      if (entities.size === 0) {
+        result.errors.push({
+          file: options.vaultPath,
+          error: "No entity list provided, no KB file found, and no entity notes (frontmatter type: character/location/object) in the vault. Run `zettel extract` first, or pass -e <names...>."
+        });
+        return result;
+      }
     }
   }
   if (entities.size === 0) {
