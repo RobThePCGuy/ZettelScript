@@ -454,7 +454,7 @@ Requires embeddings configuration for semantic search.
 
 ### `extract`
 
-**Let AI find the entities you missed.** Extract characters, locations, objects, and events from prose using a local LLM.
+**Let AI find the entities you missed.** Extract characters, locations, objects, and events from prose using a local LLM, or the Gemini API when your machine can't carry the model.
 
 ```bash
 zettel extract [options]
@@ -464,7 +464,8 @@ zettel extract [options]
 |--------|-------------|
 | `-f, --file <path>` | Extract from specific file |
 | `--all` | Extract from all markdown files |
-| `-m, --model <model>` | Ollama model to use (default: qwen2.5:7b) |
+| `-m, --model <model>` | Model to use (default: qwen2.5:7b local, gemini-3.1-flash-lite cloud) |
+| `--provider <provider>` | `ollama` (local, default) or `gemini` (cloud, BYOK) |
 | `--dry-run` | Show what would be extracted without creating files |
 | `-o, --output <dir>` | Output directory for entity files (default: entities/) |
 | `-v, --verbose` | Show detailed output |
@@ -491,6 +492,15 @@ zettel index
 - `qwen2.5:7b` (default) — Good balance of context and speed
 - `llama3.1:8b` — Strong general purpose
 - `qwen2.5:14b` — Better accuracy for large documents
+
+**No GPU? Use the cloud (bring your own key).** Local 7B models are context-bound: point one at manuscript-scale prose and extraction fails chunk after chunk. Gemini Flash Lite carries a 1M-token context for pennies, so whole chapters fit in one pass:
+
+```bash
+export GEMINI_API_KEY=your-key   # free at aistudio.google.com/api-keys
+zettel extract --provider gemini --all
+```
+
+Your prose goes to Google only when you choose `--provider gemini`; the default stays local. Cloud extraction uses larger chunks (48k characters vs 6k), which also means fewer calls and better cross-scene entity coherence.
 
 ---
 

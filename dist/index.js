@@ -1508,7 +1508,7 @@ var ConnectionManager = class _ConnectionManager {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (!message.includes("no such table")) {
-        throw new Error(`Database schema check failed: ${message}`);
+        throw new Error(`Database schema check failed: ${message}`, { cause: error });
       }
     }
     if (currentVersion >= SCHEMA_VERSION) {
