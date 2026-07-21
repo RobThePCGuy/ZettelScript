@@ -8,6 +8,12 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { InjectLinksOptions, InjectLinksResult, KBData } from './types.js';
 import { parseKBJson } from './utils.js';
+import {
+  parseFrontmatter,
+  extractTitle,
+  extractNodeType,
+  extractAliases,
+} from '../parser/frontmatter.js';
 
 // ============================================================================
 // Simple Glob Implementation
@@ -327,6 +333,53 @@ function removeOverlaps(replacements: Replacement[]): Replacement[] {
 }
 
 /**
+ * Fallback: build the entity map from the vault's own entity notes.
+ *
+ * `zettel extract` writes markdown entity notes (frontmatter title/type into
+ * entities/), not the legacy .narrative-project kb.json this module predates.
+ * Reading the notes directly makes extract -> inject-links work as one chain,
+ * and also picks up hand-authored entity notes. Events are excluded on
+ * purpose, matching the KB path (event names read as prose, not link targets).
+ */
+const LINKABLE_NOTE_TYPES = new Set(['character', 'location', 'object']);
+
+function buildEntityMapFromVaultNotes(vaultPath: string): Map<string, string[]> {
+  const entities = new Map<string, string[]>();
+
+  const walk = (dir: string): void => {
+    let dirEntries: fs.Dirent[];
+    try {
+      dirEntries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of dirEntries) {
+      if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(fullPath);
+      } else if (entry.name.endsWith('.md')) {
+        try {
+          const source = fs.readFileSync(fullPath, 'utf-8');
+          const doc = parseFrontmatter(source, fullPath);
+          const type = extractNodeType(doc.frontmatter).toLowerCase();
+          if (!LINKABLE_NOTE_TYPES.has(type)) continue;
+          const title = extractTitle(doc.frontmatter, source, fullPath);
+          if (title) {
+            entities.set(title, extractAliases(doc.frontmatter));
+          }
+        } catch {
+          // Unparseable note: skip rather than fail the whole injection
+        }
+      }
+    }
+  };
+
+  walk(vaultPath);
+  return entities;
+}
+
+/**
  * Build entity map from KB data
  */
 function buildEntityMap(kb: KBData): Map<string, string[]> {
@@ -411,11 +464,18 @@ export async function injectLinks(options: InjectLinksOptions): Promise<InjectLi
         return result;
       }
     } else {
-      result.errors.push({
-        file: options.vaultPath,
-        error: 'No entity list provided and no KB file found',
-      });
-      return result;
+      // No kb.json: read the vault's own entity notes (what `zettel extract` writes)
+      entities = buildEntityMapFromVaultNotes(options.vaultPath);
+      if (entities.size === 0) {
+        result.errors.push({
+          file: options.vaultPath,
+          error:
+            'No entity list provided, no KB file found, and no entity notes ' +
+            '(frontmatter type: character/location/object) in the vault. ' +
+            'Run `zettel extract` first, or pass -e <names...>.',
+        });
+        return result;
+      }
     }
   }
 

@@ -422,7 +422,7 @@ export interface ZettelScriptConfig {
     diffContextLines: number;
   };
   llm: {
-    provider: 'openai' | 'ollama' | 'none';
+    provider: 'openai' | 'ollama' | 'gemini' | 'none';
     model: string;
     apiKey?: string;
     baseUrl?: string;

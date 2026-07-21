@@ -6,6 +6,8 @@ import { initContext, Spinner, printTable } from '../utils.js';
 import { EntityExtractor, type ExtractedEntity } from '../../extraction/index.js';
 import {
   OllamaLLMProvider,
+  GeminiLLMProvider,
+  type LLMProvider,
   getOllamaModelInfo,
   checkOllamaRunning,
   checkOllamaModelExists,
@@ -46,7 +48,12 @@ export const extractCommand = new Command('extract')
   .description('Extract entities (characters, locations, etc.) from prose')
   .option('-f, --file <path>', 'Extract from specific file')
   .option('--all', 'Extract from all markdown files')
-  .option('-m, --model <model>', 'Ollama model to use', 'qwen2.5:7b')
+  .option('-m, --model <model>', 'Model to use (Ollama model, or Gemini model with --provider gemini)', 'qwen2.5:7b')
+  .option(
+    '--provider <provider>',
+    "LLM provider: 'ollama' (local, default) or 'gemini' (cloud, needs GEMINI_API_KEY)",
+    'ollama'
+  )
   .option('--dry-run', 'Show what would be extracted without creating files')
   .option('-o, --output <dir>', 'Output directory for entity files')
   .option('-v, --verbose', 'Show detailed output (per-chunk progress)')
@@ -116,8 +123,24 @@ export const extractCommand = new Command('extract')
         console.log(`Processing ${filesToProcess.length} file(s)...\n`);
       }
 
-      // Check Ollama is running
-      const ollamaRunning = await checkOllamaRunning();
+      if (options.provider !== 'ollama' && options.provider !== 'gemini') {
+        console.error(`Unknown provider '${options.provider}'. Use 'ollama' or 'gemini'.`);
+        ctx.connectionManager.close();
+        process.exit(1);
+      }
+
+      // Gemini is BYOK: fail fast with a pointer instead of a mid-run throw
+      if (options.provider === 'gemini' && !process.env['GEMINI_API_KEY']) {
+        console.error('Error: GEMINI_API_KEY is not set.');
+        console.error('\nGet a free key at https://aistudio.google.com/api-keys, then:');
+        console.error('  Windows:      set GEMINI_API_KEY=your-key');
+        console.error('  macOS/Linux:  export GEMINI_API_KEY=your-key');
+        ctx.connectionManager.close();
+        process.exit(1);
+      }
+
+      // Check Ollama is running (Gemini needs no local runtime)
+      const ollamaRunning = options.provider !== 'ollama' || (await checkOllamaRunning());
       if (!ollamaRunning) {
         console.error('Error: Ollama is not running.');
         console.error('\nTo start Ollama:');
@@ -127,8 +150,9 @@ export const extractCommand = new Command('extract')
         process.exit(1);
       }
 
-      // Check if model exists
-      const modelExists = await checkOllamaModelExists(options.model);
+      // Check if model exists (Ollama only; Gemini models live server-side)
+      const modelExists =
+        options.provider !== 'ollama' || (await checkOllamaModelExists(options.model));
       if (!modelExists) {
         console.log(`Model '${options.model}' is not installed.`);
 
@@ -219,14 +243,23 @@ export const extractCommand = new Command('extract')
         }
       }
 
-      // Create LLM provider
-      const llmProvider = new OllamaLLMProvider({
-        provider: 'ollama',
-        model: options.model,
-        baseUrl: 'http://localhost:11434',
-      });
+      // Create LLM provider. When --provider gemini rides the untouched Ollama
+      // model default, swap in the Gemini default instead of sending qwen upstream.
+      const geminiModel = options.model === 'qwen2.5:7b' ? 'gemini-3.1-flash-lite' : options.model;
+      const llmProvider: LLMProvider =
+        options.provider === 'gemini'
+          ? new GeminiLLMProvider({ provider: 'gemini', model: geminiModel })
+          : new OllamaLLMProvider({
+              provider: 'ollama',
+              model: options.model,
+              baseUrl: 'http://localhost:11434',
+            });
 
-      if (options.verbose) {
+      if (options.verbose && options.provider === 'gemini') {
+        console.log(`Model: ${geminiModel} (Gemini API)`);
+      }
+
+      if (options.verbose && options.provider === 'ollama') {
         const modelInfo = await getOllamaModelInfo(options.model);
         if (modelInfo) {
           console.log(`Model: ${options.model}`);
@@ -247,7 +280,9 @@ export const extractCommand = new Command('extract')
 
       const extractor = new EntityExtractor({
         llmProvider,
-        chunkSize: 6000, // Smaller chunks for 3b model
+        // Local models are context-bound; Flash Lite carries 1M tokens, so whole
+        // chapters ride in one chunk (fewer calls, better cross-scene coherence).
+        chunkSize: options.provider === 'gemini' ? 48000 : 6000,
         outputDir,
         verbose: options.verbose,
         quiet: options.quiet,

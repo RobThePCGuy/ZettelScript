@@ -74,6 +74,80 @@ export class OpenAILLMProvider implements LLMProvider {
   }
 }
 
+/**
+ * Google Gemini LLM provider (BYOK: reads GEMINI_API_KEY when config carries no key).
+ *
+ * Exists because local extraction is context-bound: a 7B Ollama model chokes on
+ * manuscript-scale prose, and most machines cannot run anything bigger. Flash Lite
+ * carries a 1M-token context at negligible cost, so whole chapters fit in one chunk.
+ * Cloud is opt-in per command; the default everywhere stays local.
+ */
+export class GeminiLLMProvider implements LLMProvider {
+  name = 'gemini';
+  private apiKey: string;
+  private baseUrl: string;
+  private model: string;
+  private defaultMaxTokens: number;
+  private defaultTemperature: number;
+
+  constructor(config: ZettelScriptConfig['llm']) {
+    const apiKey = config.apiKey ?? process.env['GEMINI_API_KEY'];
+    if (!apiKey) {
+      throw new Error(
+        'Gemini API key is required. Set GEMINI_API_KEY or add llm.apiKey to your config.'
+      );
+    }
+    this.apiKey = apiKey;
+    this.baseUrl = config.baseUrl ?? 'https://generativelanguage.googleapis.com/v1beta';
+    this.model = config.model;
+    this.defaultMaxTokens = config.maxTokens ?? 8192;
+    this.defaultTemperature = config.temperature ?? 0.7;
+  }
+
+  get modelName(): string {
+    return this.model;
+  }
+
+  async complete(prompt: string, options?: LLMOptions): Promise<string> {
+    const maxTokens = options?.maxTokens ?? this.defaultMaxTokens;
+    const temperature = options?.temperature ?? this.defaultTemperature;
+
+    const response = await fetch(
+      `${this.baseUrl}/models/${encodeURIComponent(this.model)}:generateContent`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': this.apiKey,
+        },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature,
+            maxOutputTokens: maxTokens,
+          },
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Gemini API error: ${response.status} - ${error}`);
+    }
+
+    const data = (await response.json()) as {
+      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+    };
+
+    return (
+      data.candidates?.[0]?.content?.parts
+        ?.map((p) => p.text ?? '')
+        .join('')
+        .trim() ?? ''
+    );
+  }
+}
+
 export interface OllamaModelInfo {
   contextLength: number;
   parameterSize?: string;
@@ -332,6 +406,12 @@ export function createLLMProvider(config: ZettelScriptConfig['llm']): LLMProvide
 
     case 'ollama':
       return new OllamaLLMProvider(config);
+
+    case 'gemini':
+      if (!config.apiKey && !process.env['GEMINI_API_KEY']) {
+        return null;
+      }
+      return new GeminiLLMProvider(config);
 
     default:
       return null;

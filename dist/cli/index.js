@@ -413,7 +413,7 @@ var ConnectionManager = class _ConnectionManager {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (!message.includes("no such table")) {
-        throw new Error(`Database schema check failed: ${message}`);
+        throw new Error(`Database schema check failed: ${message}`, { cause: error });
       }
     }
     if (currentVersion >= SCHEMA_VERSION) {
@@ -7610,6 +7610,57 @@ var OpenAILLMProvider = class {
     return data.choices?.[0]?.message?.content ?? "";
   }
 };
+var GeminiLLMProvider = class {
+  name = "gemini";
+  apiKey;
+  baseUrl;
+  model;
+  defaultMaxTokens;
+  defaultTemperature;
+  constructor(config) {
+    const apiKey = config.apiKey ?? process.env["GEMINI_API_KEY"];
+    if (!apiKey) {
+      throw new Error(
+        "Gemini API key is required. Set GEMINI_API_KEY or add llm.apiKey to your config."
+      );
+    }
+    this.apiKey = apiKey;
+    this.baseUrl = config.baseUrl ?? "https://generativelanguage.googleapis.com/v1beta";
+    this.model = config.model;
+    this.defaultMaxTokens = config.maxTokens ?? 8192;
+    this.defaultTemperature = config.temperature ?? 0.7;
+  }
+  get modelName() {
+    return this.model;
+  }
+  async complete(prompt, options) {
+    const maxTokens = options?.maxTokens ?? this.defaultMaxTokens;
+    const temperature = options?.temperature ?? this.defaultTemperature;
+    const response = await fetch(
+      `${this.baseUrl}/models/${encodeURIComponent(this.model)}:generateContent`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": this.apiKey
+        },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature,
+            maxOutputTokens: maxTokens
+          }
+        })
+      }
+    );
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Gemini API error: ${response.status} - ${error}`);
+    }
+    const data = await response.json();
+    return data.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("").trim() ?? "";
+  }
+};
 async function checkOllamaRunning(baseUrl = "http://localhost:11434") {
   try {
     const response = await fetch(`${baseUrl}/api/tags`, { method: "GET" });
@@ -7784,6 +7835,11 @@ function createLLMProvider(config) {
       return new OpenAILLMProvider(config);
     case "ollama":
       return new OllamaLLMProvider(config);
+    case "gemini":
+      if (!config.apiKey && !process.env["GEMINI_API_KEY"]) {
+        return null;
+      }
+      return new GeminiLLMProvider(config);
     default:
       return null;
   }
@@ -8502,7 +8558,11 @@ function formatBytes(bytes) {
   if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
-var extractCommand = new Command9("extract").description("Extract entities (characters, locations, etc.) from prose").option("-f, --file <path>", "Extract from specific file").option("--all", "Extract from all markdown files").option("-m, --model <model>", "Ollama model to use", "qwen2.5:7b").option("--dry-run", "Show what would be extracted without creating files").option("-o, --output <dir>", "Output directory for entity files").option("-v, --verbose", "Show detailed output (per-chunk progress)").option("-q, --quiet", "Suppress output (exit code still reflects success)").action(async (options) => {
+var extractCommand = new Command9("extract").description("Extract entities (characters, locations, etc.) from prose").option("-f, --file <path>", "Extract from specific file").option("--all", "Extract from all markdown files").option("-m, --model <model>", "Model to use (Ollama model, or Gemini model with --provider gemini)", "qwen2.5:7b").option(
+  "--provider <provider>",
+  "LLM provider: 'ollama' (local, default) or 'gemini' (cloud, needs GEMINI_API_KEY)",
+  "ollama"
+).option("--dry-run", "Show what would be extracted without creating files").option("-o, --output <dir>", "Output directory for entity files").option("-v, --verbose", "Show detailed output (per-chunk progress)").option("-q, --quiet", "Suppress output (exit code still reflects success)").action(async (options) => {
   try {
     const ctx = await initContext();
     let filesToProcess = [];
@@ -8551,7 +8611,20 @@ var extractCommand = new Command9("extract").description("Extract entities (char
       console.log(`Processing ${filesToProcess.length} file(s)...
 `);
     }
-    const ollamaRunning = await checkOllamaRunning();
+    if (options.provider !== "ollama" && options.provider !== "gemini") {
+      console.error(`Unknown provider '${options.provider}'. Use 'ollama' or 'gemini'.`);
+      ctx.connectionManager.close();
+      process.exit(1);
+    }
+    if (options.provider === "gemini" && !process.env["GEMINI_API_KEY"]) {
+      console.error("Error: GEMINI_API_KEY is not set.");
+      console.error("\nGet a free key at https://aistudio.google.com/api-keys, then:");
+      console.error("  Windows:      set GEMINI_API_KEY=your-key");
+      console.error("  macOS/Linux:  export GEMINI_API_KEY=your-key");
+      ctx.connectionManager.close();
+      process.exit(1);
+    }
+    const ollamaRunning = options.provider !== "ollama" || await checkOllamaRunning();
     if (!ollamaRunning) {
       console.error("Error: Ollama is not running.");
       console.error("\nTo start Ollama:");
@@ -8560,7 +8633,7 @@ var extractCommand = new Command9("extract").description("Extract entities (char
       ctx.connectionManager.close();
       process.exit(1);
     }
-    const modelExists = await checkOllamaModelExists(options.model);
+    const modelExists = options.provider !== "ollama" || await checkOllamaModelExists(options.model);
     if (!modelExists) {
       console.log(`Model '${options.model}' is not installed.`);
       const availableModels = await listOllamaModels();
@@ -8642,12 +8715,16 @@ Failed to download model: ${err instanceof Error ? err.message : err}`
         return;
       }
     }
-    const llmProvider = new OllamaLLMProvider({
+    const geminiModel = options.model === "qwen2.5:7b" ? "gemini-3.1-flash-lite" : options.model;
+    const llmProvider = options.provider === "gemini" ? new GeminiLLMProvider({ provider: "gemini", model: geminiModel }) : new OllamaLLMProvider({
       provider: "ollama",
       model: options.model,
       baseUrl: "http://localhost:11434"
     });
-    if (options.verbose) {
+    if (options.verbose && options.provider === "gemini") {
+      console.log(`Model: ${geminiModel} (Gemini API)`);
+    }
+    if (options.verbose && options.provider === "ollama") {
       const modelInfo = await getOllamaModelInfo(options.model);
       if (modelInfo) {
         console.log(`Model: ${options.model}`);
@@ -8661,8 +8738,9 @@ Failed to download model: ${err instanceof Error ? err.message : err}`
     const outputDir = options.output ? path9.isAbsolute(options.output) ? options.output : path9.join(ctx.vaultPath, options.output) : ctx.vaultPath;
     const extractor = new EntityExtractor({
       llmProvider,
-      chunkSize: 6e3,
-      // Smaller chunks for 3b model
+      // Local models are context-bound; Flash Lite carries 1M tokens, so whole
+      // chapters ride in one chunk (fewer calls, better cross-scene coherence).
+      chunkSize: options.provider === "gemini" ? 48e3 : 6e3,
       outputDir,
       verbose: options.verbose,
       quiet: options.quiet
@@ -11167,6 +11245,39 @@ function removeOverlaps(replacements) {
   }
   return result;
 }
+var LINKABLE_NOTE_TYPES = /* @__PURE__ */ new Set(["character", "location", "object"]);
+function buildEntityMapFromVaultNotes(vaultPath) {
+  const entities = /* @__PURE__ */ new Map();
+  const walk = (dir) => {
+    let dirEntries;
+    try {
+      dirEntries = fs11.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of dirEntries) {
+      if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
+      const fullPath = path12.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(fullPath);
+      } else if (entry.name.endsWith(".md")) {
+        try {
+          const source = fs11.readFileSync(fullPath, "utf-8");
+          const doc = parseFrontmatter(source, fullPath);
+          const type = extractNodeType(doc.frontmatter).toLowerCase();
+          if (!LINKABLE_NOTE_TYPES.has(type)) continue;
+          const title = extractTitle(doc.frontmatter, source, fullPath);
+          if (title) {
+            entities.set(title, extractAliases(doc.frontmatter));
+          }
+        } catch {
+        }
+      }
+    }
+  };
+  walk(vaultPath);
+  return entities;
+}
 function buildEntityMap(kb) {
   const entities = /* @__PURE__ */ new Map();
   for (const char of kb.characters) {
@@ -11229,11 +11340,14 @@ async function injectLinks(options) {
         return result;
       }
     } else {
-      result.errors.push({
-        file: options.vaultPath,
-        error: "No entity list provided and no KB file found"
-      });
-      return result;
+      entities = buildEntityMapFromVaultNotes(options.vaultPath);
+      if (entities.size === 0) {
+        result.errors.push({
+          file: options.vaultPath,
+          error: "No entity list provided, no KB file found, and no entity notes (frontmatter type: character/location/object) in the vault. Run `zettel extract` first, or pass -e <names...>."
+        });
+        return result;
+      }
     }
   }
   if (entities.size === 0) {
@@ -19163,16 +19277,6 @@ async function insertWikilink(filePath, targetPath, targetTitle, vaultPath) {
     const line = lines[i];
     if (line && /^##?\s*links?\s*$/i.test(line)) {
       linksSectionFound = true;
-      for (let j = i + 1; j < lines.length; j++) {
-        const lineJ = lines[j];
-        if (lineJ && /^##?\s/.test(lineJ)) {
-          insertionIndex = j;
-          break;
-        }
-      }
-      if (!linksSectionFound) {
-        insertionIndex = lines.length;
-      }
       insertionIndex = i + 1;
       break;
     }
