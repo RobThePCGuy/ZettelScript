@@ -177,4 +177,31 @@ describe('previewLinkInjection', () => {
     expect(changes).toBeDefined();
     expect(changes!.length).toBe(3); // Alpha, Beta, Alpha
   });
+
+  it('should fall back to the vault entity notes when no KB exists', async () => {
+    // What `zettel extract` actually writes: markdown notes in entities/,
+    // no kb.json anywhere. Preview must see them the same way injectLinks does.
+    const entitiesDir = path.join(OUTPUT_DIR, 'entities');
+    await fs.promises.mkdir(entitiesDir, { recursive: true });
+    await fs.promises.writeFile(
+      path.join(entitiesDir, 'Alpha Vance.md'),
+      `---
+title: Alpha Vance
+type: character
+aliases:
+  - Vance
+---
+
+Body text that mentions no one.`
+    );
+
+    const chapter = path.join(OUTPUT_DIR, 'chapter.md');
+    await fs.promises.writeFile(chapter, 'Alpha Vance waited. Vance did not move.');
+
+    const previews = await previewLinkInjection({ vaultPath: OUTPUT_DIR });
+
+    const changes = previews.get(chapter);
+    expect(changes).toBeDefined();
+    expect(changes!.map((c) => c.linked)).toEqual(['[[Alpha Vance]]', '[[Alpha Vance|Vance]]']);
+  });
 });

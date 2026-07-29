@@ -11193,7 +11193,7 @@ function applyReplacements(content, replacements) {
   }
   return result;
 }
-function injectLinksInFile(content, entities) {
+function computeReplacements(content, entities) {
   const protectedRegions = findProtectedRegions(content);
   const allReplacements = [];
   const linkedPositions = /* @__PURE__ */ new Set();
@@ -11223,11 +11223,13 @@ function injectLinksInFile(content, entities) {
       }
     }
   }
-  const nonOverlapping = removeOverlaps(allReplacements);
-  const newContent = applyReplacements(content, nonOverlapping);
+  return removeOverlaps(allReplacements);
+}
+function injectLinksInFile(content, entities) {
+  const replacements = computeReplacements(content, entities);
   return {
-    content: newContent,
-    linksInjected: nonOverlapping.length
+    content: applyReplacements(content, replacements),
+    linksInjected: replacements.length
   };
 }
 function removeOverlaps(replacements) {
@@ -11278,6 +11280,45 @@ function buildEntityMapFromVaultNotes(vaultPath) {
   walk(vaultPath);
   return entities;
 }
+function findKBPath(vaultPath) {
+  const kbPaths = [
+    path12.join(vaultPath, ".narrative-project", "kb", "kb.json"),
+    path12.join(vaultPath, "kb", "kb.json"),
+    path12.join(vaultPath, "kb.json")
+  ];
+  for (const p of kbPaths) {
+    if (fs11.existsSync(p)) {
+      return p;
+    }
+  }
+  return null;
+}
+function resolveEntities(options) {
+  if (options.entities) {
+    const entities2 = /* @__PURE__ */ new Map();
+    for (const entity of options.entities) {
+      entities2.set(entity, []);
+    }
+    return { ok: true, entities: entities2 };
+  }
+  const kbPath = findKBPath(options.vaultPath);
+  if (kbPath) {
+    try {
+      return { ok: true, entities: buildEntityMap(parseKBJson(kbPath)) };
+    } catch (error) {
+      return { ok: false, file: kbPath, error: `Failed to load KB: ${error}` };
+    }
+  }
+  const entities = buildEntityMapFromVaultNotes(options.vaultPath);
+  if (entities.size === 0) {
+    return {
+      ok: false,
+      file: options.vaultPath,
+      error: "No entity list provided, no KB file found, and no entity notes (frontmatter type: character/location/object) in the vault. Run `zettel extract` first, or pass -e <names...>."
+    };
+  }
+  return { ok: true, entities };
+}
 function buildEntityMap(kb) {
   const entities = /* @__PURE__ */ new Map();
   for (const char of kb.characters) {
@@ -11309,47 +11350,12 @@ async function injectLinks(options) {
     skipped: [],
     errors: []
   };
-  let entities;
-  if (options.entities) {
-    entities = /* @__PURE__ */ new Map();
-    for (const entity of options.entities) {
-      entities.set(entity, []);
-    }
-  } else {
-    const kbPaths = [
-      path12.join(options.vaultPath, ".narrative-project", "kb", "kb.json"),
-      path12.join(options.vaultPath, "kb", "kb.json"),
-      path12.join(options.vaultPath, "kb.json")
-    ];
-    let kbPath = null;
-    for (const p of kbPaths) {
-      if (fs11.existsSync(p)) {
-        kbPath = p;
-        break;
-      }
-    }
-    if (kbPath) {
-      try {
-        const kb = parseKBJson(kbPath);
-        entities = buildEntityMap(kb);
-      } catch (error) {
-        result.errors.push({
-          file: kbPath,
-          error: `Failed to load KB: ${error}`
-        });
-        return result;
-      }
-    } else {
-      entities = buildEntityMapFromVaultNotes(options.vaultPath);
-      if (entities.size === 0) {
-        result.errors.push({
-          file: options.vaultPath,
-          error: "No entity list provided, no KB file found, and no entity notes (frontmatter type: character/location/object) in the vault. Run `zettel extract` first, or pass -e <names...>."
-        });
-        return result;
-      }
-    }
+  const resolved = resolveEntities(options);
+  if (!resolved.ok) {
+    result.errors.push({ file: resolved.file, error: resolved.error });
+    return result;
   }
+  const entities = resolved.entities;
   if (entities.size === 0) {
     return result;
   }
@@ -11388,59 +11394,24 @@ async function injectLinks(options) {
 }
 async function previewLinkInjection(options) {
   const previews = /* @__PURE__ */ new Map();
-  let entities;
-  if (options.entities) {
-    entities = /* @__PURE__ */ new Map();
-    for (const entity of options.entities) {
-      entities.set(entity, []);
-    }
-  } else {
-    const kbPaths = [
-      path12.join(options.vaultPath, ".narrative-project", "kb", "kb.json"),
-      path12.join(options.vaultPath, "kb", "kb.json"),
-      path12.join(options.vaultPath, "kb.json")
-    ];
-    let kbPath = null;
-    for (const p of kbPaths) {
-      if (fs11.existsSync(p)) {
-        kbPath = p;
-        break;
-      }
-    }
-    if (kbPath) {
-      const kb = parseKBJson(kbPath);
-      entities = buildEntityMap(kb);
-    } else {
-      return previews;
-    }
+  const resolved = resolveEntities(options);
+  if (!resolved.ok) {
+    throw new Error(resolved.error);
   }
+  const entities = resolved.entities;
   const pattern = options.pattern || "**/*.md";
   const files = await glob(options.vaultPath, pattern, {
     ignore: ["**/node_modules/**", "**/.git/**", "**/.zettelscript/**"]
   });
   for (const file of files) {
     const content = fs11.readFileSync(file, "utf-8");
-    const protectedRegions = findProtectedRegions(content);
-    const filePreview = [];
-    for (const [canonical, aliases2] of entities) {
-      const allNames = [canonical, ...aliases2];
-      for (const name of allNames) {
-        const matches = findEntityMatches(content, name, protectedRegions);
-        for (const match of matches) {
-          const linked = name.toLowerCase() === canonical.toLowerCase() ? `[[${canonical}]]` : `[[${canonical}|${match.original}]]`;
-          filePreview.push({
-            original: match.original,
-            linked,
-            position: match.start
-          });
-        }
-      }
-    }
+    const filePreview = computeReplacements(content, entities).map((r) => ({
+      original: r.original,
+      linked: r.replacement,
+      position: r.start
+    }));
     if (filePreview.length > 0) {
-      previews.set(
-        file,
-        filePreview.sort((a, b) => a.position - b.position)
-      );
+      previews.set(file, filePreview);
     }
   }
   return previews;
@@ -11729,7 +11700,7 @@ Errors (${result.errors.length}):`);
       }
     }
   } catch (error) {
-    console.error(`Error: ${error}`);
+    console.error(`Error: ${error instanceof Error ? error.message : error}`);
     process.exit(1);
   }
 });
