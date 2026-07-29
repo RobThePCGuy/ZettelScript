@@ -251,12 +251,18 @@ function applyReplacements(content: string, replacements: Replacement[]): string
 }
 
 /**
- * Inject wikilinks into a single file
+ * Work out every link that would be made in a file, overlaps already resolved.
+ *
+ * Both injection and preview run through here. Preview used to walk entities
+ * with its own nested loop and no overlap handling, so it counted an alias
+ * sitting inside a canonical name ("Vance" within "Alpha Vance") as a link
+ * injection would never make — a preview that disagrees with the apply it is
+ * previewing is worse than no preview.
  */
-function injectLinksInFile(
+function computeReplacements(
   content: string,
   entities: Map<string, string[]> // canonical name -> aliases
-): { content: string; linksInjected: number } {
+): Replacement[] {
   const protectedRegions = findProtectedRegions(content);
   const allReplacements: Replacement[] = [];
   const linkedPositions = new Set<string>(); // Track positions we've already linked
@@ -297,12 +303,21 @@ function injectLinksInFile(
   }
 
   // Remove overlapping replacements (keep first occurrence)
-  const nonOverlapping = removeOverlaps(allReplacements);
+  return removeOverlaps(allReplacements);
+}
 
-  const newContent = applyReplacements(content, nonOverlapping);
+/**
+ * Inject wikilinks into a single file
+ */
+function injectLinksInFile(
+  content: string,
+  entities: Map<string, string[]> // canonical name -> aliases
+): { content: string; linksInjected: number } {
+  const replacements = computeReplacements(content, entities);
+
   return {
-    content: newContent,
-    linksInjected: nonOverlapping.length,
+    content: applyReplacements(content, replacements),
+    linksInjected: replacements.length,
   };
 }
 
@@ -379,6 +394,65 @@ function buildEntityMapFromVaultNotes(vaultPath: string): Map<string, string[]> 
   return entities;
 }
 
+type EntityResolution =
+  { ok: true; entities: Map<string, string[]> } | { ok: false; file: string; error: string };
+
+function findKBPath(vaultPath: string): string | null {
+  const kbPaths = [
+    path.join(vaultPath, '.narrative-project', 'kb', 'kb.json'),
+    path.join(vaultPath, 'kb', 'kb.json'),
+    path.join(vaultPath, 'kb.json'),
+  ];
+
+  for (const p of kbPaths) {
+    if (fs.existsSync(p)) {
+      return p;
+    }
+  }
+  return null;
+}
+
+/**
+ * Resolve where entities come from: an explicit list, then a legacy kb.json,
+ * then the vault's own entity notes.
+ *
+ * Single source of truth for injectLinks and previewLinkInjection. The two used
+ * to carry separate copies of this lookup, and the vault-notes fallback landed
+ * in only one of them — so `--preview` reported "no links" on the exact vaults
+ * injection would have linked. Both call this now.
+ */
+function resolveEntities(options: InjectLinksOptions): EntityResolution {
+  if (options.entities) {
+    const entities = new Map<string, string[]>();
+    for (const entity of options.entities) {
+      entities.set(entity, []);
+    }
+    return { ok: true, entities };
+  }
+
+  const kbPath = findKBPath(options.vaultPath);
+  if (kbPath) {
+    try {
+      return { ok: true, entities: buildEntityMap(parseKBJson(kbPath)) };
+    } catch (error) {
+      return { ok: false, file: kbPath, error: `Failed to load KB: ${error}` };
+    }
+  }
+
+  const entities = buildEntityMapFromVaultNotes(options.vaultPath);
+  if (entities.size === 0) {
+    return {
+      ok: false,
+      file: options.vaultPath,
+      error:
+        'No entity list provided, no KB file found, and no entity notes ' +
+        '(frontmatter type: character/location/object) in the vault. ' +
+        'Run `zettel extract` first, or pass -e <names...>.',
+    };
+  }
+  return { ok: true, entities };
+}
+
 /**
  * Build entity map from KB data
  */
@@ -428,57 +502,13 @@ export async function injectLinks(options: InjectLinksOptions): Promise<InjectLi
   };
 
   // Build entity map
-  let entities: Map<string, string[]>;
-
-  if (options.entities) {
-    // Use provided entity list
-    entities = new Map();
-    for (const entity of options.entities) {
-      entities.set(entity, []);
-    }
-  } else {
-    // Try to find KB file
-    const kbPaths = [
-      path.join(options.vaultPath, '.narrative-project', 'kb', 'kb.json'),
-      path.join(options.vaultPath, 'kb', 'kb.json'),
-      path.join(options.vaultPath, 'kb.json'),
-    ];
-
-    let kbPath: string | null = null;
-    for (const p of kbPaths) {
-      if (fs.existsSync(p)) {
-        kbPath = p;
-        break;
-      }
-    }
-
-    if (kbPath) {
-      try {
-        const kb = parseKBJson(kbPath);
-        entities = buildEntityMap(kb);
-      } catch (error) {
-        result.errors.push({
-          file: kbPath,
-          error: `Failed to load KB: ${error}`,
-        });
-        return result;
-      }
-    } else {
-      // No kb.json: read the vault's own entity notes (what `zettel extract` writes)
-      entities = buildEntityMapFromVaultNotes(options.vaultPath);
-      if (entities.size === 0) {
-        result.errors.push({
-          file: options.vaultPath,
-          error:
-            'No entity list provided, no KB file found, and no entity notes ' +
-            '(frontmatter type: character/location/object) in the vault. ' +
-            'Run `zettel extract` first, or pass -e <names...>.',
-        });
-        return result;
-      }
-    }
+  const resolved = resolveEntities(options);
+  if (!resolved.ok) {
+    result.errors.push({ file: resolved.file, error: resolved.error });
+    return result;
   }
 
+  const entities = resolved.entities;
   if (entities.size === 0) {
     return result;
   }
@@ -530,36 +560,15 @@ export async function previewLinkInjection(
 ): Promise<Map<string, Array<{ original: string; linked: string; position: number }>>> {
   const previews = new Map<string, Array<{ original: string; linked: string; position: number }>>();
 
-  // Build entity map (same logic as injectLinks)
-  let entities: Map<string, string[]>;
-
-  if (options.entities) {
-    entities = new Map();
-    for (const entity of options.entities) {
-      entities.set(entity, []);
-    }
-  } else {
-    const kbPaths = [
-      path.join(options.vaultPath, '.narrative-project', 'kb', 'kb.json'),
-      path.join(options.vaultPath, 'kb', 'kb.json'),
-      path.join(options.vaultPath, 'kb.json'),
-    ];
-
-    let kbPath: string | null = null;
-    for (const p of kbPaths) {
-      if (fs.existsSync(p)) {
-        kbPath = p;
-        break;
-      }
-    }
-
-    if (kbPath) {
-      const kb = parseKBJson(kbPath);
-      entities = buildEntityMap(kb);
-    } else {
-      return previews;
-    }
+  // Build entity map (shared with injectLinks: preview must see what apply sees)
+  const resolved = resolveEntities(options);
+  if (!resolved.ok) {
+    // Loud on purpose. Returning an empty preview here reads as "your prose has
+    // nothing to link", which is indistinguishable from a broken setup.
+    throw new Error(resolved.error);
   }
+
+  const entities = resolved.entities;
 
   // Find files
   const pattern = options.pattern || '**/*.md';
@@ -570,32 +579,14 @@ export async function previewLinkInjection(
   // Collect preview info for each file
   for (const file of files) {
     const content = fs.readFileSync(file, 'utf-8');
-    const protectedRegions = findProtectedRegions(content);
-    const filePreview: Array<{ original: string; linked: string; position: number }> = [];
-
-    for (const [canonical, aliases] of entities) {
-      const allNames = [canonical, ...aliases];
-      for (const name of allNames) {
-        const matches = findEntityMatches(content, name, protectedRegions);
-        for (const match of matches) {
-          const linked =
-            name.toLowerCase() === canonical.toLowerCase()
-              ? `[[${canonical}]]`
-              : `[[${canonical}|${match.original}]]`;
-          filePreview.push({
-            original: match.original,
-            linked,
-            position: match.start,
-          });
-        }
-      }
-    }
+    const filePreview = computeReplacements(content, entities).map((r) => ({
+      original: r.original,
+      linked: r.replacement,
+      position: r.start,
+    }));
 
     if (filePreview.length > 0) {
-      previews.set(
-        file,
-        filePreview.sort((a, b) => a.position - b.position)
-      );
+      previews.set(file, filePreview);
     }
   }
 
