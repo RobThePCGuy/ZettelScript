@@ -1,5 +1,13 @@
 # ZettelScript
 
+> **This repository is archived and read-only.**
+>
+> **Where this is going.** ZettelScript is folding into [rag-vault](https://github.com/RobThePCGuy/rag-vault). One tool instead of two: point it at any folder — Markdown, PDF, Word, plain text — and get the relationships between those documents back as a graph you open in Obsidian. Local-first, no API key needed. rag-vault already carries the ingestion and the embeddings; this project's job was the graph.
+>
+> The code and history stay here for reference until that move is finished.
+>
+> **Do not install the `zettelscript` npm package.** It is frozen at a February 2026 build and does not contain the later work in this repository.
+
 **Your notes aren't connected. They're buried.**
 
 Folders lie to you. They promise organization but deliver graveyards: ideas filed away, never to resurface. You've felt it: that nagging sense that you've written this before, somewhere.
